@@ -1,0 +1,116 @@
+# cargo-deny policy: licences, network ban, advisories, sources.
+# Normative content: docs/specs/m0-foundations.md §9, amended by §17.5 and §17.1.
+# Comments may be added; values must not change.
+#
+# Always run it with the explicit form (§17.5), so a stray root `deny.toml`, which cargo-deny
+# searches first, can never shadow this policy:
+#
+#     cargo deny --manifest-path Cargo.toml --config .cargo/deny.toml check
+
+[graph]
+targets = [
+    "x86_64-pc-windows-msvc",
+    "aarch64-pc-windows-msvc",
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+]
+all-features = true
+
+# A failing advisory is fixed by bumping the affected pin. An ignore needs Security's approval and
+# a SECURITY.md entry; advisories are never silenced to make CI green.
+# `unmaintained = "all"` (§17.5): unmaintained crates anywhere in the graph are reported, and each
+# hit is triaged under the same rule (bump the pin, or an approved and documented ignore).
+[advisories]
+unmaintained = "all"
+unsound = "all"
+yanked = "deny"
+ignore = []
+
+[licenses]
+confidence-threshold = 0.93
+allow = [
+    "Apache-2.0",
+    "MIT",
+    "BSL-1.0",      # clipboard-win, error-code (Windows clipboard)
+    "ISC",          # libloading
+    "Unicode-3.0",  # unicode-ident
+    "Zlib",         # foldhash, zlib-rs
+]
+exceptions = [
+    # egui's embedded default fonts (Ubuntu-Light, Hack, Noto Emoji): font licences, data only.
+    { crate = "epaint_default_fonts", allow = ["OFL-1.1", "Ubuntu-font-1.0"] },
+]
+unused-allowed-license = "warn"
+
+# Our own crates are checked too (§17.1, rule R8): every member must inherit
+# `license.workspace = true` ("MIT OR Apache-2.0"), otherwise it fails as `error[unlicensed]`.
+[licenses.private]
+ignore = false
+
+[bans]
+multiple-versions = "warn"   # winit/wgpu ecosystem: ~20 unavoidable duplicates (bitflags, hashbrown, windows-sys…)
+wildcards = "deny"
+allow-wildcard-paths = true
+deny = [
+    { crate = "reqwest",     reason = "offline product: no HTTP client" },
+    { crate = "ureq",        reason = "offline product: no HTTP client" },
+    { crate = "hyper",       reason = "offline product: no HTTP stack" },
+    { crate = "h2",          reason = "offline product: no HTTP stack" },
+    { crate = "h3",          reason = "offline product: no HTTP stack" },
+    { crate = "quinn",       reason = "offline product: no QUIC stack" },
+    { crate = "curl",        reason = "offline product: no HTTP client" },
+    { crate = "curl-sys",    reason = "offline product: no HTTP client" },
+    { crate = "isahc",       reason = "offline product: no HTTP client" },
+    { crate = "attohttpc",   reason = "offline product: no HTTP client" },
+    { crate = "surf",        reason = "offline product: no HTTP client" },
+    { crate = "minreq",      reason = "offline product: no HTTP client" },
+    { crate = "ehttp",       reason = "offline product: no HTTP client (egui ecosystem)" },
+    { crate = "tiny_http",   reason = "offline product: no HTTP server" },
+    { crate = "tungstenite", reason = "offline product: no WebSocket" },
+    { crate = "websocket",   reason = "offline product: no WebSocket" },
+    { crate = "native-tls",  reason = "no network, hence no TLS" },
+    { crate = "openssl",     reason = "no network, hence no TLS" },
+    { crate = "openssl-sys", reason = "no network, hence no TLS" },
+    { crate = "rustls",      reason = "no network, hence no TLS" },
+    { crate = "sentry",      reason = "no telemetry" },
+    { crate = "opentelemetry", reason = "no telemetry" },
+    # Added after audit round 1 (§17.5). Not banned on purpose: `async-io` and `polling`, because
+    # zbus needs them (eframe -> accesskit_winit -> accesskit_unix -> zbus).
+    { crate = "socket2",            reason = "offline product: no sockets or async network runtime (architecture T5, §9.3)" },
+    { crate = "tokio",              reason = "offline product: no sockets or async network runtime (architecture T5, §9.3)" },
+    { crate = "async-std",          reason = "offline product: no sockets or async network runtime (architecture T5, §9.3)" },
+    { crate = "async-net",          reason = "offline product: no sockets or async network runtime (architecture T5, §9.3)" },
+    { crate = "smol",               reason = "offline product: no sockets or async network runtime (architecture T5, §9.3)" },
+    { crate = "hickory-resolver",   reason = "offline product: no network client or server" },
+    { crate = "hickory-proto",      reason = "offline product: no network client or server" },
+    { crate = "trust-dns-resolver", reason = "offline product: no network client or server" },
+    { crate = "trust-dns-proto",    reason = "offline product: no network client or server" },
+    { crate = "cadence",            reason = "no telemetry" },
+    { crate = "statsd",             reason = "no telemetry" },
+    { crate = "git2",               reason = "offline product: no network client or server" },
+    { crate = "libgit2-sys",        reason = "offline product: no network client or server" },
+    { crate = "ssh2",               reason = "offline product: no network client or server" },
+    { crate = "libssh2-sys",        reason = "offline product: no network client or server" },
+    { crate = "lettre",             reason = "offline product: no network client or server" },
+    { crate = "ws",                 reason = "offline product: no network client or server" },
+    { crate = "tonic",              reason = "offline product: no network client or server" },
+    { crate = "axum",               reason = "offline product: no network client or server" },
+    { crate = "actix-web",          reason = "offline product: no network client or server" },
+    { crate = "warp",               reason = "offline product: no network client or server" },
+    { crate = "sentry-core",        reason = "no telemetry" },
+    { crate = "opentelemetry_sdk",  reason = "no telemetry" },
+    { crate = "opentelemetry-otlp", reason = "no telemetry" },
+]
+features = [
+    { crate = "mio", deny = ["net"], reason = "mio is allowed for file watching (notify, M4) but never with sockets" },
+]
+
+[bans.workspace-dependencies]
+duplicates = "deny"
+include-path-dependencies = true
+unused = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

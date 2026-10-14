@@ -1,0 +1,11 @@
+[package]
+name = "va-debug"
+description = "Debug session worker driving any Emulator, without UI."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true

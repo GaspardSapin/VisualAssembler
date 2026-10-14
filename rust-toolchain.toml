@@ -1,0 +1,6 @@
+# Pinned toolchain. Normative content: docs/specs/m0-foundations.md §3.2.
+# No `targets` key: cross targets are added explicitly where needed.
+[toolchain]
+channel = "1.99.0"
+profile = "minimal"
+components = ["rustfmt", "clippy"]

@@ -1,0 +1,60 @@
+# VisualAssembler virtual workspace manifest.
+# Normative content: docs/specs/m0-foundations.md §3.1, amended by §17.1 (licence).
+# Comments may be added; values must not change.
+
+[workspace]
+resolver = "3"
+members = [
+    "crates/va-core",
+    "crates/va-editor",
+    "crates/va-lang",
+    "crates/va-debug",
+    "crates/va-workspace",
+    "crates/va-ui",
+    "arch/m68k",
+    "apps/visual-assembler",
+    "apps/va",
+    "xtask",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+publish = false
+# Dual licence (m0-foundations.md §17.1, architecture §9.7): texts in LICENSE-MIT and LICENSE-APACHE.
+license = "MIT OR Apache-2.0"
+
+# Exact pins. Only crates used by at least one member (cargo-deny: unused = "deny").
+# Internal crates are added here when first used (M1+), e.g. va-core = { path = "crates/va-core" }.
+# Every entry needs a DEPENDANCE.md line and an IMPORT.md entry.
+[workspace.dependencies]
+anyhow = "=1.0.104"
+clap = { version = "=4.6.7", features = ["derive"] }
+eframe = { version = "=0.36.2", default-features = false, features = ["accesskit", "default_fonts", "wayland", "x11"] }
+egui_kittest = "=0.36.2"
+libc = "=0.2.189"
+raw-window-handle = "=0.6.2"
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.151"
+windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_System_ProcessStatus", "Win32_System_Threading"] }
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+missing_docs = "warn"
+rust_2018_idioms = { level = "warn", priority = -1 }
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+dbg_macro = "warn"
+todo = "warn"
+unimplemented = "warn"
+unwrap_used = "warn"
+undocumented_unsafe_blocks = "warn"
+
+[profile.release]
+lto = "thin"
+
+# Dependencies at opt-level 2 keep a debug GUI usable; workspace crates stay at 0 for debugging.
+[profile.dev.package."*"]
+opt-level = 2
