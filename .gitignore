@@ -1,0 +1,49 @@
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+
+# Environments
+venv/
+.venv/
+node_modules/
+__pycache__/
+*.py[cod]
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+target/
+.next/
+coverage/
+htmlcov/
+
+# Caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.cache/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Local data
+*.sqlite3
+*.db
+data/local/
+logs/
+
+# Rust / project specific
+**/*.rs.bk
+*.profraw
+*.pdb
+bench/results/
+bench/generated/
+xtask/cache/

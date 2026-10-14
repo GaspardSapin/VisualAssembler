@@ -1,0 +1,44 @@
+# Large and uninformative for an agent
+node_modules/
+venv/
+.venv/
+dist/
+build/
+target/
+coverage/
+htmlcov/
+
+# Lock files (committed, but not worth reading)
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+poetry.lock
+Cargo.lock
+uv.lock
+
+# Generated
+bench/results/
+bench/generated/
+xtask/cache/
+__pycache__/
+*.py[cod]
+*.min.js
+*.map
+migrations/versions/
+__snapshots__/
+
+# Data and media
+data/
+datasets/
+*.csv
+*.parquet
+*.sqlite3
+assets/media/
+*.png
+*.jpg
+*.mp4
+*.pdf
+
+# Logs
+logs/
+*.log

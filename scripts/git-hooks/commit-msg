@@ -1,0 +1,48 @@
+#!/bin/sh
+# Reject commit messages that credit an AI tool (agentic-project framework, section 10).
+# Install: make hooks (runs cargo xtask hooks).
+# Keep the names and trailer keys in sync with COAUTHOR_RE in scripts/check_project_docs.py.
+# Limits: client-side only (--no-verify skips it); the CI docs job re-checks the last 50 commits.
+
+# Byte-level matching on every platform (Git for Windows' grep misses 4-byte UTF-8 characters
+# under the UTF-8 locale git sets for hooks).
+LC_ALL=C
+export LC_ALL
+
+msg_file=$1
+if [ -z "$msg_file" ] || [ ! -r "$msg_file" ]; then
+    echo "commit-msg hook: cannot read the commit message file '$msg_file'." >&2
+    exit 1
+fi
+
+names='claude|anthropic|copilot|cursor|gpt|openai|codex|gemini|aider|devin|windsurf|codeium'
+pattern="(co-authored-by|assisted-by|generated-by):.*($names)|generated with .*($names)"
+robot=$(printf '\360\237\244\226')
+
+# Ignore the verbose diff below the scissors line and every comment line.
+if ! body=$(sed -e '/^# -\{24\} >8 -\{24\}$/,$d' -e '/^#/d' "$msg_file"); then
+    echo "commit-msg hook: cannot read the commit message." >&2
+    exit 1
+fi
+
+reject() {
+    echo "commit rejected: the message credits an AI tool ($1)." >&2
+    echo "Remove the Co-Authored-By / Assisted-by / Generated-with line or the robot emoji, then retry." >&2
+    exit 1
+}
+
+printf '%s\n' "$body" | grep -qiE -e "$pattern"
+case $? in
+    0) reject "co-author or generated-with mention" ;;
+    1) ;;
+    *) echo "commit-msg hook: grep failed; refusing the commit." >&2; exit 1 ;;
+esac
+
+printf '%s\n' "$body" | grep -qF -e "$robot"
+case $? in
+    0) reject "robot emoji" ;;
+    1) ;;
+    *) echo "commit-msg hook: grep failed; refusing the commit." >&2; exit 1 ;;
+esac
+
+exit 0

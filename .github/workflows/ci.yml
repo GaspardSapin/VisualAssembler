@@ -1,0 +1,98 @@
+# Continuous integration of VisualAssembler.
+# Normative content: docs/specs/m0-foundations.md section 8, amended by sections 17.5 and 18.7
+# (deny job: cargo-deny installed from crates.io with --locked outside the checkout, no cache,
+# and run with --locked). Comments may be added; values must not change.
+# Actions are pinned to commit SHAs (resolved on 2026-10-13): bumping one requires re-resolving its SHA.
+# The check list itself lives in `cargo xtask ci`, so this file never duplicates cargo commands.
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: "1"
+  # Never set RUSTFLAGS here: it would override .cargo/config.toml (+crt-static).
+
+jobs:
+  fmt:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master, 2026-10-13
+        with:
+          toolchain: "1.99.0"
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+
+  docs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 50          # check_project_docs.py inspects the last 50 commits
+      - run: python3 scripts/check_project_docs.py .
+
+  deny:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master, 2026-10-13
+        with:
+          toolchain: "1.99.0"
+      - name: install cargo-deny 0.20.2 outside the checkout (crates.io checksums, locked, never cached)
+        working-directory: ${{ runner.temp }}
+        run: |
+          cargo install cargo-deny --version 0.20.2 --locked --root "$RUNNER_TEMP/cargo-deny"
+          echo "$RUNNER_TEMP/cargo-deny/bin" >> "$GITHUB_PATH"
+      - run: cargo deny --locked --manifest-path Cargo.toml --config .cargo/deny.toml check
+
+  check:
+    name: check (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, windows-11-arm, ubuntu-latest, ubuntu-24.04-arm]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master, 2026-10-13
+        with:
+          toolchain: "1.99.0"
+          components: clippy
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: ${{ matrix.os }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: clippy, layering, tests
+        run: cargo xtask ci --no-fmt
+      - name: release build
+        run: cargo build --release --locked -p visual-assembler -p va
+      - name: GUI startup smoke (informational, never a support claim)
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        timeout-minutes: 3
+        shell: bash
+        run: ./target/release/visual-assembler.exe --bench startup
