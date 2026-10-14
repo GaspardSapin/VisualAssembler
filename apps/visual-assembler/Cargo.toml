@@ -1,0 +1,42 @@
+# VisualAssembler desktop IDE (GUI binary + library that makes the UI testable headless).
+# Normative content: docs/specs/m0-foundations.md §3.6 (template), §4.1 (features and
+# dependencies) and §17.1 (licence). Comments may be added; values must not change.
+# Targets are auto-discovered: lib `visual_assembler` (src/lib.rs), bin `visual-assembler`
+# (src/main.rs).
+[package]
+name = "visual-assembler"
+description = "VisualAssembler desktop IDE."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+# Each renderer is opted into here because the workspace pins eframe with default features off.
+# At least one must be enabled (`compile_error!` in src/lib.rs otherwise).
+[features]
+default = ["renderer-wgpu"]
+renderer-wgpu = ["eframe/wgpu"]
+renderer-glow = ["eframe/glow"]
+
+[dependencies]
+clap = { workspace = true }
+eframe = { workspace = true }
+raw-window-handle = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Process statistics for the bench (src/bench/process_windows.rs).
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true }
+
+# Process statistics for the bench (src/bench/process_linux.rs).
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = { workspace = true }
+
+# Headless UI tests over the AccessKit tree (no `wgpu`/`snapshot` features: no GPU needed).
+[dev-dependencies]
+egui_kittest = { workspace = true }
