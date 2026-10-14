@@ -1,0 +1,19 @@
+# `va`: the VisualAssembler command-line interface (binary only).
+# Template: docs/specs/m0-foundations.md §3.6; behaviour: §5. Dependencies come from the root
+# [workspace.dependencies] with exact pins (rule R6). No GUI crate may appear here (rule R4).
+[package]
+name = "va"
+description = "VisualAssembler command-line interface."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[dependencies]
+clap = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[lints]
+workspace = true
