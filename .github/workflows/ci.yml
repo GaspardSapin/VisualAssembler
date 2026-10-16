@@ -1,7 +1,7 @@
 # Continuous integration of VisualAssembler.
-# Normative content: docs/specs/m0-foundations.md section 8, amended by sections 17.5 and 18.7
-# (deny job: cargo-deny installed from crates.io with --locked outside the checkout, no cache,
-# and run with --locked). Comments may be added; values must not change.
+# Normative content: docs/specs/m0-foundations.md section 8, amended by sections 17.5, 18.7 (deny
+# job: cargo-deny installed from crates.io with --locked outside the checkout, no cache, run with
+# --locked) and 19.3 (second GUI smoke step). Comments may be added; values must not change.
 # Actions are pinned to commit SHAs (resolved on 2026-10-13): bumping one requires re-resolving its SHA.
 # The check list itself lives in `cargo xtask ci`, so this file never duplicates cargo commands.
 
@@ -95,4 +95,14 @@ jobs:
         continue-on-error: true
         timeout-minutes: 3
         shell: bash
+        run: ./target/release/visual-assembler.exe --bench startup
+      # Section 19.9 (CR19-06): fail the first renderer of this runner's auto order on purpose, so
+      # the log documents a fallback on both images (x64: glow then wgpu; ARM64: wgpu then glow).
+      - name: GUI renderer fallback smoke (informational, never a support claim)
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        timeout-minutes: 3
+        shell: bash
+        env:
+          VA_TEST_FAIL_RENDERER: ${{ runner.arch == 'ARM64' && 'wgpu' || 'glow' }}
         run: ./target/release/visual-assembler.exe --bench startup

@@ -139,30 +139,49 @@ def walk(
     return rows
 
 
-def read_annotations(path: Path) -> dict[str, str]:
-    """Read existing annotations, indexed by relative path."""
-    if not path.exists():
-        return {}
-    annotations: dict[str, str] = {}
+def iter_entries(text: str):
+    """Yield (POSIX relative path, stripped annotation) for every tree-entry line of `text`.
+
+    Only lines drawn with a tree connector (`├── ` or `└── `) are entries: the title, the
+    explanation that names the TODO marker, the root line and the footer never are. The
+    annotation is everything after the first `#` of the line, or "" when there is none.
+    """
     stack: list[str] = []
-    for line in path.read_text(encoding="utf-8").splitlines():
+    for line in text.splitlines():
         m = LINE_RE.match(line)
         if not m:
             continue
         depth = len(m.group("indent")) // 4
-        rest = m.group("rest")
-        name, _, comment = rest.partition("#")
+        name, _, comment = m.group("rest").partition("#")
         name = name.strip()
-        comment = comment.strip()
         is_dir = name.endswith("/")
         name = name.rstrip("/")
         del stack[depth:]
         stack.append(name)
-        if comment and comment != TODO:
-            annotations["/".join(stack)] = comment
+        yield "/".join(stack), comment.strip()
         if not is_dir:
             stack.pop()
-    return annotations
+
+
+def read_annotations(path: Path) -> dict[str, str]:
+    """Read existing annotations, indexed by relative path."""
+    if not path.exists():
+        return {}
+    return {
+        rel: comment
+        for rel, comment in iter_entries(path.read_text(encoding="utf-8"))
+        if comment and comment != TODO
+    }
+
+
+def unannotated_entries(text: str) -> list[str]:
+    """Return the relative paths of the tree entries of `text` that still need an annotation.
+
+    An entry needs one when its annotation is empty or still holds the TODO marker. Only
+    tree-entry lines are looked at (see iter_entries), so the header line that explains the
+    marker never counts and a fully annotated file gives an empty list.
+    """
+    return [rel for rel, comment in iter_entries(text) if not comment or TODO in comment]
 
 
 def render(root: Path, rows, annotations: dict[str, str]) -> str:

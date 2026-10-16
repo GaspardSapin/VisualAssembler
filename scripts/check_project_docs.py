@@ -6,8 +6,15 @@ Checks:
   2. a README.md in every folder, and every child folder mentioned by its parent README;
   3. dependencies declared in manifests but missing from DEPENDANCE.md or IMPORT.md
      (for Cargo, the root [dependencies] and the external crates of [workspace.dependencies]);
-  3b. [deps]: every dependency of every Cargo workspace member uses `workspace = true`
-     (architecture rule R6; needs tomllib, i.e. Python >= 3.11, otherwise a warning);
+  3b. [deps]: every dependency of every Cargo workspace member uses `workspace = true`, and,
+     in reverse, every key of the root [workspace.dependencies] (path entries included) is
+     declared with `workspace = true` by at least one member in one of its dependency tables
+     (dependencies, dev-dependencies, build-dependencies and their target.<cfg> variants; the
+     root package's own tables count when the root manifest has [package]). Keys compare
+     exactly; each undeclared key is reported once, in sorted order. The reverse check is
+     skipped when a member manifest or one of its tables is unusable, which is already
+     reported (architecture rule R6, spec section 19.9 S19-3: cargo-deny's `unused` cannot
+     prove it; needs tomllib, i.e. Python >= 3.11, otherwise a warning);
   3c. [lints]: every Cargo workspace member has exactly `[lints] workspace = true`, and the root
      keeps `workspace.lints.rust.unsafe_code = "deny"` (lint part of architecture rule R8;
      same tomllib fallback as [deps]);
@@ -16,7 +23,9 @@ Checks:
      (spec section 18.6; same walk exclusions as checks 2 and 6);
   3e. [deps]: the root Cargo.toml has no [patch] or [replace] table, which would bypass
      cargo-deny's source checks (spec section 18.6);
-  4. AGENCEMENT.md in sync with the real tree;
+  4. AGENCEMENT.md in sync with the real tree, then a warning listing the tree entries whose
+     annotation is empty or still the `<!-- annotate -->` marker (the generated header, which
+     names that marker, is not a tree entry and never counts);
   5. sensitive .gitignore entries missing;
   6. overloaded folders (too many files to stay readable);
   7. commits that credit an AI tool (co-author / assisted-by / generated-by trailer,
@@ -58,6 +67,7 @@ from gen_agencement import (  # noqa: E402
     read_annotations,
     render,
     structure_of,
+    unannotated_entries,
     walk,
 )
 
@@ -68,6 +78,7 @@ ROOT_FILES = [
 GITIGNORE_MUSTS = [".env", "__pycache__", "node_modules", "venv", "dist", "build"]
 FILES_PER_DIR_WARN = 15   # beyond this, the folder gets hard to read
 FILES_PER_DIR_ERROR = 25  # beyond this, it must be split
+UNANNOTATED_SHOWN = 10    # unannotated AGENCEMENT.md entries named in the warning
 # Keep the names and trailer keys in sync with scripts/git-hooks/commit-msg (spec sections 17.6
 # and 18.2; Python matches the robot emoji as a code point, so no locale setting is needed here).
 _AI_NAMES = r"(claude|anthropic|copilot|cursor|gpt|openai|codex|gemini|aider|devin|windsurf|codeium)"
@@ -99,6 +110,11 @@ IMPLICIT_MEMBER_PROBLEM = "package inside the workspace is not listed in [worksp
 PATCH_PROBLEM = (
     "[deps] Cargo.toml: [patch]/[replace] tables are not allowed "
     "(they bypass cargo-deny's source checks)"
+)
+# Reverse half of check 3b (spec section 19.9, S19-3), formatted with the pinned key.
+UNDECLARED_PIN_PROBLEM = (
+    "[deps] Cargo.toml: workspace dependency '{name}' is not declared by any member "
+    "(rule R6: remove the pin or declare it with workspace = true)"
 )
 
 
@@ -360,11 +376,44 @@ def dependency_tables(manifest: dict) -> list[tuple[str, object]]:
     return tables
 
 
+def inherits_from_workspace(spec: object) -> bool:
+    """Return True when a dependency entry is a table holding `workspace = true`.
+
+    Uses `is True`, so `workspace = 1` (1 == True in Python) does not count.
+    """
+    return isinstance(spec, dict) and spec.get("workspace") is True
+
+
+def undeclared_workspace_dependencies(workspace: dict, declared: set[str]) -> list[str]:
+    """Return one `[deps]` problem per root [workspace.dependencies] key outside `declared`.
+
+    `declared` holds every key some member (or the root package) declares with
+    `workspace = true`. Path entries are included and keys compare exactly; the problems come
+    in sorted key order. A non-table [workspace.dependencies] gives nothing here:
+    collect_dependencies already reports it.
+    """
+    table = workspace.get("dependencies", {})
+    if not isinstance(table, dict):
+        return []  # reported by collect_dependencies
+    return [
+        UNDECLARED_PIN_PROBLEM.format(name=name) for name in sorted(table) if name not in declared
+    ]
+
+
 def check_member_dependencies(root: Path, cargo: dict | None) -> list[str]:
-    """Rule R6: every dependency of every workspace member must say `workspace = true`.
+    """Rule R6, both directions, between the workspace members and [workspace.dependencies].
+
+    Forward: every dependency of every workspace member must say `workspace = true`.
+    Reverse (spec section 19.9, S19-3): every key of the root [workspace.dependencies] must be
+    declared with `workspace = true` by at least one member, in any dependency table or its
+    `[target.<cfg>]` variant; when the root manifest is also a package ([package], or its legacy
+    alias [project]), its own tables count too. The reverse check runs only when every member
+    manifest and every one of those tables could be used, since a gap there could hide a
+    declaration and is already reported.
 
     `cargo` is the parsed root Cargo.toml; nothing is checked when it is None or has no
-    [workspace]. Returns one `[deps]` problem per offending entry or unusable manifest.
+    [workspace]. Returns one `[deps]` problem per offending entry, unusable manifest or table,
+    and undeclared workspace dependency.
     """
     if cargo is None or "workspace" not in cargo:
         return []
@@ -376,6 +425,8 @@ def check_member_dependencies(root: Path, cargo: dict | None) -> list[str]:
     except ManifestError as exc:
         return [f"[deps] Cargo.toml: {exc}"]
     problems: list[str] = []
+    declared: set[str] = set()
+    complete = True  # every dependency table was usable, so `declared` is exhaustive
     for member in members:
         label = f"{member}/Cargo.toml"
         try:
@@ -383,14 +434,35 @@ def check_member_dependencies(root: Path, cargo: dict | None) -> list[str]:
             tables = dependency_tables(manifest)
         except ManifestError as exc:
             problems.append(f"[deps] {label}: {exc}")
+            complete = False
             continue
         for section, table in tables:
             if not isinstance(table, dict):
                 problems.append(f"[deps] {label}: [{section}] is not a table")
+                complete = False
                 continue
             for name, spec in sorted(table.items()):
-                if not (isinstance(spec, dict) and spec.get("workspace") is True):
+                if inherits_from_workspace(spec):
+                    declared.add(name)
+                else:
                     problems.append(f"[deps] {label}: '{name}' must use workspace = true")
+    if any(table in cargo for table in CARGO_PACKAGE_TABLES):
+        # The root package's declarations count for the reverse check only; nothing else
+        # reports its tables, so an unusable one is reported here before the check is skipped.
+        try:
+            root_tables = dependency_tables(cargo)
+        except ManifestError as exc:
+            problems.append(f"[deps] Cargo.toml: {exc}")
+            root_tables = []
+            complete = False
+        for section, table in root_tables:
+            if not isinstance(table, dict):
+                problems.append(f"[deps] Cargo.toml: [{section}] is not a table")
+                complete = False
+                continue
+            declared |= {name for name, spec in table.items() if inherits_from_workspace(spec)}
+    if complete:
+        problems += undeclared_workspace_dependencies(workspace, declared)
     return list(dict.fromkeys(problems))
 
 
@@ -611,7 +683,8 @@ def main() -> int:
                 if not re.search(rf"(?<![\w-]){re.escape(name)}(?![\w-])", declared):
                     problems.append(f"[{tag}] '{name}' ({manifest}) missing from {doc_name}")
 
-    # 3b. rule R6: workspace members inherit every dependency from [workspace.dependencies]
+    # 3b. rule R6: workspace members inherit every dependency from [workspace.dependencies],
+    #     and every pin there is declared by at least one member
     problems += check_member_dependencies(root, cargo)
 
     # 3c. rule R8 (lint part): members inherit the workspace lints; unsafe_code stays denied
@@ -630,8 +703,16 @@ def main() -> int:
         expected = render(root, walk(root, 6, ignored), read_annotations(layout))
         if structure_of(current) != structure_of(expected):
             problems.append("[layout] AGENCEMENT.md is out of sync — rerun gen_agencement.py")
-        elif "<!-- annotate -->" in current:
-            warnings.append("[layout] some entries are still unannotated")
+        else:
+            # Tree entries only: the generated header names the marker on every run.
+            pending = unannotated_entries(current)
+            if pending:
+                shown = ", ".join(pending[:UNANNOTATED_SHOWN])
+                more = len(pending) - UNANNOTATED_SHOWN
+                tail = f" and {more} more" if more > 0 else ""
+                warnings.append(
+                    f"[layout] some entries are still unannotated ({len(pending)}): {shown}{tail}"
+                )
 
     # 5. .gitignore
     gitignore = root / ".gitignore"
