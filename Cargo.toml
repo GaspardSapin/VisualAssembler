@@ -1,5 +1,5 @@
 # VisualAssembler virtual workspace manifest.
-# Normative content: docs/specs/m0-foundations.md §3.1, amended by §17.1 (licence).
+# Normative content: docs/specs/m0-foundations.md §3.1, amended by §17.1 (licence) and §19.8 (winit).
 # Comments may be added; values must not change.
 
 [workspace]
@@ -25,7 +25,7 @@ publish = false
 # Dual licence (m0-foundations.md §17.1, architecture §9.7): texts in LICENSE-MIT and LICENSE-APACHE.
 license = "MIT OR Apache-2.0"
 
-# Exact pins. Only crates used by at least one member (cargo-deny: unused = "deny").
+# Exact pins, each declared by at least one member (rule R6, enforced by check_project_docs.py check 3b).
 # Internal crates are added here when first used (M1+), e.g. va-core = { path = "crates/va-core" }.
 # Every entry needs a DEPENDANCE.md line and an IMPORT.md entry.
 [workspace.dependencies]
@@ -38,6 +38,9 @@ raw-window-handle = "=0.6.2"
 serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "=1.0.151"
 windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_System_ProcessStatus", "Win32_System_Threading"] }
+# m0-foundations.md §19.1/§19.8 row 19-1: X11 event loop under WSL (EventLoopBuilderExtX11::with_x11).
+# Members declare it under [target.'cfg(target_os = "linux")'.dependencies]; same version eframe pulls.
+winit = { version = "=0.30.13", default-features = false, features = ["x11"] }
 
 [workspace.lints.rust]
 unsafe_code = "deny"

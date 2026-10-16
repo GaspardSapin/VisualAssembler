@@ -19,7 +19,12 @@
 //!    UI thread is never woken during the idle window.
 //!
 //! Reporting prints the JSON line on stdout, flushes, tells the watchdog, and asks the root
-//! viewport to close. If the bench cannot start a thread or write its line, it prints
+//! viewport to close.
+//!
+//! Renderer fallback (§19.2): the recorder and its watchdog are created once, before the first
+//! renderer attempt, and live outside the app creator, so a failed attempt neither drops them
+//! nor resets the watchdog limit. `launch` tells the recorder about a fallback with
+//! [`BenchRecorder::record_fallback`]; the line then reports it (§19.5). If the bench cannot start a thread or write its line, it prints
 //! `error: …` on stderr and exits the process with code 1 ([`crate::EXIT_RUNTIME`], §17.10).
 
 use std::fmt::Display;
@@ -36,7 +41,7 @@ use super::platform::{self, RendererInfo};
 use super::process::ProcessStats;
 use super::report::{BenchRun, RUN_SCHEMA};
 use super::{IDLE_SETTLE_MS, IDLE_WATCHDOG_EXTRA_SECS, STARTUP_WATCHDOG_SECS};
-use crate::cli::{BenchPlan, BenchScenario};
+use crate::cli::{BenchPlan, BenchScenario, Renderer, RendererChoice};
 
 /// Name of the watchdog thread.
 const WATCHDOG_THREAD: &str = "va-bench-watchdog";
@@ -62,10 +67,24 @@ pub fn watchdog_limit(plan: &BenchPlan) -> Duration {
     }
 }
 
+/// Renderer-selection facts that the bench line reports (docs/specs/m0-foundations.md §19.5).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SelectionFacts {
+    /// The resolved renderer choice (`renderer_requested`).
+    pub requested: RendererChoice,
+    /// The renderer that failed before the fallback and the first line of its error
+    /// (`fallback_from`, `fallback_reason`); `None` without a fallback.
+    pub fallback: Option<(Renderer, String)>,
+    /// The raw `VA_TEST_FAIL_RENDERER` value when it is set (`injected_failure`).
+    pub injected_failure: Option<String>,
+}
+
 /// Runs one bench scenario inside the app. Created only when `--bench` is given.
 pub struct BenchRecorder {
     /// Scenario and idle window length.
     plan: BenchPlan,
+    /// Renderer selection of the run, completed by [`BenchRecorder::record_fallback`].
+    selection: SelectionFacts,
     /// Instant taken by the first statement of `main`.
     started: Instant,
     /// Frames started so far (`cumulative_frame_nr() + 1` at the last `on_ui`).
@@ -87,9 +106,16 @@ impl BenchRecorder {
     /// process with code 4. It stops silently once the result is reported, or when every handle
     /// to it is dropped (the app shut down before measuring: the window was closed).
     ///
+    /// `selection` holds the renderer choice and the injection hook value; its `fallback` is
+    /// normally `None` here and set later by [`BenchRecorder::record_fallback`].
+    ///
     /// # Errors
     /// Returns the I/O error of the operating system if the watchdog thread cannot be created.
-    pub fn new(plan: BenchPlan, started: Instant) -> std::io::Result<Self> {
+    pub fn new(
+        plan: BenchPlan,
+        started: Instant,
+        selection: SelectionFacts,
+    ) -> std::io::Result<Self> {
         let limit = watchdog_limit(&plan);
         let (reported, watchdog) = mpsc::channel::<()>();
         thread::Builder::new()
@@ -104,12 +130,19 @@ impl BenchRecorder {
 
         Ok(Self {
             plan,
+            selection,
             started,
             frames: Arc::new(AtomicU64::new(0)),
             renderer: None,
             first_frame: None,
             reported,
         })
+    }
+
+    /// Records that `from` failed to initialize before the first frame and that the next attempt
+    /// uses another renderer. `reason` is the first line of the error (`fallback_reason`).
+    pub fn record_fallback(&mut self, from: Renderer, reason: String) {
+        self.selection.fallback = Some((from, reason));
     }
 
     /// Called from `App::ui` on every frame, after the UI is drawn.
@@ -147,14 +180,18 @@ impl BenchRecorder {
         match self.plan.scenario {
             BenchScenario::Startup => {
                 let stats = ProcessStats::sample();
+                let measured = Measured {
+                    startup_ms,
+                    frames_painted: self.frames.load(Ordering::SeqCst),
+                    process_cpu_ms: stats.cpu_ms,
+                    idle_window_ms: None,
+                };
                 let run = bench_run(
                     BenchScenario::Startup,
+                    &self.selection,
                     &renderer,
-                    startup_ms,
-                    self.frames.load(Ordering::SeqCst),
-                    stats.cpu_ms,
+                    &measured,
                     &stats,
-                    None,
                 );
                 report(&run, &self.reported, ctx);
             }
@@ -163,6 +200,7 @@ impl BenchRecorder {
                     ctx: ctx.clone(),
                     frames: Arc::clone(&self.frames),
                     startup_ms,
+                    selection: self.selection.clone(),
                     renderer,
                     duration: self.plan.idle_duration,
                     reported: self.reported.clone(),
@@ -188,6 +226,8 @@ struct IdleMeasurement {
     frames: Arc<AtomicU64>,
     /// Startup time measured by `on_logic`.
     startup_ms: f64,
+    /// Renderer selection of the run.
+    selection: SelectionFacts,
     /// Renderer captured by the first `on_ui`.
     renderer: RendererInfo,
     /// Length of the idle window.
@@ -209,14 +249,18 @@ impl IdleMeasurement {
             _ => None,
         };
         let idle_window_ms = duration_ms(end.saturating_duration_since(start));
+        let measured = Measured {
+            startup_ms: self.startup_ms,
+            frames_painted: end_frames.saturating_sub(start_frames),
+            process_cpu_ms: cpu_ms,
+            idle_window_ms: Some(idle_window_ms),
+        };
         let run = bench_run(
             BenchScenario::Idle,
+            &self.selection,
             &self.renderer,
-            self.startup_ms,
-            end_frames.saturating_sub(start_frames),
-            cpu_ms,
+            &measured,
             &end_stats,
-            Some(idle_window_ms),
         );
         report(&run, &self.reported, &self.ctx);
     }
@@ -230,21 +274,39 @@ fn sample(frames: &AtomicU64) -> (Instant, ProcessStats, u64) {
     (now, stats, frames)
 }
 
-/// Builds the JSON line content. `memory` provides the lifetime peaks; `idle_window_ms` is
-/// `Some` exactly for the idle scenario, which also sets `settle_ms`.
+/// Numbers measured by a scenario, as reported in the bench line.
+struct Measured {
+    /// Milliseconds from `main()` to the first presented frame.
+    startup_ms: f64,
+    /// Startup: frames started so far. Idle: frames started during the idle window.
+    frames_painted: u64,
+    /// Startup: CPU since process creation. Idle: CPU during the idle window.
+    process_cpu_ms: Option<f64>,
+    /// `Some` exactly for the idle scenario: the measured window length.
+    idle_window_ms: Option<f64>,
+}
+
+/// Builds the JSON line content. `selection` provides the §19.5 renderer-selection keys,
+/// `memory` the lifetime peaks; an idle measurement (`idle_window_ms` is `Some`) also sets
+/// `settle_ms`.
 fn bench_run(
     scenario: BenchScenario,
+    selection: &SelectionFacts,
     renderer: &RendererInfo,
-    startup_ms: f64,
-    frames_painted: u64,
-    process_cpu_ms: Option<f64>,
+    measured: &Measured,
     memory: &ProcessStats,
-    idle_window_ms: Option<f64>,
 ) -> BenchRun {
     BenchRun {
         schema: RUN_SCHEMA,
         scenario: scenario.as_str(),
+        renderer_requested: selection.requested.as_str(),
         renderer: renderer.renderer,
+        fallback_from: selection.fallback.as_ref().map(|(from, _)| from.as_str()),
+        fallback_reason: selection
+            .fallback
+            .as_ref()
+            .map(|(_, reason)| reason.clone()),
+        injected_failure: selection.injected_failure.clone(),
         backend: renderer.backend,
         adapter: renderer.adapter.clone(),
         driver: renderer.driver.clone(),
@@ -253,13 +315,13 @@ fn bench_run(
         os: std::env::consts::OS,
         arch: std::env::consts::ARCH,
         version: env!("CARGO_PKG_VERSION"),
-        startup_ms,
-        frames_painted,
-        process_cpu_ms,
+        startup_ms: measured.startup_ms,
+        frames_painted: measured.frames_painted,
+        process_cpu_ms: measured.process_cpu_ms,
         peak_rss_bytes: memory.peak_rss_bytes,
         peak_private_bytes: memory.peak_private_bytes,
-        settle_ms: idle_window_ms.map(|_| IDLE_SETTLE_MS),
-        idle_window_ms,
+        settle_ms: measured.idle_window_ms.map(|_| IDLE_SETTLE_MS),
+        idle_window_ms: measured.idle_window_ms,
     }
 }
 

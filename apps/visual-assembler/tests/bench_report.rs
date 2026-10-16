@@ -1,16 +1,21 @@
-//! Covers `src/bench/report.rs`: the `va.bench.run/1` JSON line (docs/specs/m0-foundations.md
-//! §4.6, §11).
+//! Covers `src/bench/report.rs`: the `va.bench.run/2` JSON line (docs/specs/m0-foundations.md
+//! §19.5, which extends the §4.6 keys; §11).
 #![allow(clippy::unwrap_used)]
 
 use std::collections::BTreeSet;
 
 use visual_assembler::bench::report::{BenchRun, RUN_SCHEMA};
 
-/// The 18 keys of the schema, in their normative order.
-const KEYS: [&str; 18] = [
+/// The 22 keys of the schema, in their normative order (§19.5: the 18 keys of §4.6 plus
+/// `renderer_requested`, `fallback_from`, `fallback_reason` and `injected_failure`).
+const KEYS: [&str; 22] = [
     "schema",
     "scenario",
+    "renderer_requested",
     "renderer",
+    "fallback_from",
+    "fallback_reason",
+    "injected_failure",
     "backend",
     "adapter",
     "driver",
@@ -28,12 +33,17 @@ const KEYS: [&str; 18] = [
     "idle_window_ms",
 ];
 
-/// A startup run with fixed values; the idle-only fields and the driver are `None`.
+/// A startup run with fixed values, without fallback or injection; the idle-only fields and the
+/// driver are `None`.
 fn startup_run() -> BenchRun {
     BenchRun {
         schema: RUN_SCHEMA,
         scenario: "startup",
+        renderer_requested: "auto",
         renderer: "wgpu",
+        fallback_from: None,
+        fallback_reason: None,
+        injected_failure: None,
         backend: "dx12",
         adapter: Some("Test Adapter\nwith a newline".to_owned()),
         driver: None,
@@ -63,9 +73,13 @@ fn run_line_has_exact_schema() {
     let keys: BTreeSet<&str> = object.keys().map(String::as_str).collect();
     assert_eq!(keys, KEYS.into_iter().collect::<BTreeSet<_>>());
 
-    assert_eq!(RUN_SCHEMA, "va.bench.run/1");
-    assert_eq!(object["schema"], "va.bench.run/1");
+    assert_eq!(RUN_SCHEMA, "va.bench.run/2");
+    assert_eq!(object["schema"], "va.bench.run/2");
+    assert_eq!(object["renderer_requested"], "auto");
     for key in [
+        "fallback_from",
+        "fallback_reason",
+        "injected_failure",
         "driver",
         "peak_private_bytes",
         "settle_ms",
@@ -93,19 +107,23 @@ fn run_line_keys_follow_schema_order() {
 }
 
 // ---------------------------------------------------------------------------------------------
-// QA edge cases (audit round 1): the §4.6 example byte for byte (key order and number format),
-// string escaping, and integer extremes.
+// QA edge cases (audit round 1): the spec example byte for byte (key order and number format),
+// string escaping, and integer extremes. §19.5 replaces the §4.6 example with the one below.
 // ---------------------------------------------------------------------------------------------
 
-/// The example line of docs/specs/m0-foundations.md §4.6, verbatim.
-const SPEC_EXAMPLE_LINE: &str = r#"{"schema":"va.bench.run/1","scenario":"idle","renderer":"wgpu","backend":"dx12","adapter":"AMD Radeon(TM) 860M Graphics","driver":"…","window_system":"win32","wsl":false,"os":"windows","arch":"x86_64","version":"0.1.0","startup_ms":182.4,"frames_painted":0,"process_cpu_ms":15.6,"peak_rss_bytes":91226112,"peak_private_bytes":40960000,"settle_ms":1000,"idle_window_ms":10000.7}"#;
+/// The normative example line of docs/specs/m0-foundations.md §19.5, verbatim.
+const SPEC_EXAMPLE_LINE: &str = r#"{"schema":"va.bench.run/2","scenario":"startup","renderer_requested":"auto","renderer":"wgpu","fallback_from":"glow","fallback_reason":"injected renderer failure (VA_TEST_FAIL_RENDERER)","injected_failure":"glow","backend":"dx12","adapter":"AMD Radeon(TM) 860M Graphics","driver":"…","window_system":"win32","wsl":false,"os":"windows","arch":"x86_64","version":"0.1.0","startup_ms":512.3,"frames_painted":1,"process_cpu_ms":437.5,"peak_rss_bytes":358612992,"peak_private_bytes":120586240,"settle_ms":null,"idle_window_ms":null}"#;
 
 #[test]
 fn spec_example_line_is_reproduced_byte_for_byte() {
     let run = BenchRun {
         schema: RUN_SCHEMA,
-        scenario: "idle",
+        scenario: "startup",
+        renderer_requested: "auto",
         renderer: "wgpu",
+        fallback_from: Some("glow"),
+        fallback_reason: Some("injected renderer failure (VA_TEST_FAIL_RENDERER)".to_owned()),
+        injected_failure: Some("glow".to_owned()),
         backend: "dx12",
         adapter: Some("AMD Radeon(TM) 860M Graphics".to_owned()),
         driver: Some("…".to_owned()),
@@ -114,15 +132,40 @@ fn spec_example_line_is_reproduced_byte_for_byte() {
         os: "windows",
         arch: "x86_64",
         version: "0.1.0",
-        startup_ms: 182.4,
-        frames_painted: 0,
-        process_cpu_ms: Some(15.6),
-        peak_rss_bytes: Some(91_226_112),
-        peak_private_bytes: Some(40_960_000),
-        settle_ms: Some(1000),
-        idle_window_ms: Some(10000.7),
+        startup_ms: 512.3,
+        frames_painted: 1,
+        process_cpu_ms: Some(437.5),
+        peak_rss_bytes: Some(358_612_992),
+        peak_private_bytes: Some(120_586_240),
+        settle_ms: None,
+        idle_window_ms: None,
     };
     assert_eq!(run.to_json_line(), SPEC_EXAMPLE_LINE);
+}
+
+/// An idle line keeps the §4.6 idle values (settle and window) next to the §19.5 keys, and the
+/// injected value is reported raw even when it simulated nothing (`vulkan` is ignored).
+#[test]
+fn idle_line_with_a_forced_renderer_and_an_unknown_injection() {
+    let run = BenchRun {
+        scenario: "idle",
+        renderer_requested: "glow",
+        renderer: "glow",
+        injected_failure: Some("vulkan".to_owned()),
+        backend: "gl",
+        frames_painted: 0,
+        settle_ms: Some(3000),
+        idle_window_ms: Some(10_000.7),
+        ..startup_run()
+    };
+    let value: serde_json::Value = serde_json::from_str(&run.to_json_line()).unwrap();
+    assert_eq!(value["renderer_requested"], "glow");
+    assert_eq!(value["renderer"], "glow");
+    assert!(value["fallback_from"].is_null());
+    assert!(value["fallback_reason"].is_null());
+    assert_eq!(value["injected_failure"], "vulkan");
+    assert_eq!(value["settle_ms"], 3000);
+    assert_eq!(value["idle_window_ms"], 10_000.7);
 }
 
 #[test]

@@ -1,6 +1,7 @@
 # VisualAssembler desktop IDE (GUI binary + library that makes the UI testable headless).
 # Normative content: docs/specs/m0-foundations.md §3.6 (template), §4.1 (features and
-# dependencies) and §17.1 (licence). Comments may be added; values must not change.
+# dependencies), §17.1 (licence) and §19.1/§19.8 row 19-2 (both renderers by default, Linux
+# winit). Comments may be added; values must not change.
 # Targets are auto-discovered: lib `visual_assembler` (src/lib.rs), bin `visual-assembler`
 # (src/main.rs).
 [package]
@@ -16,9 +17,11 @@ license.workspace = true
 workspace = true
 
 # Each renderer is opted into here because the workspace pins eframe with default features off.
-# At least one must be enabled (`compile_error!` in src/lib.rs otherwise).
+# At least one must be enabled (`compile_error!` in src/lib.rs otherwise). The shipped binary has
+# both (§19.1): `auto` tries glow then wgpu (wgpu then glow on Windows aarch64). Single-renderer
+# builds stay compilable for CI clippy but are neither shipped nor benchmarked.
 [features]
-default = ["renderer-wgpu"]
+default = ["renderer-glow", "renderer-wgpu"]
 renderer-wgpu = ["eframe/wgpu"]
 renderer-glow = ["eframe/glow"]
 
@@ -33,9 +36,12 @@ serde_json = { workspace = true }
 [target.'cfg(windows)'.dependencies]
 windows-sys = { workspace = true }
 
-# Process statistics for the bench (src/bench/process_linux.rs).
+# Process statistics for the bench (src/bench/process_linux.rs), and winit for the X11 event-loop
+# hook under WSL (src/lib.rs, `EventLoopBuilderExtX11::with_x11`; §19.1). winit is the version
+# eframe already pulls, so the hook's builder type is eframe's.
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = { workspace = true }
+winit = { workspace = true }
 
 # Headless UI tests over the AccessKit tree (no `wgpu`/`snapshot` features: no GPU needed).
 [dev-dependencies]

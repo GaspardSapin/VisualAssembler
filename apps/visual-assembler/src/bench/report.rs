@@ -1,11 +1,12 @@
-//! The bench JSON line, schema `va.bench.run/1` (docs/specs/m0-foundations.md §4.6).
+//! The bench JSON line, schema `va.bench.run/2` (docs/specs/m0-foundations.md §19.5, which
+//! extends the 18 keys of §4.6 with the renderer-selection keys).
 //!
 //! The field order of [`BenchRun`] is the normative key order of the line.
 
 use serde::Serialize;
 
 /// Schema identifier carried by every bench JSON line.
-pub const RUN_SCHEMA: &str = "va.bench.run/1";
+pub const RUN_SCHEMA: &str = "va.bench.run/2";
 
 /// One bench result, serialized as a single JSON line by [`BenchRun::to_json_line`].
 ///
@@ -16,8 +17,17 @@ pub struct BenchRun {
     pub schema: &'static str,
     /// `"startup"` or `"idle"`.
     pub scenario: &'static str,
-    /// `"wgpu"` or `"glow"` (`"unknown"` only if the frame exposes neither renderer).
+    /// The resolved renderer choice: `"auto"`, `"glow"` or `"wgpu"`.
+    pub renderer_requested: &'static str,
+    /// The renderer actually running: `"wgpu"` or `"glow"` (`"unknown"` only if the frame
+    /// exposes neither renderer).
     pub renderer: &'static str,
+    /// The renderer that failed to initialize before the fallback: `"glow"`, `"wgpu"` or `null`.
+    pub fallback_from: Option<&'static str>,
+    /// First line of that renderer's error, or `null` without a fallback.
+    pub fallback_reason: Option<String>,
+    /// The raw `VA_TEST_FAIL_RENDERER` value when it is set, else `null`.
+    pub injected_failure: Option<String>,
     /// Graphics backend: `dx12`, `vulkan`, `gl`, `metal`, `noop`, or `unknown`.
     pub backend: &'static str,
     /// GPU / adapter name (wgpu `AdapterInfo::name`, GL `GL_RENDERER`), if known.
@@ -34,7 +44,7 @@ pub struct BenchRun {
     pub arch: &'static str,
     /// Package version (`CARGO_PKG_VERSION`).
     pub version: &'static str,
-    /// Milliseconds from `main()` entry to the first presented frame.
+    /// Milliseconds from `main()` entry to the first presented frame (a fallback is included).
     pub startup_ms: f64,
     /// Startup: frames started until the measurement (expected 1).
     /// Idle: frames started during the idle window (expected 0).
