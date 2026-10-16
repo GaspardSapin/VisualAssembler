@@ -16,7 +16,7 @@ built binaries as child processes, never through a shell.
 ## Entry points
 | Command | Behaviour | Exit |
 |---------|-----------|------|
-| `cargo xtask bench [startup\|idle\|all] [--renderer wgpu\|glow\|all] [--runs N] [--warmup N] [--duration-secs N] [--json]` | Builds one release GUI per renderer, measures, writes `bench/results/<time>-<sha8>.json` (see `src/bench/README.md`). m0 §19.5 replaces this with the shipped dual-renderer binary and `--renderer auto\|glow\|wgpu\|all` (default `auto`); not implemented yet. | 0 ok · 1 build/run failure or timeout · 2 usage |
+| `cargo xtask bench [startup\|idle\|all] [--renderer auto\|glow\|wgpu\|all] [--runs N] [--warmup N] [--duration-secs N] [--json]` | Builds the shipped GUI once (release, default features, so both renderers), passes `--renderer <r>` to every run (default `auto`; `all` = glow, wgpu, then auto), measures, writes a `va.bench.report/2` file `bench/results/<time>-<sha8>.json` (see `src/bench/README.md`) | 0 ok · 1 build/run failure, invalid run line or timeout · 2 usage |
 | `cargo xtask ci [--no-fmt]` | The CI check list, below | 0 / 1 |
 | `cargo xtask docs [--check]` | `python scripts/gen_agencement.py .` (skipped with `--check`), then `python scripts/check_project_docs.py .`. Python is `$VA_PYTHON`, else `python` on Windows, else `python3`. | the check script's code; 1 if Python is missing |
 | `cargo xtask hooks [--force]` | Installs `scripts/git-hooks/commit-msg` into this repository's hooks folder | 0 / 1 |
@@ -33,12 +33,11 @@ before each one:
    also with `--no-fmt`.
 1. `cargo fmt --all -- --check` (skipped with `--no-fmt`; CI runs fmt in its own job).
 2. `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`.
-3. `cargo clippy -p visual-assembler --all-targets --no-default-features --features renderer-glow --locked -- -D warnings`.
+3. `cargo clippy -p visual-assembler --all-targets --no-default-features --features renderer-glow --locked -- -D warnings`,
+   then step 3b, the same run with `--features renderer-wgpu` only (m0 §19.6). Together they keep both
+   single-renderer builds compiling; neither is shipped.
 4. Layering and source checks, in process (`src/layering.rs`).
 5. `cargo test --workspace --all-features --locked`.
-
-m0-foundations.md §19.6 adds a step 3b, the same clippy run with `--features renderer-wgpu` only.
-It is not implemented yet (fix-wave row 19-3).
 
 On Windows, before step 5, the running `xtask.exe` is renamed to `xtask.exe.old` so cargo can relink
 it (§17.11 D09). A second `cargo xtask ci` started from the same target folder while one is still

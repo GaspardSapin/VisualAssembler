@@ -10,8 +10,8 @@ VisualAssembler/
 │   └── deny.toml                       # cargo-deny policy: licences, network/telemetry bans, advisories, sources
 ├── .github/                            # GitHub configuration
 │   └── workflows/                      # GitHub Actions workflows
-│       ├── ci.yml                      # CI: fmt, docs, deny, check on 4 native runners; actions pinned by SHA
-│       └── README.md                   # Jobs, SHA-pin rule, informational GUI smoke, reading runs with gh
+│       ├── ci.yml                      # CI: fmt, docs, deny, check on 4 native runners, two Windows GUI smoke steps; SHA pins
+│       └── README.md                   # Jobs, SHA-pin rule, the two informational GUI smoke steps, branch protection, gh
 ├── apps/                               # Shipped binaries (leaves: nothing depends on them)
 │   ├── va/                             # Headless CLI `va` (package va)
 │   │   ├── src/                        # CLI sources: grammar, exit codes, subcommands
@@ -35,25 +35,26 @@ VisualAssembler/
 │   │   │   │   ├── process.rs          # ProcessStats::sample dispatcher and portable parse_vm_hwm
 │   │   │   │   ├── process_linux.rs    # getrusage + VmHWM (unsafe, allow-listed)
 │   │   │   │   ├── process_windows.rs  # GetProcessTimes + GetProcessMemoryInfo (unsafe, allow-listed)
-│   │   │   │   ├── README.md           # Bench algorithm, definitions, unsafe allow-list note
-│   │   │   │   ├── recorder.rs         # BenchRecorder: frame hooks, watchdog thread, idle sampling thread
-│   │   │   │   └── report.rs           # va.bench.run/1 line (BenchRun, 18 keys in order)
-│   │   │   ├── cli.rs                  # GuiArgs, RendererChoice, BenchScenario, resolve -> LaunchPlan
-│   │   │   ├── lib.rs                  # run/launch, exit-code constants, eframe options, Windows DX12 pin
+│   │   │   │   ├── README.md           # Bench algorithm, definitions, va.bench.run/2 keys, unsafe allow-list note
+│   │   │   │   ├── recorder.rs         # BenchRecorder: selection facts, fallback record, frame hooks, watchdog, idle thread
+│   │   │   │   └── report.rs           # va.bench.run/2 line (BenchRun, 22 keys in order)
+│   │   │   ├── cli.rs                  # GuiArgs, resolve; pure renderer selection, injection hook, failure classification
+│   │   │   ├── lib.rs                  # run/launch with one in-process fallback, exit codes, native_options, wgpu backend rules
 │   │   │   ├── main.rs                 # Binary root: Instant::now() then run; GUI subsystem in Windows release
-│   │   │   ├── README.md               # GUI sources, exit-code constants, DX12 pin
+│   │   │   ├── README.md               # GUI sources, entry points, exit-code constants, wgpu backend rules
 │   │   │   └── spike.rs                # M0 static window: WINDOW_TITLE, SUBTITLE, draw, SpikeApp
 │   │   ├── tests/                      # Headless tests of the GUI package (no window, no GPU)
 │   │   │   ├── bench_process.rs        # parse_vm_hwm cases; ProcessStats::sample on the real process
 │   │   │   ├── bench_recorder.rs       # Timing constants and watchdog_limit
-│   │   │   ├── bench_report.rs         # va.bench.run/1 serialization: keys, order, nulls, spec example
-│   │   │   ├── binary.rs               # Spawns the debug binary: help, version, usage errors, exit 1/3
-│   │   │   ├── cli.rs                  # GuiArgs parsing and resolve rules
-│   │   │   ├── README.md               # Test list and what is not automated (window, bench, WSLg)
-│   │   │   ├── renderer_backend.rs     # Guards the Windows DX12 pin assumptions
+│   │   │   ├── bench_report.rs         # va.bench.run/2 serialization: 22 keys, order, nulls, spec example
+│   │   │   ├── binary.rs               # Spawns the debug binary: help, version, usage errors, exit 1/3, no-display rules
+│   │   │   ├── cli.rs                  # GuiArgs parsing, resolve, renderer selection, failure classification, escaping
+│   │   │   ├── fallback.rs             # Ignored display tests of the renderer fallback, spec sections 19.3 and 19.9
+│   │   │   ├── README.md               # Test list, display tests and their run rule, what is not automated
+│   │   │   ├── renderer_backend.rs     # native_options per attempt: DX12 pin, GL exclusion, X11 hook, WGPU_BACKEND rule
 │   │   │   └── spike.rs                # egui_kittest: title/subtitle shown, no repaint scheduled
-│   │   ├── Cargo.toml                  # Features renderer-wgpu (current default) / renderer-glow (both default per spec 19, pending); eframe and bench deps
-│   │   └── README.md                   # GUI role, command line, exit codes, renderer (current and decided), WSLg limitation
+│   │   ├── Cargo.toml                  # Features renderer-glow and renderer-wgpu, both default; eframe, bench deps, Linux winit
+│   │   └── README.md                   # GUI role, command line, environment, exit codes, renderer policy, console notes
 │   └── README.md                       # The two apps and what they may depend on
 ├── arch/                               # One crate per CPU (va-arch-<cpu>)
 │   ├── m68k/                           # Package va-arch-m68k: Motorola 68000 support (skeleton in M0)
@@ -105,7 +106,7 @@ VisualAssembler/
 │   └── README.md                       # Crate map, layering rules R1-R8 and their enforcement
 ├── docs/                               # Specifications and measurement reports
 │   ├── perf/                           # Measurement reports (every performance claim cites one)
-│   │   ├── M0-backend.md               # M0 renderer measurements and gates; its decision is superseded by spec section 19; E3/E4 evidence
+│   │   ├── M0-backend.md               # M0 renderer measurements and gates; section 11: user decision, shipped-binary runs N1-N6
 │   │   └── README.md                   # Report naming and reproduction
 │   ├── specs/                          # Normative specifications (Architect role)
 │   │   ├── architecture.md             # Durable architecture: crate map, rules R1-R8, policies, support tiers, renderer policy
@@ -122,10 +123,10 @@ VisualAssembler/
 ├── xtask/                              # Rust task runner behind make (cargo xtask)
 │   ├── src/                            # Task runner sources
 │   │   ├── bench/                      # cargo xtask bench: build, run, aggregate, report
-│   │   │   ├── mod.rs                  # BenchArgs, defaults, git and host info, orchestration
+│   │   │   ├── mod.rs                  # BenchArgs, renderer choices (default auto), git and host info, orchestration
 │   │   │   ├── README.md               # Bench orchestration and report behaviour
-│   │   │   ├── report.rs               # va.bench.report/1 structs, markdown table, report file writing
-│   │   │   ├── runner.rs               # Builds the per-renderer binary and runs it with deadlines and output caps
+│   │   │   ├── report.rs               # va.bench.report/2 structs, markdown table, report file writing
+│   │   │   ├── runner.rs               # Builds the shipped binary once; runs, deadlines, output caps, run-line validation
 │   │   │   ├── stats.rs                # summarize: median, nearest-rank p95, min, max
 │   │   │   └── timestamp.rs            # UTC timestamps without a date crate
 │   │   ├── ci.rs                       # cargo xtask ci: step list, step 0 build-config checks, Windows exe parking
@@ -142,8 +143,8 @@ VisualAssembler/
 │   │   ├── bench_runner.rs             # Runner arguments, deadlines, caps; fake sh GUIs on Unix
 │   │   ├── bench_stats.rs              # summarize on fixed inputs
 │   │   ├── bench_timestamp.rs          # utc_compact and utc_iso, leap days, year 2100
-│   │   ├── ci.rs                       # Step order, check_build_env, canonical cargo config, step 0 stop
-│   │   ├── docs.rs                     # cargo xtask docs and gen_agencement.py (LF output) in temp repos
+│   │   ├── ci.rs                       # Step order, check_build_env, canonical cargo config, step 0 stop, ci.yml smoke step
+│   │   ├── docs.rs                     # cargo xtask docs, gen_agencement.py, manifest and annotation checks in temp repos
 │   │   ├── hooks.rs                    # hooks install safety and commit-msg behaviour under several locales
 │   │   ├── layering.rs                 # Layering and source-scan rules, one regression test per bypass
 │   │   └── README.md                   # Test list and rules (temp folders, ignored tests)
@@ -160,9 +161,9 @@ VisualAssembler/
 ├── LICENSE-APACHE                      # Apache License 2.0 text
 ├── LICENSE-MIT                         # MIT licence text
 ├── Makefile                            # Every project command; thin wrapper over cargo and cargo xtask
-├── README.md                           # Project overview, status, platform matrix, build and test
+├── README.md                           # Project overview, status, platform matrix, build and test, renderer selection
 ├── rust-toolchain.toml                 # Pins Rust 1.99.0 with rustfmt and clippy
 └── SECURITY.md                         # Protections in place and their limitations (Security agent)
 ```
 
-_158 entries · 0 to annotate._
+_159 entries · 0 to annotate._

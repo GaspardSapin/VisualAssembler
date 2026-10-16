@@ -9,11 +9,12 @@ name only.
 ## Contents
 | Entry | Type | Purpose |
 |-------|------|---------|
-| `M0-backend.md` | report | The M0 renderer measurements (protocol m0-foundations.md §12 and §17.13): glow and wgpu on Windows, where the measured rule chose wgpu pinned to DX12; under WSLg, wgpu works on X11 while wgpu on Wayland crashed the compositor (outcome W proposed). **That decision is superseded** by the user's decision of 2026-10-14 (m0 §19, architecture §9.8: glow by default, automatic fallback to wgpu, X11 under WSL); the measurements stay valid. Also holds the gate table, startup analysis, cold-start and G2 checklists (pending a human), and the E3/E4 toolchain evidence. m0 §19.7 asks for a new §11 with runs N1–N6 on the shipped dual-renderer binary; it is not written yet. |
+| `M0-backend.md` | report | The M0 renderer measurements (protocol m0-foundations.md §12 and §17.13): glow and wgpu on Windows, where the measured rule chose wgpu pinned to DX12; under WSLg, wgpu works on X11 while wgpu on Wayland crashed the compositor (outcome W proposed). **That decision is superseded** by the user's decision of 2026-10-14 (m0 §19, architecture §9.8: glow by default, automatic fallback to wgpu, X11 under WSL); the measurements stay valid. Also holds the gate table, startup analysis, cold-start and G2 checklists (pending a human), and the E3/E4 toolchain evidence. §11 records the decision and round 3 (runs N1–N6) on the shipped dual-renderer binary: `auto` runs glow, the fallback cost, a genuine OpenGL failure under WSLg, and exit 3 when both renderers fail. |
 
 ## Entry points
-- `M0-backend.md` §5 (gate table) and §3 (results). §6 records the superseded measured decision; the
-  current decision is m0-foundations.md §19.
+- `M0-backend.md` §11 (the decision and the shipped-binary numbers), then §5 (gate table) and §3
+  (single-renderer results of rounds 1–2). §6 records the superseded measured decision; the current
+  decision is m0-foundations.md §19.
 
 Naming: milestone decision reports are `M<n>-<topic>.md`. Optimization reports are
 `YYYY-MM-DD-<topic>.md`, with before/after numbers and the exact command (architecture §7).
@@ -24,10 +25,11 @@ Naming: milestone decision reports are `M<n>-<topic>.md`. Optimization reports a
 - External: none.
 
 ## Tests / usage
-Reports are not executable. To reproduce one configuration of `M0-backend.md` (Windows, plain wgpu):
+Reports are not executable. To reproduce run N1 of `M0-backend.md` §11 (shipped binary: glow, wgpu,
+then `auto`):
 
 ```bash
-cargo xtask bench all --renderer wgpu
+cargo xtask bench all --renderer all
 ```
 Measure on mains power in "Best performance" mode: the M0 report shows about +33 % startup time on
 battery.

@@ -8,7 +8,7 @@ logic; it goes to `crates/` or `arch/`.
 ## Contents
 | Entry | Type | Purpose |
 |-------|------|---------|
-| `visual-assembler/` | folder | GUI binary + library: eframe window, renderer choice, bench instrumentation. The only package allowed to use GUI crates. See its README. |
+| `visual-assembler/` | folder | GUI binary + library: eframe window, renderer selection with one automatic fallback, bench instrumentation. The only package allowed to use GUI crates. See its README. |
 | `va/` | folder | Headless CLI `va` (`info` in M0). Never depends on a GUI crate. See its README. |
 
 ## Entry points

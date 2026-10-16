@@ -8,14 +8,14 @@ The check list itself lives in `cargo xtask ci`, so the workflow never duplicate
 ## Contents
 | Entry | Type | Purpose |
 |-------|------|---------|
-| `ci.yml` | workflow | Jobs `fmt`, `docs`, `deny` and `check` (4 runners). Normative content: m0-foundations.md §8, amended by §17.5 and §18.7. |
+| `ci.yml` | workflow | Jobs `fmt`, `docs`, `deny` and `check` (4 runners). Normative content: m0-foundations.md §8, amended by §17.5, §18.7, §19.3 and §19.9 (row 19-9 a). |
 
 | Job | Runner | What it runs |
 |-----|--------|--------------|
 | `fmt` | `ubuntu-latest` | `cargo fmt --all -- --check` |
 | `docs` | `ubuntu-latest` | `python3 scripts/check_project_docs.py .` with `fetch-depth: 50`, so the AI co-author check sees the last 50 commits |
 | `deny` | `ubuntu-latest` | Builds cargo-deny 0.20.2 from crates.io (`--locked`) in the runner's temp folder, outside the checkout, with no cache. Then runs `cargo deny --locked --manifest-path Cargo.toml --config .cargo/deny.toml check`. |
-| `check (<os>)` | `windows-latest`, `windows-11-arm`, `ubuntu-latest`, `ubuntu-24.04-arm` | `cargo xtask ci --no-fmt`, then `cargo build --release --locked -p visual-assembler -p va`, then (Windows only) the GUI startup smoke step |
+| `check (<os>)` | `windows-latest`, `windows-11-arm`, `ubuntu-latest`, `ubuntu-24.04-arm` | `cargo xtask ci --no-fmt`, then `cargo build --release --locked -p visual-assembler -p va`, then (Windows only) the two GUI smoke steps |
 
 ## Entry points
 - `ci.yml`. Rules for editing it:
@@ -31,12 +31,18 @@ The check list itself lives in `cargo xtask ci`, so the workflow never duplicate
   - The rust cache is saved by `main` runs only, and the `deny` job never uses it.
   - Linux runners install no apt package in M0. If a dependency ever needs system libraries, add one
     `apt-get install --no-install-recommends` step and document it in the spec.
-- The **GUI startup smoke** step is informational: `continue-on-error`, a 3-minute timeout, and
+- The two **GUI smoke** steps are informational: `continue-on-error`, a 3-minute timeout, and
   `bash`, because PowerShell does not wait for GUI-subsystem executables. Hosted runners have no GPU,
-  so it may fail. It never counts as evidence for a support tier (architecture §9.1).
-  m0-foundations.md §19.3 adds a second informational smoke step on the Windows runners, run with
-  `VA_TEST_FAIL_RENDERER=glow`, to document the renderer fallback. It is not in `ci.yml` yet (fix-wave
-  row 19-4).
+  so they may fail. They never count as evidence for a support tier (architecture §9.1).
+  - **GUI startup smoke** runs `./target/release/visual-assembler.exe --bench startup`, so its line
+    shows what `auto` starts on the hosted image.
+  - **GUI renderer fallback smoke** sets `VA_TEST_FAIL_RENDERER`, through the step's `env:`, to the
+    first renderer of the runner's `auto` order: `glow` on `windows-latest`, `wgpu` on
+    `windows-11-arm`. Its log shows a fallback (`"fallback_from":"glow"` on x64,
+    `"fallback_from":"wgpu"` on ARM64). On ARM64, when the image has no usable OpenGL, it shows the
+    `no renderer could be initialized (tried wgpu, then glow)` lines instead.
+  - Neither step can gate a merge (`continue-on-error`). The real fallback is tested locally
+    (`apps/visual-assembler/tests/README.md`).
 
 ## Dependencies
 - Internal: `cargo xtask ci`, `scripts/check_project_docs.py`, `.cargo/deny.toml`.
@@ -44,18 +50,20 @@ The check list itself lives in `cargo xtask ci`, so the workflow never duplicate
   `Swatinem/rust-cache` v2.9.2, each pinned by SHA in `ci.yml`.
 
 ## Tests / usage
-The workflow has **not run yet**: the GitHub repository does not exist until M0 is committed and
-pushed, so exit criterion E2 is not observable yet. Branch protection with the required checks
-`fmt`, `docs`, `deny` and the four `check (…)` jobs is planned after the push, with the user's
-consent. Until then every CI check is advisory.
+The workflow has run once: run 38635672228 (2026-10-14, commit `c326afd`, before the §19 renderer
+work) passed all 7 jobs. The §19 changes, the fallback smoke step included, have not run in CI yet.
+Branch protection on `main` requires `fmt`, `docs`, `deny` and the four `check (…)` jobs. It does not
+include administrators (`enforce_admins` is off), so the owner's direct pushes are not gated.
 
-Reading runs from the dev machine, once the repository is pushed. `gh` is not on `PATH` in agent
-shells, so call it by its full path:
+Reading runs and the protection from the dev machine. `gh` is not on `PATH` in agent shells, so call
+it by its full path:
 
 ```bash
 "C:/Program Files/GitHub CLI/gh.exe" run list --workflow ci.yml --limit 5
 "C:/Program Files/GitHub CLI/gh.exe" run watch <run-id>
 "C:/Program Files/GitHub CLI/gh.exe" run view <run-id> --log-failed
+"C:/Program Files/GitHub CLI/gh.exe" api repos/GaspardSapin/VisualAssembler/branches/main/protection
 ```
 Locally, `make ci` (`cargo xtask ci`) runs the checks of the `check` job's first step, plus the fmt
-check. It does not run the release build or the smoke step.
+check. It does not run the release build or the smoke steps. `cargo test -p xtask --test ci` checks
+that the fallback smoke step is the spec block and that every action stays SHA-pinned.

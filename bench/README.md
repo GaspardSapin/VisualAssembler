@@ -7,7 +7,7 @@ bench writes is machine-specific, and lives in gitignored sub-folders.
 ## Contents
 | Entry | Type | Purpose |
 |-------|------|---------|
-| `results/` | folder (gitignored) | `va.bench.report/1` reports written by `cargo xtask bench`, named `<YYYYMMDDTHHMMSSZ>-<sha8>.json` (`nogit` before the first commit). Reports never overwrite each other. |
+| `results/` | folder (gitignored) | `va.bench.report/2` reports written by `cargo xtask bench` (shipped binary; requested and used renderer, fallback count), named `<YYYYMMDDTHHMMSSZ>-<sha8>.json` (`nogit` before the first commit). Reports never overwrite each other. |
 | `generated/` | folder (gitignored, from M4) | Generated 5,000- and 100,000-line projects for the memory and large-file benches |
 
 Both folders are also hidden from agents by `.claudeignore`: reports are large and only cited by name.
@@ -23,9 +23,9 @@ Both folders are also hidden from agents by `.claudeignore`: reports are large a
 ## Tests / usage
 ```bash
 make bench SCENARIO=startup RUNS=3
-cargo xtask bench all --renderer wgpu
+cargo xtask bench all --renderer all
 ```
-Both need a display and open the window repeatedly. Under WSL, export
-`CARGO_TARGET_DIR=$HOME/.cache/visualassembler/target` first, and prefix the command with
-`env -u WAYLAND_DISPLAY` until the X11-under-WSL rule of m0 §19.1 lands (see
-`apps/visual-assembler/README.md`).
+Both need a display and open the window repeatedly. The second one is run N1 of
+`docs/perf/M0-backend.md` §11 (glow, wgpu, then the shipped `auto`). Under WSL, export
+`CARGO_TARGET_DIR=$HOME/.cache/visualassembler/target` first; the GUI then uses X11 by default, and
+`VA_WAYLAND=1` must never be combined with a wgpu run (see `apps/visual-assembler/README.md`).

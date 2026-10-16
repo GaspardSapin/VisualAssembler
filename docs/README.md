@@ -12,8 +12,8 @@ reports. User-facing guides (French and English) arrive in M8 under `user/`.
 
 ## Entry points
 - `specs/architecture.md`, then `specs/m0-foundations.md`.
-- `perf/M0-backend.md` for the measured renderer numbers. The renderer decision itself is the
-  user's: `specs/m0-foundations.md` §19 and `specs/architecture.md` §9.8.
+- `perf/M0-backend.md` for the measured renderer numbers (§11: the shipped binary). The renderer
+  decision itself is the user's: `specs/m0-foundations.md` §19 and `specs/architecture.md` §9.8.
 
 ## Dependencies
 - Internal: none.

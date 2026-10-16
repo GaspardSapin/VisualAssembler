@@ -7,15 +7,16 @@ task runner `cargo xtask`. CPU-agnostic crates in `crates/`, one crate per CPU i
 Current milestone: **M0 foundations**, in its closing stretch: workspace, tooling, CI, measured empty
 window; every library crate is still a skeleton. Specs: `docs/specs/architecture.md`, then
 `docs/specs/m0-foundations.md`, with precedence **§19 > §18 > §17 > body (§0–§16)**. §18.8 indexes
-the body passages that §17/§18 supersede. §19 is the user's renderer decision: it replaces the
-decision rule of §12.3/§12.4/§17.13 and outcome W, and §19.8 lists its fix wave.
+the body passages that §17/§18/§19 supersede. §19 is the user's renderer decision: it replaces the
+decision rule of §12.3/§12.4/§17.13 and outcome W, and §19.8 lists its fix wave. §19.9 ratifies the
+landed implementation (same precedence as §19) and adds fix-wave rows 19-8…19-11.
 
 ## Stack and versions
 - Rust **1.99.0** pinned (`rust-toolchain.toml`, with rustfmt and clippy), edition 2024, resolver 3,
   `rust-version = "1.99"`. Windows host: MSVC; Linux: WSL Ubuntu 26.04.
 - GUI: eframe/egui 0.36.2 (default features off) with two renderers, glow 0.17.0 and wgpu 30.0.1.
-  Decided (m0 §19): both compiled into the shipped binary, glow first. **Not implemented yet**: the
-  code still has `default = ["renderer-wgpu"]` (wgpu only) until fix-wave row 19-2 lands.
+  Both compiled into the shipped binary (`default = ["renderer-glow", "renderer-wgpu"]`), glow first
+  (m0 §19). winit 0.30.13 is a direct, Linux-only dependency (X11 hook under WSL).
 - CLI and tooling: clap 4.6.7, serde 1.0.229, serde_json 1.0.151, anyhow 1.0.104 (xtask only).
 - Tools: GNU make 4.4.1 (Git Bash on Windows), Python 3.11+ (`tomllib`), cargo-deny 0.20.2, git,
   GitHub Actions. `gh` lives at `C:/Program Files/GitHub CLI/gh.exe` (not on `PATH` in agent shells).
@@ -34,8 +35,8 @@ Everything goes through the Makefile (`make -s help`); logic lives in `cargo xta
 | `make format` | `cargo fmt --all` |
 | `make docs` | regenerate `AGENCEMENT.md` + `scripts/check_project_docs.py` (must exit 0) |
 | `make security` | cargo-deny, explicit `--locked --manifest-path … --config .cargo/deny.toml` form (Windows only locally) |
-| `make ci` | `cargo xtask ci`: step 0 build config, fmt, clippy ×2, layering + source scan, tests |
-| `make bench SCENARIO=… RENDERER=… RUNS=…` | `cargo xtask bench` (needs a display) |
+| `make ci` | `cargo xtask ci`: step 0 build config, fmt, clippy ×3 (all features, glow only, wgpu only), layering + source scan, tests |
+| `make bench SCENARIO=… RENDERER=… RUNS=…` | `cargo xtask bench` on the shipped binary, `RENDERER=auto\|glow\|wgpu\|all` (default `auto`; needs a display) |
 | `make clean` | `cargo clean` |
 
 WSL: `wsl.exe -d Ubuntu -e bash -lc 'cd "/mnt/c/Users/sapin/Documents/Code Info/VisualAssembler" && export CARGO_TARGET_DIR=$HOME/.cache/visualassembler/target && <cmd>' 2>&1 | tr -d '\0'`.
@@ -50,7 +51,9 @@ Live layering check alone: `cargo test -p xtask --test layering -- --ignored liv
   and `#![allow(clippy::unwrap_used)]`; every crate root starts with `//!`. Test temp folders:
   `<CARGO_TARGET_TMPDIR>/<tag>-<pid>-<n>` created with `fs::create_dir`, never `std::env::temp_dir`.
 - **Dependencies (rule R6)**: one exact `=` pin per crate in the root `[workspace.dependencies]`;
-  members write `name = { workspace = true }`. Only crates already used (cargo-deny `unused = "deny"`).
+  members write `name = { workspace = true }`. Only crates declared by at least one member:
+  `scripts/check_project_docs.py` check 3b enforces it (m0 §19.9 S19-3). cargo-deny `unused = "deny"`
+  only proves the pinned version is in the resolved graph.
   A new dependency goes back to the Architect, then gets a `DEPENDANCE.md` line and an `IMPORT.md` entry.
 - **Lints (rule R8)**: every member has exactly `[lints] workspace = true` and `license.workspace = true`.
   No `rustfmt.toml`/`clippy.toml`. CI runs clippy with `-D warnings`, so every `warn` blocks.
@@ -85,14 +88,16 @@ Live layering check alone: `cargo test -p xtask --test layering -- --ignored liv
   renderer initialization error before the first frame (never for platform errors, later errors,
   panics or a forced renderer). A forced renderer that fails exits 3. Precedence `--renderer` >
   `VA_RENDERER` > `settings.toml` `[render] renderer` (M4) > `auto`. Under WSL, X11 for every
-  renderer unless `VA_WAYLAND=1`. wgpu on Windows stays pinned to DX12 unless `WGPU_BACKEND` is set.
+  renderer unless `VA_WAYLAND=1`. wgpu on Windows stays pinned to DX12 (override below).
   Test hook `VA_TEST_FAIL_RENDERER` is compiled into every build. *Rejected:* wgpu by default, the
-  earlier measured rule (`docs/perf/M0-backend.md` §6). **Pending** fix-wave rows 19-1…19-7: today
-  only the DX12 pin exists; there is no `auto`, no fallback, no WSL X11 default.
+  earlier measured rule (`docs/perf/M0-backend.md` §6). Implemented (rows 19-1…19-4, 19-8…19-11).
+  After a glow failure, the wgpu fallback leaves out wgpu's GL backend. `WGPU_BACKEND` lifts the DX12
+  pin and that exclusion only when it names a backend wgpu recognizes (m0 §19.9 WP2-1, S19-4). The
+  test hook warns only when a renderer is armed (§19.9 WP2-6).
 - GUI app = library + thin binary, so CLI parsing, UI and bench are testable without a window (m0 §4).
-- Bench: the gating startup number is the outer `spawn_to_first_frame_ms` (m0 §6.1, §15). The current
-  runner builds one single-renderer binary per renderer; m0 §19.5 replaces it with the shipped
-  dual-renderer binary and `--renderer auto|glow|wgpu|all` (default `auto`), pending row 19-3.
+- Bench: the gating startup number is the outer `spawn_to_first_frame_ms` (m0 §6.1, §15). The runner
+  measures the shipped dual-renderer binary with `--renderer auto|glow|wgpu|all` (default `auto`;
+  m0 §19.5), schemas `va.bench.run/2` and `va.bench.report/2`.
 - Static MSVC CRT (`+crt-static` in `.cargo/config.toml`), so no VC++ redistributable (architecture §9.2).
 - Offline product, no telemetry: cargo-deny bans network/TLS/telemetry crates and `mio/net`; source
   scan for network APIs (architecture §9.3).
@@ -109,12 +114,18 @@ Live layering check alone: `cargo test -p xtask --test layering -- --ignored liv
 - Any change to `.cargo/config.toml` must update `CANONICAL_CARGO_CONFIG` in the same commit.
 - WSL: always `export CARGO_TARGET_DIR=$HOME/.cache/visualassembler/target` (ext4). Never share the
   Windows `target/` with WSL.
-- **WSLg: wgpu on Wayland crashes the compositor** (weston 9.0.0, WSLg 1.0.73.2). Until the §19 X11
-  default lands, launch GUIs with `env -u WAYLAND_DISPLAY` (X11); after it, never measure wgpu with
-  `VA_WAYLAND=1`. `wsl --shutdown` only as a last resort, after the compositor has not recovered
-  within 180 s (m0 §17.13); never reboot; no `sudo`/`apt` (give the user the command instead).
+- **WSLg: wgpu on Wayland crashes the compositor** (weston 9.0.0, WSLg 1.0.73.2). The app defaults
+  to X11 under WSL; never run wgpu with `VA_WAYLAND=1`. `wsl --shutdown` only as a last resort, after
+  the compositor has not recovered within 180 s (m0 §17.13); never reboot; no `sudo`/`apt` (give the
+  user the command instead).
 - Windows release `visual-assembler.exe` uses the GUI subsystem: it prints nothing in a console and
-  PowerShell does not wait for it. Use Git Bash, a pipe, the debug build, or `va`.
+  PowerShell does not wait for it. Use Git Bash, a pipe, the debug build, or `va`. `VA_*` warnings
+  and §19.4 messages are visible only with a redirected stderr (§19.9 S19-1).
+- A failed glow attempt leaves its GL context current; `WGPU_BACKEND=gl` plus a glow failure panics
+  (exit 101) under WSLg (§19.9 WP2-1).
+- Whenever `Cargo.lock` changes eframe, egui, egui-wgpu, egui_glow, wgpu, glutin or winit, QA runs
+  `cargo test -p visual-assembler --test fallback -- --ignored --test-threads=1` on Windows and under
+  WSLg X11 (`env -u WAYLAND_DISPLAY`) (§19.9 S19-5).
 - On Windows, `cargo xtask ci` renames the running `xtask.exe` to `xtask.exe.old` before the test
   step; two concurrent runs on one target folder fail.
 - The live layering test must be run **by name** (`live_workspace`): two other ignored tests record
@@ -143,5 +154,6 @@ Live layering check alone: `cargo test -p xtask --test layering -- --ignored liv
   `.github/workflows/ci.yml`, `scripts/git-hooks/commit-msg`, `LICENSE-MIT`, `LICENSE-APACHE`.
 - `xtask/src/layering.rs` allow-lists (`UNSAFE_ALLOWLIST`, `NET_ALLOWLIST`, `INCLUDE_ALLOWLIST`) —
   Security review and a `SECURITY.md` record for every entry.
-- Git: the orchestrator alone commits and pushes. The public repository `GaspardSapin/VisualAssembler`
-  and its branch protection come after M0 is audited and committed, with the user's consent.
+- Git: the orchestrator alone commits and pushes, to the public repository
+  `GaspardSapin/VisualAssembler`. `main` is protected (the 7 CI checks are required; admins are not
+  included).
