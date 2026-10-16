@@ -641,17 +641,49 @@ one line per Windows runner. Both come from the **wgpu-only build before §19**,
 | `windows-latest` (x86_64) | wgpu / dx12 | Microsoft Basic Render Driver (10.0.26100.33438) | 617.8 | 593.8 | 50.2 MiB | 271.5 MiB |
 | `windows-11-arm` (aarch64) | wgpu / dx12 | Microsoft Basic Render Driver (10.0.26100.9278) | 1042.5 | 546.9 | 53.8 MiB | 272.5 MiB |
 
-The two §19 smoke steps of `ci.yml` are **pending first CI run**: the §19 tree has not run in CI yet, so no result
-is claimed for them.
+The two §19 smoke steps of `ci.yml` first ran in **CI run 38969165969** (commit `6ed43c8`, 2026-10-16T21:24Z, all 7
+jobs green), on the shipped dual-renderer release build:
 
 - **GUI startup smoke:** plain `auto` (`./target/release/visual-assembler.exe --bench startup`) on both Windows runners.
-- **GUI renderer fallback smoke** (row 19-9(a), CR19-06): the step's `env:` sets `VA_TEST_FAIL_RENDERER` to the
+- **GUI renderer fallback smoke** (row 19-9(a), CR19-06): the same command, with `VA_TEST_FAIL_RENDERER` set to the
   **first renderer of the runner's `auto` order**: `glow` on `windows-latest` (x64), `wgpu` on `windows-11-arm`
   (ARM64).
-- What row 19-9(a) expects, not yet observed: `"fallback_from":"glow"` in the x64 log; on ARM64 either
-  `"fallback_from":"wgpu"` or, when the hosted image has no usable OpenGL, the
-  `no renderer could be initialized (tried wgpu, then glow)` lines. Both steps stay `continue-on-error` and
-  informational.
+
+Both runners have no GPU: wgpu finds only WARP (Microsoft Basic Render Driver), and glow gets only the OpenGL 1.1
+software driver, which egui_glow rejects (the GL version string itself is not logged).
+
+| Runner | Step | `VA_TEST_FAIL_RENDERER` | Exit | Used | `fallback_from` | `fallback_reason` | `injected_failure` | Backend / adapter |
+|---|---|---|---|---|---|---|---|---|
+| `windows-latest` (x86_64) | startup smoke | unset | 0 | wgpu | `glow` | `egui_glow: OpenGL: egui_glow requires opengl 2.0+.` | null | dx12 / WARP (10.0.26100.33438) |
+| `windows-latest` (x86_64) | fallback smoke | `glow` | 0 | wgpu | `glow` | the same genuine GL error | `"glow"` | dx12 / WARP (10.0.26100.33438) |
+| `windows-11-arm` (aarch64) | startup smoke | unset | 0 | wgpu | null | null | null | dx12 / WARP (10.0.26100.9278) |
+| `windows-11-arm` (aarch64) | fallback smoke | `wgpu` | **3** | none | — | — | — | no JSON line |
+
+- **x64, plain `auto`: a genuine glow failure.** stderr, one line:
+  `warning: the glow renderer failed to initialize: egui_glow: OpenGL: egui_glow requires opengl 2.0+. ; falling back to wgpu`.
+  `auto` fell back to wgpu (DX12 pin, WARP) before the first frame. This is the **first genuine, non-injected fallback observed on Windows** (CI, software driver;
+  §11.4 N5 item 6).
+- **x64, `glow` injected.** stderr prints the test-hook warning, then the same genuine GL error. `fallback_reason`
+  is the genuine error, not `injected renderer failure (VA_TEST_FAIL_RENDERER)`: glow's real initialization fails
+  before the injection point, which comes after the full OpenGL initialization (N4). Row 19-9(a)'s
+  `"fallback_from":"glow"` is present.
+- **ARM64, plain `auto`:** wgpu first, as §19.1 orders for Windows aarch64; no fallback.
+- **ARM64, `wgpu` injected:** the injected wgpu failure falls back to glow, and glow fails genuinely. Exit 3, nothing
+  on stdout, and exactly the §19.4 lines on stderr:
+
+  ```
+  warning: VA_TEST_FAIL_RENDERER=wgpu is set: simulating a renderer initialization failure (test hook)
+  warning: the wgpu renderer failed to initialize: injected renderer failure (VA_TEST_FAIL_RENDERER); falling back to glow
+  error: no renderer could be initialized (tried wgpu, then glow): egui_glow: OpenGL: egui_glow requires opengl 2.0+.
+  note: see the README section "Renderer selection"
+  ```
+
+  This is the outcome row 19-9(a) and CR19-06 allow when the hosted image has no usable OpenGL. The step is
+  `continue-on-error`, so the job stays green.
+- **Numbers (informational only):** startup_ms / process CPU ms / peak RSS / peak private: x64 `auto` 510.0 / 546.9 /
+  51.3 MiB / 276.3 MiB; x64 fallback smoke 251.7 / 484.4 / 49.3 MiB / 275.9 MiB; ARM64 `auto` 824.4 / 421.9 /
+  53.8 MiB / 272.5 MiB. These are single launches with software rendering on shared VMs. They are never compared
+  with local numbers and never feed a gate.
 
 ---
 
@@ -672,7 +704,7 @@ is claimed for them.
   - it ran on battery.
 - **Thin G4 margin.** The AC margin of C1d is 7 %, from one unreplicated session.
 - **No git sha** in rounds 1–2: the repository had no commit yet. Round 3 records `c326afd9` with a dirty tree (§1.1).
-- **Not measured:** native Linux Wayland/X11 and Windows ARM64. ARM64 is compiled only, through E3 and CI.
+- **Not measured:** native Linux Wayland/X11 and Windows ARM64. ARM64 is compiled through E3 and has only the informational CI smoke launches of §9.4 (WARP).
 - **Not attempted, by design of the procedure:** C3 and C4 benches, and C3's third probe.
 - **G2 and cold start** are pending a human.
 
@@ -808,9 +840,9 @@ Units as in §3. Peak RSS and peak private are startup p50, with idle p50 in bra
   - The extra memory is consistent with the AMD OpenGL driver (`atio6axx.dll`, 62.8 MiB mapped, §3.4) staying loaded after the failed attempt. Round 3 did not take a module listing, so this is not verified.
   - On the fallback path the Windows startup **misses the 500 ms target** (pooled p95 594.2 ms). The default path, where glow works, meets it with a wide margin (N1).
 
-**N5: genuine OpenGL failure (WSLg X11).** m0 §19.9 WP2-12 ratifies two genuine-failure commands, and WP2-13
-records a third case that cannot fall back. Items 1 and 2 are the two ratified commands; item 3 is the variant
-that round 3 measured; item 5 is the driver crash.
+**N5: genuine OpenGL failure (WSLg X11; Windows CI in item 6).** m0 §19.9 WP2-12 ratifies two genuine-failure
+commands, and WP2-13 records a third case that cannot fall back. Items 1 and 2 are the two ratified commands; item 3
+is the variant that round 3 measured; item 5 is the driver crash; item 6 is the Windows evidence, from CI.
 
 1. **The §19.3 libglvnd command does not make OpenGL fail on this machine** (round 3, 09:26:18Z). Command: `env -u WAYLAND_DISPLAY __GLX_VENDOR_LIBRARY_NAME=va-none __EGL_VENDOR_LIBRARY_FILENAMES=/nonexistent/egl_vendor.json "$CARGO_TARGET_DIR/bench/shipped/visual-assembler" --bench startup`. One launch: exit 0, `renderer glow`, `fallback_from null`, `xlib`, startup_ms 92.6.
    - Diagnosis: with `LIBGL_DEBUG=verbose`, the same launch printed Mesa's libGL messages (`screen 0 does not appear to be DRI3 capable`, drirc lookups). So glow goes through GLX, and libglvnd still loaded Mesa's GLX vendor despite `__GLX_VENDOR_LIBRARY_NAME=va-none`. This is consistent with libglvnd falling back to the vendor that the X server advertises.
@@ -839,7 +871,16 @@ that round 3 measured; item 5 is the driver crash.
    - The crash kills the process inside the driver, before eframe returns any error, so the fallback loop never runs.
    - As for a panic (§19.2), the README tells the user to start with the other renderer forced.
    - This case is not in the §11.6 launch counts.
-6. No genuine failure was attempted on Windows (§19.3: it would need admin changes).
+6. **Windows: one genuine failure, observed in CI, software driver.** No genuine failure was attempted on the
+   reference machine (§19.3: it would need admin changes). CI run 38969165969 (§9.4) shows one on `windows-latest`
+   (x64, no GPU, OpenGL 1.1 software driver only):
+   - plain `auto`: `fallback_from glow`, `fallback_reason "egui_glow: OpenGL: egui_glow requires opengl 2.0+. "`,
+     `injected_failure null`, then wgpu on dx12 / Microsoft Basic Render Driver (WARP), exit 0;
+   - with `VA_TEST_FAIL_RENDERER=glow`, the same genuine reason, because glow fails before the injection point;
+   - on `windows-11-arm`, glow fails the same way when it runs as the fallback after an injected wgpu failure, so
+     that launch exits 3 with the §19.4 lines (no renderer left).
+
+   These are single launches on a hosted VM, with no cost measurement.
 
 **N6: both renderers fail (Windows, one launch).** Exit code **3** after 566 ms wall, nothing on stdout (no bench line), and exactly this on stderr, as §19.4 specifies:
 
@@ -865,7 +906,7 @@ Extra forced-renderer checks, also exit 3, with no `falling back` line:
 | Idle: 0 frames and about 0 % CPU | Windows `auto`: 0 frames and 0.00 % in 6 of 6 runs (18 of 18 over all renderers). WSLg X11 `auto`: median 0 frames and 0.01 %, with one uncontrolled run of 6 frames at 0.58 % (N2). WSLg Wayland glow: 0 frames, 0.01 % | **Met** (median, as G3 defines it) |
 | RAM < 500 MB with a 5,000-line project | **Not measurable in M0**: there is no editor or project yet, and M4 measures it. Empty-window baseline, Windows `auto`: peak RSS 91.5 MiB at startup and 109.3 MiB idle, peak private 118.0–118.2 MiB. Forced wgpu: 331–335 MiB. Fallback path: 355 MiB. WSLg X11 `auto`: 120.3–120.5 MiB | Baseline recorded. 500 MB is 476.8 MiB: the default path's idle 109.3 MiB leaves about 367 MiB, and the fallback path's startup 354.6 MiB leaves about 122 MiB |
 | Fallback cost (injected glow failure vs forced wgpu) | Windows +142.4 / +167.9 ms (p50 / p95, upper bound). WSLg X11 +18.8 / +29.8 ms | Reported. The Windows fallback path misses the 500 ms target (p95 594.2 ms) |
-| Genuine OpenGL failure (N5) | The §19.3 libglvnd command does not fail here (glow initializes). The WP2-12 command (`MESA_GL_VERSION_OVERRIDE=1.1 MESA_GLES_VERSION_OVERRIDE=1.0`) falls back to wgpu/Vulkan in 3 of 3 launches (correction pass). The round-3 1.4 variant does too, in 3 of 3 launches, at no measurable cost over 20 runs. `LIBGL_ALWAYS_INDIRECT=1` (WP2-13, from WP2's report, not reproduced) crashes glow's GLX path: SIGSEGV, exit 139, no fallback | The fallback works on a real OpenGL error. The libglvnd command is ineffective on this machine. A driver crash cannot fall back (accepted limitation WP2-13) |
+| Genuine OpenGL failure (N5) | The §19.3 libglvnd command does not fail here (glow initializes). The WP2-12 command (`MESA_GL_VERSION_OVERRIDE=1.1 MESA_GLES_VERSION_OVERRIDE=1.0`) falls back to wgpu/Vulkan in 3 of 3 launches (correction pass). The round-3 1.4 variant does too, in 3 of 3 launches, at no measurable cost over 20 runs. `LIBGL_ALWAYS_INDIRECT=1` (WP2-13, from WP2's report, not reproduced) crashes glow's GLX path: SIGSEGV, exit 139, no fallback. **Windows, CI, software driver** (run 38969165969, `windows-latest`, no GPU): plain `auto` hits `egui_glow requires opengl 2.0+` and falls back to wgpu/DX12 on WARP, exit 0 (item 6) | The fallback works on a real OpenGL error, on WSLg (local) and on Windows (CI, software driver). The libglvnd command is ineffective on this machine. A driver crash cannot fall back (accepted limitation WP2-13) |
 | Both renderers fail: exit 3 | Exit 3, the §19.4 messages, no leftover process | **Met** |
 
 ### 11.6 WSLg procedure (§17.13) and compositor crashes
@@ -934,14 +975,14 @@ console log and the stdout and stderr of each launch are in the scratchpad too (
 
   The agent does not claim any of them.
 - **Cold start** (§7): right after a reboot, on AC.
-- **CI GUI smoke of the §19 binary: pending first CI run** (§9.4). On both Windows runners, plain `auto`, then the fallback smoke step, which injects the first renderer of each runner's `auto` order (row 19-9(a)): `glow` on `windows-latest` (x64), `wgpu` on `windows-11-arm` (ARM64). It needs the orchestrator's commit and push; no CI result is claimed.
+- No longer pending: the **CI GUI smoke of the §19 binary** ran in CI run 38969165969 (§9.4). `windows-latest`: genuine glow failure and fallback to wgpu in both steps, exit 0. `windows-11-arm`: plain `auto` used wgpu, exit 0; the `wgpu`-injected step ended in exit 3 with the §19.4 lines, an outcome row 19-9(a) allows.
 
 ### 11.9 Limitations of round 3
 
 - **Comparisons across rounds are confounded.** A Windows feature update (25H2 → 26H2) landed between rounds 1–2 and round 3, and session-to-session spread on AC is about 25 % (§11.4). Within round 3, the paired and interleaved runs (N4, auto vs glow) are the reliable comparisons.
-- **On Windows the fallback cost is measured only with the injection**, so it is an upper bound. Every genuine failure (N5: the WP2-12 command and the 1.4 variant) ran on WSLg only, with software GL, through Mesa environment overrides. Only the 1.4 variant has a 20-run cost measurement; the WP2-12 command has 3 single launches.
+- **On Windows the fallback cost is measured only with the injection**, so it is an upper bound. Every local genuine failure (N5: the WP2-12 command and the 1.4 variant) ran on WSLg only, with software GL, through Mesa environment overrides. Only the 1.4 variant has a 20-run cost measurement; the WP2-12 command has 3 single launches. The only Windows genuine failure is the CI one (N5 item 6): a GPU-less hosted VM with a software OpenGL driver, single launches, no cost measurement.
 - **The driver-crash case (WP2-13) is recorded, not measured.** `LIBGL_ALWAYS_INDIRECT=1` was deliberately not launched in round 3 or in the correction pass; its SIGSEGV / exit 139 outcome comes from WP2's report.
 - **WSLg renders in software** (llvmpipe/lavapipe). WSLg numbers do not represent a GPU path.
-- **ARM64 was not measured.** Windows ARM64, whose `auto` order is wgpu first, has only the pre-§19 CI line of §9.4. Its fallback smoke step injects `wgpu` and is pending first CI run.
+- **ARM64 was not measured.** Windows ARM64, whose `auto` order is wgpu first, has only the informational CI launches of §9.4, on WARP. In CI run 38969165969, plain `auto` used wgpu with no fallback; the fallback smoke step (`wgpu` injected) exited 3 because the image has no usable OpenGL. A successful wgpu-to-glow fallback has not been observed on ARM64.
 - **Unattended runs.** The agent cannot verify the absence of user input. The two idle outliers (§5.1 and N2) are classified as uncontrolled, not as defects.
 - **Docs outside WP6's scope are not re-checked here.** The root `README.md` ("Renderer selection") and `apps/visual-assembler/README.md` ("Renderer policy") now document the implemented §19 policy, the WP2-13 driver-crash advice included (fix-wave row 19-6 and the §19.9.6 WP7 row). Keeping their quoted numbers in step with this report is WP7's job.
