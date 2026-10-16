@@ -29,9 +29,10 @@ struct Cli {
 /// The tasks of `cargo xtask`.
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// Build the GUI once per renderer, measure startup and idle runs, write a JSON report.
+    /// Build the shipped GUI once, measure startup and idle runs per renderer choice, write a
+    /// JSON report.
     Bench(bench::BenchArgs),
-    /// Run the CI checks: build configuration, fmt, clippy (all features, then glow only),
+    /// Run the CI checks: build configuration, fmt, clippy (all features, glow only, wgpu only),
     /// layering and sources, tests.
     Ci(ci::CiArgs),
     /// Regenerate AGENCEMENT.md, then verify the project documentation.

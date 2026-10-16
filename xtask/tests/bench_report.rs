@@ -1,6 +1,8 @@
 //! Tests for `src/bench/report.rs`: report file name, markdown table and the
-//! `va.bench.report/1` document built from synthetic samples (idle spawn→frame is `null`,
-//! §17.8). Temporary folders live under `CARGO_TARGET_TMPDIR` (§17.9).
+//! `va.bench.report/2` document built from synthetic samples (idle spawn→frame is `null`,
+//! §17.8; requested and used renderer, fallback count, shipped binary and renderer variables,
+//! §19.5), and the `va.bench.run/2` line (§19.5 example). Temporary folders live under
+//! `CARGO_TARGET_TMPDIR` (§17.9).
 #![allow(clippy::unwrap_used)]
 
 use std::{
@@ -16,16 +18,17 @@ use serde::{
 };
 use serde_json::Value;
 use xtask::bench::{
-    Renderer, Scenario,
+    RendererChoice, Scenario,
     report::{
-        BenchResult, BenchRun, EnvSnapshot, GitInfo, HostInfo, MARKDOWN_HEADER, MIXED, Report,
-        ResultConfig, Sample, report_file_name, write_report,
+        BenchResult, BenchRun, ENV_VARS, EnvSnapshot, GitInfo, HostInfo, MARKDOWN_HEADER,
+        MARKDOWN_SEPARATOR, MIXED, REPORT_SCHEMA, RUN_SCHEMA, Report, ResultConfig, SHIPPED_BINARY,
+        Sample, UNKNOWN, report_file_name, write_report,
     },
     stats::Summary,
 };
 
-/// The run line example of m0-foundations.md §4.6.
-const SPEC_RUN_LINE: &str = r#"{"schema":"va.bench.run/1","scenario":"idle","renderer":"wgpu","backend":"dx12","adapter":"AMD Radeon(TM) 860M Graphics","driver":"…","window_system":"win32","wsl":false,"os":"windows","arch":"x86_64","version":"0.1.0","startup_ms":182.4,"frames_painted":0,"process_cpu_ms":15.6,"peak_rss_bytes":91226112,"peak_private_bytes":40960000,"settle_ms":1000,"idle_window_ms":10000.7}"#;
+/// The run line example of m0-foundations.md §19.5 (it replaces the §4.6 example).
+const SPEC_RUN_LINE: &str = r#"{"schema":"va.bench.run/2","scenario":"startup","renderer_requested":"auto","renderer":"wgpu","fallback_from":"glow","fallback_reason":"injected renderer failure (VA_TEST_FAIL_RENDERER)","injected_failure":"glow","backend":"dx12","adapter":"AMD Radeon(TM) 860M Graphics","driver":"…","window_system":"win32","wsl":false,"os":"windows","arch":"x86_64","version":"0.1.0","startup_ms":512.3,"frames_painted":1,"process_cpu_ms":437.5,"peak_rss_bytes":358612992,"peak_private_bytes":120586240,"settle_ms":null,"idle_window_ms":null}"#;
 
 /// Bytes per MiB.
 const MIB: u64 = 1_048_576;
@@ -35,12 +38,16 @@ fn at(seconds: u64) -> SystemTime {
     UNIX_EPOCH + Duration::from_secs(seconds)
 }
 
-/// A startup run line on DX12 / Win32.
+/// A startup run line forced to wgpu, on DX12 / Win32.
 fn startup_run() -> BenchRun {
     BenchRun {
-        schema: "va.bench.run/1".to_owned(),
+        schema: "va.bench.run/2".to_owned(),
         scenario: "startup".to_owned(),
+        renderer_requested: "wgpu".to_owned(),
         renderer: "wgpu".to_owned(),
+        fallback_from: None,
+        fallback_reason: None,
+        injected_failure: None,
         backend: "dx12".to_owned(),
         adapter: Some("Test Adapter".to_owned()),
         driver: Some("1.0".to_owned()),
@@ -79,11 +86,11 @@ fn sample(spawn_to_first_frame_ms: f64, run: BenchRun) -> Sample {
     }
 }
 
-/// A result configuration for `scenario` on wgpu with a 10 MiB binary.
+/// A result configuration for `scenario` requested with `--renderer wgpu`, 10 MiB binary.
 fn config(scenario: Scenario) -> ResultConfig {
     ResultConfig {
         scenario,
-        renderer: Renderer::Wgpu,
+        renderer_requested: RendererChoice::Wgpu,
         binary_bytes: 10 * MIB,
         warmup: 1,
         runs: 2,
@@ -152,23 +159,29 @@ fn report_file_name_uses_compact_utc_and_sha() {
     );
 }
 
+/// §19.5 replaced the header: `requested`, `renderer` and `fallbacks` columns.
 #[test]
 fn markdown_header_matches_the_spec_exactly() {
-    let spec = "| scenario | renderer | backend | window | spawn→frame p50/p95 ms | startup p50/p95 ms | idle CPU p50/p95 % | frames p50/max | peak RSS p50 MiB | binary MiB |";
+    let spec = "| scenario | requested | renderer | fallbacks | backend | window | spawn→frame p50/p95 ms | startup p50/p95 ms | idle CPU p50/p95 % | frames p50/max | peak RSS p50 MiB | binary MiB |";
     assert_eq!(MARKDOWN_HEADER, spec);
     let table = report(vec![startup_result()]).markdown_table();
     assert_eq!(table.lines().next(), Some(spec));
 }
 
+/// §19.5: 12 columns; the requested choice, the used renderer and the fallback count follow
+/// the scenario.
 #[test]
 fn markdown_row_formats_units_and_missing_values() {
     let table = report(vec![startup_result()]).markdown_table();
     let lines: Vec<&str> = table.lines().collect();
     assert_eq!(lines.len(), 3);
-    assert_eq!(lines[1], "|---|---|---|---|---|---|---|---|---|---|");
+    assert_eq!(
+        lines[1],
+        "|---|---|---|---|---|---|---|---|---|---|---|---|"
+    );
     assert_eq!(
         lines[2],
-        "| startup | wgpu | dx12 | win32 | 205.0/210.0 | 150.0/150.0 | n/a | 1/1 | 100.0 | 10.0 |"
+        "| startup | wgpu | wgpu | 0 | dx12 | win32 | 205.0/210.0 | 150.0/150.0 | n/a | 1/1 | 100.0 | 10.0 |"
     );
 }
 
@@ -176,14 +189,17 @@ fn markdown_row_formats_units_and_missing_values() {
 fn synthetic_report_has_schema_and_null_idle_cpu_for_startup() {
     let value: Value =
         serde_json::from_str(&report(vec![startup_result()]).to_json().unwrap()).unwrap();
-    assert_eq!(value["schema"], "va.bench.report/1");
+    assert_eq!(value["schema"], "va.bench.report/2");
     assert_eq!(value["created_utc"], "2023-11-14T22:13:20Z");
     assert_eq!(value["profile"], "release");
     assert_eq!(value["git"]["sha"], "1a2b3c4d");
     assert_eq!(value["host"]["logical_cpus"], 16);
     let result = &value["results"][0];
     assert_eq!(result["scenario"], "startup");
+    assert_eq!(result["renderer_requested"], "wgpu");
     assert_eq!(result["renderer"], "wgpu");
+    assert_eq!(result["fallbacks"], 0);
+    assert_eq!(result["binary"], "shipped");
     assert!(result["duration_secs"].is_null());
     assert!(result["summary"]["idle_cpu_percent"].is_null());
     assert_eq!(
@@ -191,13 +207,16 @@ fn synthetic_report_has_schema_and_null_idle_cpu_for_startup() {
         205.0
     );
     assert_eq!(result["samples"].as_array().unwrap().len(), 2);
-    assert_eq!(result["samples"][0]["run"]["schema"], "va.bench.run/1");
+    assert_eq!(result["samples"][0]["run"]["schema"], "va.bench.run/2");
     for name in [
         "WGPU_BACKEND",
         "WGPU_ADAPTER_NAME",
         "WGPU_POWER_PREF",
         "WAYLAND_DISPLAY",
         "DISPLAY",
+        "VA_RENDERER",
+        "VA_TEST_FAIL_RENDERER",
+        "VA_WAYLAND",
     ] {
         assert!(result["env"][name].is_null(), "{name}");
     }
@@ -214,7 +233,10 @@ fn report_keys_follow_the_schema_order() {
         &text,
         &[
             "scenario",
+            "renderer_requested",
             "renderer",
+            "fallbacks",
+            "binary",
             "binary_bytes",
             "warmup",
             "runs",
@@ -302,23 +324,75 @@ fn differing_descriptions_become_mixed() {
     assert_eq!(all_null.adapter, None);
 }
 
+/// §19.5 replaced the §4.6 example with the v2 fallback example.
 #[test]
 fn spec_run_line_round_trips_byte_for_byte() {
     let run: BenchRun = serde_json::from_str(SPEC_RUN_LINE).unwrap();
-    assert_eq!(run.scenario, "idle");
-    assert_eq!(run.peak_private_bytes, Some(40_960_000));
+    assert_eq!(run.schema, RUN_SCHEMA);
+    assert_eq!(run.scenario, "startup");
+    assert_eq!(run.renderer_requested, "auto");
+    assert_eq!(run.renderer, "wgpu");
+    assert_eq!(run.fallback_from.as_deref(), Some("glow"));
+    assert_eq!(
+        run.fallback_reason.as_deref(),
+        Some("injected renderer failure (VA_TEST_FAIL_RENDERER)")
+    );
+    assert_eq!(run.injected_failure.as_deref(), Some("glow"));
+    assert_eq!(run.peak_private_bytes, Some(120_586_240));
     assert_eq!(serde_json::to_string(&run).unwrap(), SPEC_RUN_LINE);
 }
 
+/// §19.5 added `VA_RENDERER`, `VA_TEST_FAIL_RENDERER` and `VA_WAYLAND` to the five variables.
 #[test]
-fn env_snapshot_reads_the_five_variables() {
+fn env_snapshot_reads_the_eight_variables() {
     let snapshot =
         EnvSnapshot::from_lookup(|name| (name == "WGPU_BACKEND").then(|| "gl".to_owned()));
     assert_eq!(snapshot.wgpu_backend.as_deref(), Some("gl"));
     assert_eq!(snapshot.display, None);
     let value = serde_json::to_value(&snapshot).unwrap();
-    assert_eq!(value.as_object().unwrap().len(), 5);
+    assert_eq!(value.as_object().unwrap().len(), 8);
     assert_eq!(value["WGPU_BACKEND"], "gl");
+
+    let renderer_vars = EnvSnapshot::from_lookup(|name| match name {
+        "VA_RENDERER" => Some("wgpu".to_owned()),
+        "VA_TEST_FAIL_RENDERER" => Some("glow,wgpu".to_owned()),
+        "VA_WAYLAND" => Some("1".to_owned()),
+        _ => None,
+    });
+    assert_eq!(renderer_vars.va_renderer.as_deref(), Some("wgpu"));
+    assert_eq!(
+        renderer_vars.va_test_fail_renderer.as_deref(),
+        Some("glow,wgpu")
+    );
+    assert_eq!(renderer_vars.va_wayland.as_deref(), Some("1"));
+    let value = serde_json::to_value(&renderer_vars).unwrap();
+    assert_eq!(value["VA_RENDERER"], "wgpu");
+    assert_eq!(value["VA_TEST_FAIL_RENDERER"], "glow,wgpu");
+    assert_eq!(value["VA_WAYLAND"], "1");
+    assert!(value["WGPU_BACKEND"].is_null());
+}
+
+#[test]
+fn env_snapshot_asks_for_each_variable_once_in_report_order() {
+    let mut asked = Vec::new();
+    let _ = EnvSnapshot::from_lookup(|name| {
+        asked.push(name.to_owned());
+        None
+    });
+    assert_eq!(asked, ENV_VARS);
+    assert_eq!(
+        ENV_VARS,
+        [
+            "WGPU_BACKEND",
+            "WGPU_ADAPTER_NAME",
+            "WGPU_POWER_PREF",
+            "WAYLAND_DISPLAY",
+            "DISPLAY",
+            "VA_RENDERER",
+            "VA_TEST_FAIL_RENDERER",
+            "VA_WAYLAND",
+        ]
+    );
 }
 
 #[test]
@@ -333,7 +407,7 @@ fn write_report_never_overwrites_and_adds_a_suffix() {
     assert_eq!(second, dir.join("20231114T221320Z-1a2b3c4d-2.json"));
     assert_eq!(third, dir.join("20231114T221320Z-1a2b3c4d-3.json"));
     let written: Value = serde_json::from_str(&std::fs::read_to_string(&first).unwrap()).unwrap();
-    assert_eq!(written["schema"], "va.bench.report/1");
+    assert_eq!(written["schema"], "va.bench.report/2");
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
@@ -343,11 +417,15 @@ fn write_report_never_overwrites_and_adds_a_suffix() {
 // missing metrics, unicode paths with spaces, write failures and malformed run lines.
 // ---------------------------------------------------------------------------------------------
 
-/// The 18 keys of a `va.bench.run/1` line, in their normative order (§4.6).
-const RUN_KEYS: [&str; 18] = [
+/// The 22 keys of a `va.bench.run/2` line, in their normative order (§19.5).
+const RUN_KEYS: [&str; 22] = [
     "schema",
     "scenario",
+    "renderer_requested",
     "renderer",
+    "fallback_from",
+    "fallback_reason",
+    "injected_failure",
     "backend",
     "adapter",
     "driver",
@@ -397,6 +475,27 @@ fn keys_of<T: serde::Serialize>(value: &T) -> Vec<String> {
     keys_in_order(&serde_json::to_string(value).unwrap())
 }
 
+/// The keys of a `va.bench.report/2` result object, in order: §6.2 with `renderer` replaced by
+/// `renderer_requested` + `renderer`, then `fallbacks` and `binary` (§19.5).
+const RESULT_KEYS: [&str; 16] = [
+    "scenario",
+    "renderer_requested",
+    "renderer",
+    "fallbacks",
+    "binary",
+    "binary_bytes",
+    "warmup",
+    "runs",
+    "duration_secs",
+    "env",
+    "backend",
+    "adapter",
+    "driver",
+    "window_system",
+    "summary",
+    "samples",
+];
+
 #[test]
 fn every_report_object_has_exactly_the_schema_keys_in_order() {
     let idle = BenchResult::new(
@@ -411,34 +510,8 @@ fn every_report_object_has_exactly_the_schema_keys_in_order() {
     assert_eq!(keys_of(&report.git), ["sha", "dirty"]);
     assert_eq!(keys_of(&report.host), ["os", "arch", "wsl", "logical_cpus"]);
     for result in &report.results {
-        assert_eq!(
-            keys_of(result),
-            [
-                "scenario",
-                "renderer",
-                "binary_bytes",
-                "warmup",
-                "runs",
-                "duration_secs",
-                "env",
-                "backend",
-                "adapter",
-                "driver",
-                "window_system",
-                "summary",
-                "samples",
-            ]
-        );
-        assert_eq!(
-            keys_of(&result.env),
-            [
-                "WGPU_BACKEND",
-                "WGPU_ADAPTER_NAME",
-                "WGPU_POWER_PREF",
-                "WAYLAND_DISPLAY",
-                "DISPLAY",
-            ]
-        );
+        assert_eq!(keys_of(result), RESULT_KEYS);
+        assert_eq!(keys_of(&result.env), ENV_VARS);
         assert_eq!(
             keys_of(&result.summary),
             [
@@ -472,7 +545,7 @@ fn idle_markdown_row_uses_two_decimals_for_percentages() {
     );
     assert_eq!(
         idle.markdown_row(),
-        "| idle | wgpu | dx12 | win32 | n/a | 150.0/150.0 | 1.50/2.00 | 0/0 | 100.0 | 10.0 |"
+        "| idle | wgpu | wgpu | 0 | dx12 | win32 | n/a | 150.0/150.0 | 1.50/2.00 | 0/0 | 100.0 | 10.0 |"
     );
 }
 
@@ -485,7 +558,7 @@ fn markdown_row_shows_n_a_for_every_missing_metric() {
     let result = BenchResult::new(config(Scenario::Idle), vec![sample(200.0, linux_like)]);
     assert_eq!(
         result.markdown_row(),
-        "| idle | wgpu | dx12 | win32 | n/a | 150.0/150.0 | n/a | 0/0 | n/a | 10.0 |"
+        "| idle | wgpu | wgpu | 0 | dx12 | win32 | n/a | 150.0/150.0 | n/a | 0/0 | n/a | 10.0 |"
     );
 }
 
@@ -581,6 +654,12 @@ fn run_lines_with_wrong_types_are_rejected() {
         ("peak_rss_bytes", "-5"),
         ("schema", "1"),
         ("scenario", "null"),
+        ("renderer_requested", "null"),
+        ("renderer_requested", "1"),
+        ("renderer", "null"),
+        ("fallback_from", "1"),
+        ("fallback_reason", "true"),
+        ("injected_failure", "[\"glow\"]"),
     ] {
         let mut value: Value = serde_json::from_str(SPEC_RUN_LINE).unwrap();
         value[key] = serde_json::from_str(bad).unwrap();
@@ -648,6 +727,137 @@ fn a_startup_sample_without_spawn_time_makes_the_summary_null() {
     assert!(
         result
             .markdown_row()
-            .starts_with("| startup | wgpu | dx12 | win32 | n/a |")
+            .starts_with("| startup | wgpu | wgpu | 0 | dx12 | win32 | n/a |")
     );
+}
+
+// ---------------------------------------------------------------------------------------------
+// Renderer decision (§19.5): report v2 on the shipped binary.
+// ---------------------------------------------------------------------------------------------
+
+/// A startup run line requested with `auto`, running `renderer` after a fallback from
+/// `fallback_from` when it is `Some`.
+fn auto_run(renderer: &str, fallback_from: Option<&str>) -> BenchRun {
+    BenchRun {
+        renderer_requested: "auto".to_owned(),
+        renderer: renderer.to_owned(),
+        fallback_from: fallback_from.map(str::to_owned),
+        fallback_reason: fallback_from
+            .map(|_| "injected renderer failure (VA_TEST_FAIL_RENDERER)".to_owned()),
+        injected_failure: fallback_from.map(str::to_owned),
+        backend: if renderer == "glow" { "gl" } else { "dx12" }.to_owned(),
+        ..startup_run()
+    }
+}
+
+/// A startup result requested with `auto` holding `runs`.
+fn auto_result(runs: Vec<BenchRun>) -> BenchResult {
+    BenchResult::new(
+        ResultConfig {
+            renderer_requested: RendererChoice::Auto,
+            ..config(Scenario::Startup)
+        },
+        runs.into_iter().map(|run| sample(200.0, run)).collect(),
+    )
+}
+
+#[test]
+fn report_v2_schema_ids_and_shipped_binary() {
+    assert_eq!(REPORT_SCHEMA, "va.bench.report/2");
+    assert_eq!(RUN_SCHEMA, "va.bench.run/2");
+    assert_eq!(SHIPPED_BINARY, "shipped");
+    assert_eq!(startup_result().binary, "shipped");
+}
+
+#[test]
+fn auto_result_takes_the_used_renderer_from_the_samples() {
+    let result = auto_result(vec![auto_run("glow", None), auto_run("glow", None)]);
+    assert_eq!(result.renderer_requested, RendererChoice::Auto);
+    assert_eq!(result.renderer, "glow");
+    assert_eq!(result.fallbacks, 0);
+    assert_eq!(result.backend, "gl");
+    assert_eq!(
+        result.markdown_row(),
+        "| startup | auto | glow | 0 | gl | win32 | 200.0/200.0 | 150.0/150.0 | n/a | 1/1 | 100.0 | 10.0 |"
+    );
+}
+
+#[test]
+fn fallbacks_count_the_samples_with_a_fallback_from() {
+    let result = auto_result(vec![
+        auto_run("wgpu", Some("glow")),
+        auto_run("wgpu", Some("glow")),
+        auto_run("wgpu", Some("glow")),
+    ]);
+    assert_eq!(result.renderer, "wgpu");
+    assert_eq!(result.fallbacks, 3);
+    let value: Value = serde_json::from_str(&report(vec![result]).to_json().unwrap()).unwrap();
+    let result = &value["results"][0];
+    assert_eq!(result["renderer_requested"], "auto");
+    assert_eq!(result["renderer"], "wgpu");
+    assert_eq!(result["fallbacks"], 3);
+    assert!(result["fallbacks"].is_u64(), "an integer, not a float");
+    assert_eq!(result["samples"][0]["run"]["fallback_from"], "glow");
+    assert_eq!(result["samples"][0]["run"]["injected_failure"], "glow");
+}
+
+#[test]
+fn samples_that_ran_different_renderers_make_the_renderer_mixed() {
+    let result = auto_result(vec![
+        auto_run("glow", None),
+        auto_run("wgpu", Some("glow")),
+        auto_run("glow", None),
+    ]);
+    assert_eq!(result.renderer, MIXED);
+    assert_eq!(result.fallbacks, 1);
+    assert_eq!(result.backend, MIXED);
+    assert!(
+        result
+            .markdown_row()
+            .starts_with("| startup | auto | mixed | 1 | mixed | win32 |"),
+        "{}",
+        result.markdown_row()
+    );
+}
+
+#[test]
+fn a_result_without_samples_has_an_unknown_renderer_and_no_fallback() {
+    let result = BenchResult::new(config(Scenario::Startup), vec![]);
+    assert_eq!(result.renderer, UNKNOWN);
+    assert_eq!(result.fallbacks, 0);
+    assert_eq!(result.renderer_requested, RendererChoice::Wgpu);
+}
+
+#[test]
+fn markdown_separator_has_one_cell_per_header_column() {
+    let columns = MARKDOWN_HEADER.matches(" | ").count() + 1;
+    assert_eq!(columns, 12);
+    assert_eq!(MARKDOWN_SEPARATOR.matches("---").count(), columns);
+    for line in report(vec![startup_result()]).markdown_table().lines() {
+        assert_eq!(line.matches('|').count(), columns + 1, "{line}");
+    }
+}
+
+#[test]
+fn every_renderer_choice_serializes_as_its_cli_value() {
+    for (choice, text) in [
+        (RendererChoice::Auto, "auto"),
+        (RendererChoice::Glow, "glow"),
+        (RendererChoice::Wgpu, "wgpu"),
+    ] {
+        let result = BenchResult::new(
+            ResultConfig {
+                renderer_requested: choice,
+                ..config(Scenario::Startup)
+            },
+            vec![],
+        );
+        let value = serde_json::to_value(&result).unwrap();
+        assert_eq!(value["renderer_requested"], text);
+        assert!(
+            result
+                .markdown_row()
+                .starts_with(&format!("| startup | {text} | unknown | 0 |"))
+        );
+    }
 }

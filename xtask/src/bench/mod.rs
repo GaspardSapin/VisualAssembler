@@ -1,9 +1,13 @@
-//! `cargo xtask bench`: build one GUI binary per renderer, measure it, write a report (§6.1).
+//! `cargo xtask bench`: build the shipped GUI binary once, measure it per renderer choice, write
+//! a report (§6.1, amended by §17.8 and §19.5).
 //!
-//! Progress goes to stderr. stdout carries only the markdown table and `report: <path>`, or the
-//! report JSON with `--json`. Any failed build or run aborts the command (exit code 1) and no
-//! report is written. The parent environment passes through unchanged to the GUI, so
-//! `WGPU_BACKEND=gl` or `env -u WAYLAND_DISPLAY` select backends and window systems; the report
+//! The measured binary is the shipped one: default features, so both renderers are compiled in
+//! (m0-foundations.md §19.1). Each run passes `--renderer auto|glow|wgpu` to it; `--renderer all`
+//! measures glow, then wgpu, then auto. Progress goes to stderr. stdout carries only the markdown
+//! table and `report: <path>`, or the report JSON with `--json`. Any failed build or run aborts the
+//! command (exit code 1) and no report is written. The parent environment passes through unchanged
+//! to the GUI, so `WGPU_BACKEND=gl`, `VA_WAYLAND=1`, `VA_TEST_FAIL_RENDERER=glow` or
+//! `env -u WAYLAND_DISPLAY` select backends, window systems and the fallback path; the report
 //! records those variables.
 
 pub mod report;
@@ -23,7 +27,7 @@ use anyhow::{Context as _, Result};
 use serde::Serialize;
 
 use crate::{exec, locate};
-use report::{BenchResult, EnvSnapshot, GitInfo, HostInfo, Report, ResultConfig};
+use report::{BenchResult, BenchRun, EnvSnapshot, GitInfo, HostInfo, Report, ResultConfig};
 
 /// Measured runs of the startup scenario when `--runs` is absent.
 pub const DEFAULT_STARTUP_RUNS: u32 = 20;
@@ -71,27 +75,38 @@ impl fmt::Display for Scenario {
     }
 }
 
-/// A renderer compiled into the GUI (`renderer-<name>` feature).
+/// A `--renderer` value passed to the shipped GUI, recorded as `renderer_requested` in its run
+/// line (m0-foundations.md §19.1, §19.5).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 #[serde(rename_all = "lowercase")]
-pub enum Renderer {
-    /// wgpu (DX12, Vulkan, GL, Metal).
-    Wgpu,
-    /// glow (OpenGL through WGL, EGL or GLX).
+pub enum RendererChoice {
+    /// The shipped default: the target's order (glow then wgpu, or wgpu then glow on Windows
+    /// aarch64) with an in-process fallback when the first renderer fails to initialize.
+    Auto,
+    /// glow (OpenGL through WGL, EGL or GLX), forced: no fallback.
     Glow,
+    /// wgpu (DX12, Vulkan, GL, Metal), forced: no fallback.
+    Wgpu,
 }
 
-impl Renderer {
-    /// Returns the command-line, feature-suffix and JSON spelling.
+impl RendererChoice {
+    /// Returns the command-line and JSON spelling.
     pub fn as_str(self) -> &'static str {
         match self {
-            Self::Wgpu => "wgpu",
+            Self::Auto => "auto",
             Self::Glow => "glow",
+            Self::Wgpu => "wgpu",
         }
+    }
+
+    /// Tells whether this choice forces one renderer, so the GUI must neither fall back nor run
+    /// another renderer (§19.1, §19.5).
+    pub fn is_forced(self) -> bool {
+        self != Self::Auto
     }
 }
 
-impl fmt::Display for Renderer {
+impl fmt::Display for RendererChoice {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.as_str())
     }
@@ -108,14 +123,16 @@ pub enum ScenarioSelection {
     All,
 }
 
-/// Renderer selection on the command line.
+/// Renderer selection on the command line (§19.5).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 pub enum RendererSelection {
-    /// wgpu only.
-    Wgpu,
-    /// glow only.
+    /// The shipped default: glow first, wgpu as fallback (wgpu first on Windows aarch64).
+    Auto,
+    /// glow only, forced.
     Glow,
-    /// wgpu, then glow.
+    /// wgpu only, forced.
+    Wgpu,
+    /// glow, then wgpu, then auto.
     All,
 }
 
@@ -125,8 +142,8 @@ pub struct BenchArgs {
     /// Scenario to measure.
     #[arg(value_enum, default_value_t = ScenarioSelection::All)]
     pub scenario: ScenarioSelection,
-    /// Renderer to build and measure (one single-renderer binary each).
-    #[arg(long, value_enum, default_value_t = RendererSelection::Wgpu)]
+    /// Renderer choice passed to the shipped GUI (`all` = glow, then wgpu, then auto).
+    #[arg(long, value_enum, default_value_t = RendererSelection::Auto)]
     pub renderer: RendererSelection,
     /// Measured runs per scenario [default: 20 for startup, 3 for idle].
     #[arg(long, value_parser = clap::value_parser!(u32).range(1..))]
@@ -153,12 +170,17 @@ impl BenchArgs {
         }
     }
 
-    /// Returns the selected renderers in build order (wgpu, then glow).
-    pub fn renderers(&self) -> Vec<Renderer> {
+    /// Returns the selected renderer choices in run order (`all`: glow, then wgpu, then auto).
+    pub fn renderers(&self) -> Vec<RendererChoice> {
         match self.renderer {
-            RendererSelection::Wgpu => vec![Renderer::Wgpu],
-            RendererSelection::Glow => vec![Renderer::Glow],
-            RendererSelection::All => vec![Renderer::Wgpu, Renderer::Glow],
+            RendererSelection::Auto => vec![RendererChoice::Auto],
+            RendererSelection::Glow => vec![RendererChoice::Glow],
+            RendererSelection::Wgpu => vec![RendererChoice::Wgpu],
+            RendererSelection::All => vec![
+                RendererChoice::Glow,
+                RendererChoice::Wgpu,
+                RendererChoice::Auto,
+            ],
         }
     }
 
@@ -177,6 +199,9 @@ impl BenchArgs {
 }
 
 /// Runs the whole bench from `root` and prints its outcome on stdout.
+///
+/// Builds the shipped GUI once, then, for each renderer choice and each scenario, runs the
+/// warm-up runs (discarded, but they must succeed) and the measured runs.
 pub fn run(root: &Path, args: &BenchArgs) -> Result<()> {
     let cargo = locate::cargo();
     let target_dir = locate::target_directory(root)?;
@@ -184,18 +209,18 @@ pub fn run(root: &Path, args: &BenchArgs) -> Result<()> {
     let host = detect_host();
     let env = EnvSnapshot::capture();
 
+    eprintln!(
+        "==> build {} (shipped: default features, release)",
+        runner::GUI_PACKAGE
+    );
+    let binary = runner::build(root, &cargo, &target_dir)?;
+    eprintln!(
+        "==> measuring {} ({:.1} MiB)",
+        binary.path.display(),
+        binary.bytes as f64 / 1_048_576.0
+    );
     let mut results = Vec::new();
     for renderer in args.renderers() {
-        eprintln!(
-            "==> build {} (renderer-{renderer}, release)",
-            runner::GUI_PACKAGE
-        );
-        let binary = runner::build(root, &cargo, renderer, &target_dir)?;
-        eprintln!(
-            "==> measuring {} ({:.1} MiB)",
-            binary.path.display(),
-            binary.bytes as f64 / 1_048_576.0
-        );
         for scenario in args.scenarios() {
             let duration_secs = args.duration_for(scenario);
             let runs = args.runs_for(scenario);
@@ -205,9 +230,10 @@ pub fn run(root: &Path, args: &BenchArgs) -> Result<()> {
                         format!("{scenario}/{renderer} warm-up run {index}/{}", args.warmup)
                     })?;
                 eprintln!(
-                    "    {scenario}/{renderer} warm-up {index}/{}: spawn→frame {} (discarded)",
+                    "    {scenario}/{renderer} warm-up {index}/{}: spawn→frame {}, {} (discarded)",
                     args.warmup,
-                    milliseconds(sample.spawn_to_first_frame_ms)
+                    milliseconds(sample.spawn_to_first_frame_ms),
+                    used_renderer(&sample.run)
                 );
             }
             let mut samples = Vec::new();
@@ -215,15 +241,16 @@ pub fn run(root: &Path, args: &BenchArgs) -> Result<()> {
                 let sample = runner::run_once(&binary.path, scenario, renderer, duration_secs)
                     .with_context(|| format!("{scenario}/{renderer} run {index}/{runs}"))?;
                 eprintln!(
-                    "    {scenario}/{renderer} run {index}/{runs}: spawn→frame {}, frames {}",
+                    "    {scenario}/{renderer} run {index}/{runs}: spawn→frame {}, frames {}, {}",
                     milliseconds(sample.spawn_to_first_frame_ms),
-                    sample.run.frames_painted
+                    sample.run.frames_painted,
+                    used_renderer(&sample.run)
                 );
                 samples.push(sample);
             }
             let config = ResultConfig {
                 scenario,
-                renderer,
+                renderer_requested: renderer,
                 binary_bytes: binary.bytes,
                 warmup: args.warmup,
                 runs,
@@ -251,6 +278,15 @@ pub fn run(root: &Path, args: &BenchArgs) -> Result<()> {
 /// Formats an optional duration for the progress lines: `12.3 ms`, or `n/a` (idle runs).
 pub fn milliseconds(value: Option<f64>) -> String {
     value.map_or_else(|| "n/a".to_owned(), |ms| format!("{ms:.1} ms"))
+}
+
+/// Describes the renderer a run used, for the progress lines: `renderer glow`, or
+/// `renderer wgpu (fallback from glow)` (§19.5: a fallback under `auto` is counted, not rejected).
+pub fn used_renderer(run: &BenchRun) -> String {
+    match &run.fallback_from {
+        Some(from) => format!("renderer {} (fallback from {from})", run.renderer),
+        None => format!("renderer {}", run.renderer),
+    }
 }
 
 /// Reads the git state of `root`: short sha (`nogit` on failure) and dirtiness of tracked files.

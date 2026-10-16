@@ -1,5 +1,9 @@
-//! Bench build and spawn: one release GUI binary per renderer, and one measured child process
-//! per run (§6.1 steps 1 and 2, amended by §17.8).
+//! Bench build and spawn: the shipped release GUI binary, built once, and one measured child
+//! process per run (§6.1 steps 1 and 2, amended by §17.8 and §19.5).
+//!
+//! Every run passes `--renderer <auto|glow|wgpu>` and its run line is validated against that
+//! request ([`validate_run`]): a forced renderer must run as asked with no fallback, while under
+//! `auto` any renderer is valid and a fallback is counted by the report, not rejected.
 //!
 //! A run never waits unboundedly: the child gets a deadline that is strictly larger than the
 //! GUI's own watchdog, and once it has exited or been killed the output readers get at most
@@ -21,13 +25,16 @@ use anyhow::{Context as _, Result, anyhow, bail};
 use serde_json::Value;
 
 use super::{
-    Renderer, Scenario,
+    RendererChoice, Scenario,
     report::{BenchRun, RUN_SCHEMA, Sample},
 };
 use crate::exec;
 
 /// Package and binary name of the GUI.
 pub const GUI_PACKAGE: &str = "visual-assembler";
+
+/// Folder of the measured copy under `<target_directory>/bench/` (§19.5).
+pub const SHIPPED_DIR: &str = "shipped";
 
 /// Run timeout of the startup scenario, in seconds. Strictly larger than the GUI's 60 s startup
 /// watchdog, so the GUI's own `bench timed out` (exit 4) surfaces under xtask (§17.8).
@@ -60,22 +67,20 @@ const STDERR_CHUNK: usize = 8 * 1024;
 /// A measured GUI binary.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BuiltBinary {
-    /// The private copy that is measured: `<target>/bench/<renderer>/visual-assembler[.exe]`.
+    /// The private copy that is measured: `<target>/bench/shipped/visual-assembler[.exe]`.
     pub path: PathBuf,
     /// Its size in bytes.
     pub bytes: u64,
 }
 
-/// Returns the cargo arguments that build the GUI with `renderer` only.
-pub fn build_args(renderer: Renderer) -> Vec<String> {
+/// Returns the cargo arguments that build the shipped GUI: release, default features, so both
+/// renderers are compiled in (§19.5).
+pub fn build_args() -> Vec<String> {
     vec![
         "build".to_owned(),
         "--release".to_owned(),
         "-p".to_owned(),
         GUI_PACKAGE.to_owned(),
-        "--no-default-features".to_owned(),
-        "--features".to_owned(),
-        format!("renderer-{}", renderer.as_str()),
         "--message-format=json-render-diagnostics".to_owned(),
     ]
 }
@@ -103,26 +108,22 @@ pub fn gui_executable(message: &Value) -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
-/// Returns `<target_dir>/bench/<renderer>/visual-assembler[.exe]`.
-pub fn bench_copy_path(target_dir: &Path, renderer: Renderer) -> PathBuf {
+/// Returns `<target_dir>/bench/shipped/visual-assembler[.exe]`.
+pub fn bench_copy_path(target_dir: &Path) -> PathBuf {
     target_dir
         .join("bench")
-        .join(renderer.as_str())
+        .join(SHIPPED_DIR)
         .join(format!("{GUI_PACKAGE}{}", std::env::consts::EXE_SUFFIX))
 }
 
-/// Builds the GUI with `renderer` only, copies the binary to [`bench_copy_path`] and returns it.
+/// Builds the shipped GUI ([`build_args`]), copies the binary to [`bench_copy_path`] and returns
+/// the copy with its size.
 ///
 /// Cargo's rendered diagnostics stream to stderr; its JSON messages are read from stdout.
-pub fn build(
-    root: &Path,
-    cargo: &std::ffi::OsStr,
-    renderer: Renderer,
-    target_dir: &Path,
-) -> Result<BuiltBinary> {
+pub fn build(root: &Path, cargo: &std::ffi::OsStr, target_dir: &Path) -> Result<BuiltBinary> {
     let mut cmd = Command::new(cargo);
     cmd.current_dir(root)
-        .args(build_args(renderer))
+        .args(build_args())
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit());
@@ -165,7 +166,7 @@ pub fn build(
     let built = executable.with_context(|| {
         format!("`{description}` reported no executable for the {GUI_PACKAGE} binary")
     })?;
-    let copy = bench_copy_path(target_dir, renderer);
+    let copy = bench_copy_path(target_dir);
     let dir = copy
         .parent()
         .with_context(|| format!("{} has no parent folder", copy.display()))?;
@@ -190,9 +191,19 @@ pub fn run_timeout(scenario: Scenario, duration_secs: Option<u64>) -> Duration {
     }
 }
 
-/// Returns the GUI arguments of one run: `--bench <scenario> [--duration-secs N]`.
-pub fn run_args(scenario: Scenario, duration_secs: Option<u64>) -> Vec<String> {
-    let mut args = vec!["--bench".to_owned(), scenario.as_str().to_owned()];
+/// Returns the GUI arguments of one run:
+/// `--renderer <auto|glow|wgpu> --bench <scenario> [--duration-secs N]` (§19.5).
+pub fn run_args(
+    scenario: Scenario,
+    renderer: RendererChoice,
+    duration_secs: Option<u64>,
+) -> Vec<String> {
+    let mut args = vec![
+        "--renderer".to_owned(),
+        renderer.as_str().to_owned(),
+        "--bench".to_owned(),
+        scenario.as_str().to_owned(),
+    ];
     if scenario == Scenario::Idle
         && let Some(seconds) = duration_secs
     {
@@ -206,6 +217,51 @@ pub fn run_args(scenario: Scenario, duration_secs: Option<u64>) -> Vec<String> {
 pub fn parse_run_line(line: &str) -> Option<Value> {
     let value: Value = serde_json::from_str(line.trim()).ok()?;
     (value.get("schema").and_then(Value::as_str) == Some(RUN_SCHEMA)).then_some(value)
+}
+
+/// Checks that a run line answers the run that was asked for (§17.11, §19.5) and returns a
+/// description of the first mismatch otherwise:
+///
+/// - `scenario` must equal the requested scenario;
+/// - `renderer_requested` must equal the `--renderer` value passed;
+/// - for a forced `glow` or `wgpu`, `fallback_from` must be `null` and `renderer` must equal it;
+/// - for `auto`, any `renderer` is valid, and a fallback is accepted (the report counts it).
+pub fn validate_run(
+    run: &BenchRun,
+    scenario: Scenario,
+    renderer: RendererChoice,
+) -> Result<(), String> {
+    if run.scenario != scenario.as_str() {
+        return Err(format!(
+            "reported scenario `{}`, expected `{}`",
+            run.scenario,
+            scenario.as_str()
+        ));
+    }
+    if run.renderer_requested != renderer.as_str() {
+        return Err(format!(
+            "reported renderer_requested `{}`, expected `{}`",
+            run.renderer_requested,
+            renderer.as_str()
+        ));
+    }
+    if renderer.is_forced() {
+        if let Some(from) = &run.fallback_from {
+            return Err(format!(
+                "fell back from `{from}` to `{}` although `--renderer {}` forbids a fallback",
+                run.renderer,
+                renderer.as_str()
+            ));
+        }
+        if run.renderer != renderer.as_str() {
+            return Err(format!(
+                "reported renderer `{}`, expected `{}` (forced by --renderer)",
+                run.renderer,
+                renderer.as_str()
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// One line read by [`read_capped_line`].
@@ -409,19 +465,19 @@ impl Collected {
     }
 }
 
-/// Runs the measured binary once and returns its sample.
+/// Runs the measured binary once with `--renderer <renderer>` and returns its sample.
 ///
 /// Fails when the child cannot start, times out (it is then killed), exits non-zero, keeps its
-/// output pipes open after exiting, prints no `va.bench.run/1` line, or prints one for another
-/// scenario or renderer. The error carries the last 64 KiB of the child's stderr.
+/// output pipes open after exiting, prints no `va.bench.run/2` line, or prints one that does not
+/// answer the request ([`validate_run`]). The error carries the last 64 KiB of the child's stderr.
 pub fn run_once(
     binary: &Path,
     scenario: Scenario,
-    renderer: Renderer,
+    renderer: RendererChoice,
     duration_secs: Option<u64>,
 ) -> Result<Sample> {
     let mut cmd = Command::new(binary);
-    cmd.args(run_args(scenario, duration_secs));
+    cmd.args(run_args(scenario, renderer, duration_secs));
     run_command(
         cmd,
         scenario,
@@ -430,8 +486,8 @@ pub fn run_once(
     )
 }
 
-/// Runs `cmd` as one measured run of `scenario`/`renderer` with the deadline `timeout` (the
-/// engine of [`run_once`], which passes [`run_timeout`]).
+/// Runs `cmd` as one measured run of `scenario` requested with `renderer`, with the deadline
+/// `timeout` (the engine of [`run_once`], which passes [`run_args`] and [`run_timeout`]).
 ///
 /// stdin is null and stdout/stderr are piped. `spawn_to_first_frame_ms` is the receipt time of
 /// the first run line minus the instant just before the spawn, for startup runs; it is `None`
@@ -439,7 +495,7 @@ pub fn run_once(
 pub fn run_command(
     mut cmd: Command,
     scenario: Scenario,
-    renderer: Renderer,
+    renderer: RendererChoice,
     timeout: Duration,
 ) -> Result<Sample> {
     cmd.stdin(Stdio::null())
@@ -527,15 +583,7 @@ pub fn run_command(
     };
     let run: BenchRun = serde_json::from_value(value)
         .map_err(|error| failure(format!("printed an invalid {RUN_SCHEMA} line: {error}")))?;
-    if run.scenario != scenario.as_str() || run.renderer != renderer.as_str() {
-        return Err(failure(format!(
-            "reported scenario `{}` and renderer `{}`, expected `{}` and `{}`",
-            run.scenario,
-            run.renderer,
-            scenario.as_str(),
-            renderer.as_str()
-        )));
-    }
+    validate_run(&run, scenario, renderer).map_err(failure)?;
     let spawn_to_first_frame_ms = match scenario {
         Scenario::Startup => Some(received.duration_since(t0).as_secs_f64() * 1000.0),
         Scenario::Idle => None,

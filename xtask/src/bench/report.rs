@@ -1,6 +1,9 @@
-//! Bench report: the `va.bench.report/1` document, its markdown table and its file name (§6.2).
+//! Bench report: the `va.bench.report/2` document, its markdown table and its file name (§6.2,
+//! amended by §17.8 and §19.5).
 //!
-//! Every struct serializes its keys in the order of the specification.
+//! Every struct serializes its keys in the order of the specification. Version 2 measures the
+//! shipped dual-renderer binary: each result records the requested renderer choice, the renderer
+//! the samples actually used and how many of them fell back (§19.5).
 
 use std::{
     fs,
@@ -13,53 +16,69 @@ use anyhow::{Context as _, Result, bail};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    Renderer, Scenario,
+    RendererChoice, Scenario,
     stats::{Summary, summarize, summarize_optional},
     timestamp,
 };
 
-/// Schema id of the report document.
-pub const REPORT_SCHEMA: &str = "va.bench.report/1";
+/// Schema id of the report document (§19.5).
+pub const REPORT_SCHEMA: &str = "va.bench.report/2";
 
-/// Schema id of the JSON line printed by `visual-assembler --bench` (§4.6).
-pub const RUN_SCHEMA: &str = "va.bench.run/1";
+/// Schema id of the JSON line printed by `visual-assembler --bench` (§19.5, replacing §4.6).
+pub const RUN_SCHEMA: &str = "va.bench.run/2";
+
+/// Value of each result's `binary`: the measured binary is the shipped one (§19.5).
+pub const SHIPPED_BINARY: &str = "shipped";
 
 /// Cargo profile of the measured binaries.
 pub const PROFILE: &str = "release";
 
-/// Value of `backend`/`adapter`/`driver`/`window_system` when the samples disagree.
+/// Value of `renderer`/`backend`/`adapter`/`driver`/`window_system` when the samples disagree.
 pub const MIXED: &str = "mixed";
 
-/// Value of `backend`/`window_system` when there is no sample to read it from.
+/// Value of `renderer`/`backend`/`window_system` when there is no sample to read it from.
 pub const UNKNOWN: &str = "unknown";
 
-/// Environment variables recorded in each result, in report order.
-pub const ENV_VARS: [&str; 5] = [
+/// Environment variables recorded in each result, in report order: the five of §6.2, then the
+/// three renderer variables of §19.5.
+pub const ENV_VARS: [&str; 8] = [
     "WGPU_BACKEND",
     "WGPU_ADAPTER_NAME",
     "WGPU_POWER_PREF",
     "WAYLAND_DISPLAY",
     "DISPLAY",
+    "VA_RENDERER",
+    "VA_TEST_FAIL_RENDERER",
+    "VA_WAYLAND",
 ];
 
-/// Header line of the markdown table (§6.2, exact text).
-pub const MARKDOWN_HEADER: &str = "| scenario | renderer | backend | window | spawn→frame p50/p95 ms | startup p50/p95 ms | idle CPU p50/p95 % | frames p50/max | peak RSS p50 MiB | binary MiB |";
+/// Header line of the markdown table (§19.5, exact text).
+pub const MARKDOWN_HEADER: &str = "| scenario | requested | renderer | fallbacks | backend | window | spawn→frame p50/p95 ms | startup p50/p95 ms | idle CPU p50/p95 % | frames p50/max | peak RSS p50 MiB | binary MiB |";
 
-/// Separator line that follows [`MARKDOWN_HEADER`].
-pub const MARKDOWN_SEPARATOR: &str = "|---|---|---|---|---|---|---|---|---|---|";
+/// Separator line that follows [`MARKDOWN_HEADER`] (one cell per column).
+pub const MARKDOWN_SEPARATOR: &str = "|---|---|---|---|---|---|---|---|---|---|---|---|";
 
 /// Bytes per MiB.
 const MIB: f64 = 1_048_576.0;
 
-/// The JSON line printed by one GUI bench run, schema `va.bench.run/1` (§4.6, keys in order).
+/// The JSON line printed by one GUI bench run, schema `va.bench.run/2` (§19.5: the 18 keys of
+/// §4.6 plus the renderer selection keys, in this order).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BenchRun {
     /// Always [`RUN_SCHEMA`].
     pub schema: String,
     /// `startup` or `idle`.
     pub scenario: String,
-    /// `wgpu` or `glow`.
+    /// The resolved renderer choice: `auto`, `glow` or `wgpu`.
+    pub renderer_requested: String,
+    /// The renderer actually running: `glow` or `wgpu`.
     pub renderer: String,
+    /// The renderer that failed to initialize before this one took over, or `null`.
+    pub fallback_from: Option<String>,
+    /// First line of the error that caused the fallback, or `null`.
+    pub fallback_reason: Option<String>,
+    /// Raw `VA_TEST_FAIL_RENDERER` value when the failure-injection hook is set, or `null`.
+    pub injected_failure: Option<String>,
     /// Graphics backend, e.g. `dx12`, `vulkan`, `gl`.
     pub backend: String,
     /// GPU or adapter name.
@@ -102,7 +121,7 @@ pub struct Sample {
     pub run: BenchRun,
 }
 
-/// Environment variables that select backends and window systems, as seen by the runs.
+/// Environment variables that select renderers, backends and window systems, as seen by the runs.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct EnvSnapshot {
     /// `WGPU_BACKEND`.
@@ -120,18 +139,39 @@ pub struct EnvSnapshot {
     /// `DISPLAY`.
     #[serde(rename = "DISPLAY")]
     pub display: Option<String>,
+    /// `VA_RENDERER` (overridden by the `--renderer` flag xtask passes, recorded anyway).
+    #[serde(rename = "VA_RENDERER")]
+    pub va_renderer: Option<String>,
+    /// `VA_TEST_FAIL_RENDERER`, the failure-injection hook (§19.3).
+    #[serde(rename = "VA_TEST_FAIL_RENDERER")]
+    pub va_test_fail_renderer: Option<String>,
+    /// `VA_WAYLAND` (`1` keeps Wayland under WSL, §19.1).
+    #[serde(rename = "VA_WAYLAND")]
+    pub va_wayland: Option<String>,
 }
 
 impl EnvSnapshot {
     /// Builds a snapshot by asking `lookup` for each name of [`ENV_VARS`].
     pub fn from_lookup(mut lookup: impl FnMut(&str) -> Option<String>) -> Self {
-        let [backend, adapter, power, wayland, display] = ENV_VARS;
+        let [
+            backend,
+            adapter,
+            power,
+            wayland,
+            display,
+            renderer,
+            fail_renderer,
+            va_wayland,
+        ] = ENV_VARS;
         Self {
             wgpu_backend: lookup(backend),
             wgpu_adapter_name: lookup(adapter),
             wgpu_power_pref: lookup(power),
             wayland_display: lookup(wayland),
             display: lookup(display),
+            va_renderer: lookup(renderer),
+            va_test_fail_renderer: lookup(fail_renderer),
+            va_wayland: lookup(va_wayland),
         }
     }
 
@@ -170,8 +210,8 @@ pub struct HostInfo {
 pub struct ResultConfig {
     /// Measured scenario.
     pub scenario: Scenario,
-    /// Renderer compiled into the measured binary.
-    pub renderer: Renderer,
+    /// The `--renderer` value passed to the GUI.
+    pub renderer_requested: RendererChoice,
     /// Size of the measured binary, in bytes.
     pub binary_bytes: u64,
     /// Discarded warm-up runs.
@@ -246,13 +286,19 @@ impl ResultSummary {
     }
 }
 
-/// One (scenario, renderer) result of the report.
+/// One (renderer choice, scenario) result of the report.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct BenchResult {
     /// Measured scenario.
     pub scenario: Scenario,
-    /// Renderer compiled into the measured binary.
-    pub renderer: Renderer,
+    /// The `--renderer` value passed to the GUI.
+    pub renderer_requested: RendererChoice,
+    /// Renderer the samples used, `mixed` when they differ (possible under `auto`).
+    pub renderer: String,
+    /// Number of samples whose `fallback_from` is not `null`.
+    pub fallbacks: usize,
+    /// Always [`SHIPPED_BINARY`].
+    pub binary: &'static str,
     /// Size of the measured binary, in bytes.
     pub binary_bytes: u64,
     /// Discarded warm-up runs.
@@ -290,7 +336,14 @@ impl BenchResult {
         let summary = ResultSummary::from_samples(config.scenario, &samples);
         Self {
             scenario: config.scenario,
-            renderer: config.renderer,
+            renderer_requested: config.renderer_requested,
+            renderer: agreed(samples.iter().map(|s| Some(s.run.renderer.as_str())))
+                .unwrap_or_else(|| UNKNOWN.to_owned()),
+            fallbacks: samples
+                .iter()
+                .filter(|s| s.run.fallback_from.is_some())
+                .count(),
+            binary: SHIPPED_BINARY,
             binary_bytes: config.binary_bytes,
             warmup: config.warmup,
             runs: config.runs,
@@ -311,9 +364,11 @@ impl BenchResult {
     pub fn markdown_row(&self) -> String {
         let s = &self.summary;
         format!(
-            "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {:.1} |",
+            "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {:.1} |",
             self.scenario.as_str(),
-            self.renderer.as_str(),
+            self.renderer_requested.as_str(),
+            self.renderer,
+            self.fallbacks,
             self.backend,
             self.window_system,
             median_p95(s.spawn_to_first_frame_ms.as_ref(), 1),
@@ -353,7 +408,7 @@ fn not_available() -> String {
     "n/a".to_owned()
 }
 
-/// The `va.bench.report/1` document.
+/// The `va.bench.report/2` document.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Report {
     /// Always [`REPORT_SCHEMA`].
@@ -366,7 +421,7 @@ pub struct Report {
     pub host: HostInfo,
     /// Always [`PROFILE`].
     pub profile: &'static str,
-    /// One entry per (renderer, scenario), renderers in the order wgpu, glow.
+    /// One entry per (renderer choice, scenario), in run order (`all`: glow, wgpu, auto).
     pub results: Vec<BenchResult>,
 }
 

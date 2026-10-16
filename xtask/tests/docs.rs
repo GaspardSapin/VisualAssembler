@@ -326,24 +326,32 @@ const BOM: &[u8] = b"\xEF\xBB\xBF";
 const OUT_OF_SYNC: &str = "[layout] AGENCEMENT.md is out of sync";
 
 /// Runs the documentation check exactly as `cargo xtask docs` does (`<python>
-/// scripts/check_project_docs.py .` from the root) and returns its stdout. The project fixtures
-/// have no pilot files, so the exit code is not asserted. Returns `None` after printing
-/// `skipped: python not found` when the interpreter cannot be found.
-fn check_docs(root: &Path) -> Option<String> {
+/// scripts/check_project_docs.py .` from the root), plus `extra` arguments, and returns the whole
+/// output. Returns `None` after printing `skipped: python not found` when the interpreter cannot
+/// be found.
+fn check_docs_output(root: &Path, extra: &[&str]) -> Option<Output> {
     let python: OsString = python_program(std::env::var_os(PYTHON_ENV));
     match Command::new(&python)
         .current_dir(root)
         .arg(CHECK_SCRIPT)
         .arg(".")
+        .args(extra)
         .output()
     {
-        Ok(output) => Some(String::from_utf8_lossy(&output.stdout).into_owned()),
+        Ok(output) => Some(output),
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
             println!("skipped: python not found ({})", python.to_string_lossy());
             None
         }
         Err(error) => panic!("cannot run {}: {error}", python.to_string_lossy()),
     }
+}
+
+/// Runs the documentation check as [`check_docs_output`] does, without extra arguments, and
+/// returns its stdout. The project fixtures have no pilot files, so the exit code is not
+/// asserted. Returns `None` when python is not found.
+fn check_docs(root: &Path) -> Option<String> {
+    check_docs_output(root, &[]).map(|output| String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
 /// Generates the file, annotates the `lib.rs` entry with `note`, saves that with LF and
@@ -766,6 +774,366 @@ fn root_patch_and_replace_tables_are_reported() {
         let root = manifest_project("docs-manifest-patch", &manifest);
         if let Some(problems) = manifest_problems(&root) {
             assert_eq!(problems, [PATCH_TABLES], "{table}");
+        }
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// m0-foundations.md §19.9, row 19-10: regression tests for S19-3 (the reverse rule R6 check that
+// row 19-9(b) adds to check 3b of `check_project_docs.py`) and CR19-13 (check 4 names the tree
+// entries that still need an annotation). Same fixtures as above: the manifest project for the
+// first, the golden project, completed into a clean project, for the second.
+// ---------------------------------------------------------------------------------------------
+
+/// The row 19-9(b) problem for a `[workspace.dependencies]` key `name` that no member declares.
+fn undeclared_pin(name: &str) -> String {
+    format!(
+        "[deps] Cargo.toml: workspace dependency '{name}' is not declared by any member \
+         (rule R6: remove the pin or declare it with workspace = true)"
+    )
+}
+
+/// S19-3: cargo-deny's `unused = "deny"` accepts a pin that no member declares as soon as some
+/// dependency pulls that version, so check 3b reports it, with exactly the row 19-9(b) line.
+#[test]
+fn unused_workspace_dependency_is_reported() {
+    let manifest =
+        format!("{CLEAN_ROOT_MANIFEST}\n[workspace.dependencies]\nserde = \"=1.0.229\"\n");
+    let root = manifest_project("docs-manifest-unused-pin", &manifest);
+    if let Some(problems) = manifest_problems(&root) {
+        assert_eq!(problems, [undeclared_pin("serde")]);
+    }
+    std::fs::remove_dir_all(&root).unwrap();
+}
+
+/// A pin that the only member declares in a `[target.<cfg>]` dependency table (as the GUI
+/// declares winit for Linux, row 19-2) is declared: no `[deps]` line.
+#[test]
+fn workspace_dependency_used_only_in_a_target_table_counts() {
+    let manifest =
+        format!("{CLEAN_ROOT_MANIFEST}\n[workspace.dependencies]\nserde = \"=1.0.229\"\n");
+    let root = manifest_project("docs-manifest-target-pin", &manifest);
+    let member = format!(
+        "{}\n[target.'cfg(target_os = \"linux\")'.dependencies]\nserde = {{ workspace = true }}\n",
+        package_manifest("va-core")
+    );
+    write_file(&root, "crates/va-core/Cargo.toml", member.as_bytes());
+    if let Some(problems) = manifest_problems(&root) {
+        assert_eq!(problems, Vec::<String>::new());
+    }
+    std::fs::remove_dir_all(&root).unwrap();
+}
+
+/// S19-3: an internal path pin (M1+) matches its own member package, so cargo-deny never flags
+/// it; check 3b reports it when no member declares it.
+#[test]
+fn unused_path_workspace_dependency_is_reported() {
+    let manifest = format!(
+        "{CLEAN_ROOT_MANIFEST}\n[workspace.dependencies]\nva-core = {{ path = \"crates/va-core\" }}\n"
+    );
+    let root = manifest_project("docs-manifest-unused-path-pin", &manifest);
+    if let Some(problems) = manifest_problems(&root) {
+        assert_eq!(problems, [undeclared_pin("va-core")]);
+    }
+    std::fs::remove_dir_all(&root).unwrap();
+}
+
+/// Completes [`golden_project`] into a project that `check_project_docs.py --strict` accepts once
+/// AGENCEMENT.md is generated and annotated: the check script itself, every pilot file, a README
+/// in every folder that holds a file (the root one names every child folder), the recommended
+/// `.gitignore` entries and an installed `commit-msg` hook. The hook is a file in the fixture's
+/// own `.git/hooks`; nothing ever commits there, so it never runs.
+fn documented_golden_project() -> PathBuf {
+    let root = golden_project();
+    let workspace = xtask::locate::workspace_root().unwrap();
+    write_file(
+        &root,
+        CHECK_SCRIPT,
+        &std::fs::read(workspace.join(CHECK_SCRIPT)).unwrap(),
+    );
+    write_file(
+        &root,
+        ".gitignore",
+        b"/bench/results/\nlogs/\n.env\n__pycache__/\nnode_modules/\nvenv/\ndist/\nbuild/\n",
+    );
+    write_file(
+        &root,
+        "README.md",
+        "# Fixture\n\nFolders: alpha, bench, caf\u{e9}, scripts, Zeta.\n".as_bytes(),
+    );
+    for pilot in [
+        "CLAUDE.md",
+        "DEPENDANCE.md",
+        "IMPORT.md",
+        "SECURITY.md",
+        "Makefile",
+        ".claudeignore",
+    ] {
+        write_file(&root, pilot, b"fixture\n");
+    }
+    for folder in ["alpha", "caf\u{e9}", "scripts", "Zeta"] {
+        write_file(&root, &format!("{folder}/README.md"), b"# Folder\n");
+    }
+    write_file(&root, ".git/hooks/commit-msg", b"#!/bin/sh\nexit 0\n");
+    root
+}
+
+/// The end of both tree connectors (`├── ` and `└── `): only tree-entry lines hold it.
+const ENTRY_CONNECTOR: &str = "── ";
+
+/// Replaces the `<!-- annotate -->` marker of every tree entry of `text` with `note`. The header
+/// line that names the marker is not an entry and keeps it.
+fn annotate_every_entry(text: &str, note: &str) -> String {
+    let marker = format!("  # {TODO}");
+    text.split('\n')
+        .map(|line| match line.strip_suffix(marker.as_str()) {
+            Some(label) if label.contains(ENTRY_CONNECTOR) => format!("{label}  # {note}"),
+            _ => line.to_owned(),
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Replaces the whole annotation of the first tree entry whose label ends with `name` by `note`.
+fn set_annotation(text: &str, name: &str, note: &str) -> String {
+    let mut found = false;
+    let lines: Vec<String> = text
+        .split('\n')
+        .map(|line| match line.split_once("  # ") {
+            Some((label, _))
+                if !found
+                    && label.contains(ENTRY_CONNECTOR)
+                    && label.trim_end().ends_with(name) =>
+            {
+                found = true;
+                format!("{label}  # {note}")
+            }
+            _ => line.to_owned(),
+        })
+        .collect();
+    assert!(found, "no tree entry `{name}` in:\n{text}");
+    lines.join("\n")
+}
+
+/// Runs the check with `extra` arguments and returns (exit code, stdout).
+fn check_exit_and_report(root: &Path, extra: &[&str]) -> (Option<i32>, String) {
+    let output = check_docs_output(root, extra).unwrap();
+    (
+        output.status.code(),
+        String::from_utf8_lossy(&output.stdout).into_owned(),
+    )
+}
+
+/// CR19-13: check 4 looks at tree entries only. A fully annotated generated tree gives no
+/// `still unannotated` line (the header names the marker and never counts) and `--strict` exits
+/// 0; one entry set back to the marker is named with its path, and `--strict` then exits 1 while
+/// the plain check, for which it is only a warning, still exits 0.
+#[test]
+fn unannotated_tree_entry_is_reported_with_its_path() {
+    let root = documented_golden_project();
+    let Some(first) = generate(&root, &[]) else {
+        std::fs::remove_dir_all(&root).unwrap();
+        return;
+    };
+    assert_success(&first);
+    let generated = String::from_utf8(agencement(&root)).unwrap();
+    let annotated = annotate_every_entry(&generated, "fixture entry");
+    std::fs::write(root.join(AGENCEMENT), annotated.as_bytes()).unwrap();
+    assert_success(&generate(&root, &[]).unwrap());
+    let full = String::from_utf8(agencement(&root)).unwrap();
+    assert!(
+        full.contains(&format!("fill in the entries marked `{TODO}`"))
+            && full.contains(" \u{b7} 0 to annotate._"),
+        "not a fully annotated generated file:\n{full}"
+    );
+
+    let (code, report) = check_exit_and_report(&root, &["--strict"]);
+    assert!(
+        !report.contains("still unannotated"),
+        "a fully annotated tree is reported as unannotated:\n{report}"
+    );
+    assert_eq!(
+        code,
+        Some(0),
+        "--strict rejects the clean fixture:\n{report}"
+    );
+
+    let reverted = set_annotation(&full, "x.rs", TODO);
+    std::fs::write(root.join(AGENCEMENT), reverted.as_bytes()).unwrap();
+    let expected = "(warning) [layout] some entries are still unannotated (1): alpha/x.rs";
+
+    let (code, report) = check_exit_and_report(&root, &[]);
+    assert!(
+        report.lines().any(|line| line == expected),
+        "expected `{expected}` in:\n{report}"
+    );
+    assert_eq!(
+        code,
+        Some(0),
+        "an unannotated entry is only a warning:\n{report}"
+    );
+
+    let (code, report) = check_exit_and_report(&root, &["--strict"]);
+    assert!(
+        report.lines().any(|line| line == expected),
+        "expected `{expected}` in:\n{report}"
+    );
+    assert_eq!(
+        code,
+        Some(1),
+        "--strict must reject an unannotated entry:\n{report}"
+    );
+    std::fs::remove_dir_all(&root).unwrap();
+}
+
+/// QA (§19.9 re-check, CR19-13): the warning always gives the full count but names at most 10
+/// paths, then `and <k> more`. At the boundary, 10 pending entries are all named with no tail,
+/// and 11 give 10 distinct names among them plus ` and 1 more`; `--strict` exits 1 both times.
+#[test]
+fn unannotated_warning_names_at_most_ten_paths() {
+    // (label suffix found by `set_annotation`, path the check prints), ASCII names only.
+    const REVERTED: [(&str, &str); 11] = [
+        ("x.rs", "alpha/x.rs"),
+        ("y.txt", "Zeta/y.txt"),
+        ("a.md", "a.md"),
+        ("B.md", "B.md"),
+        ("AGENCEMENT.md", "AGENCEMENT.md"),
+        (".gitignore", ".gitignore"),
+        (".gitattributes", ".gitattributes"),
+        ("CLAUDE.md", "CLAUDE.md"),
+        ("DEPENDANCE.md", "DEPENDANCE.md"),
+        ("IMPORT.md", "IMPORT.md"),
+        ("SECURITY.md", "SECURITY.md"),
+    ];
+    const PREFIX: &str = "(warning) [layout] some entries are still unannotated (";
+    let root = documented_golden_project();
+    let Some(first) = generate(&root, &[]) else {
+        std::fs::remove_dir_all(&root).unwrap();
+        return;
+    };
+    assert_success(&first);
+    let generated = String::from_utf8(agencement(&root)).unwrap();
+    let annotated = annotate_every_entry(&generated, "fixture entry");
+    std::fs::write(root.join(AGENCEMENT), annotated.as_bytes()).unwrap();
+    assert_success(&generate(&root, &[]).unwrap());
+    let full = String::from_utf8(agencement(&root)).unwrap();
+
+    for count in [10, 11] {
+        let mut text = full.clone();
+        for (name, _) in &REVERTED[..count] {
+            text = set_annotation(&text, name, TODO);
+        }
+        std::fs::write(root.join(AGENCEMENT), text.as_bytes()).unwrap();
+        let (code, report) = check_exit_and_report(&root, &["--strict"]);
+        assert_eq!(code, Some(1), "{count} pending entries:\n{report}");
+        let line = report
+            .lines()
+            .find(|line| line.starts_with(PREFIX))
+            .unwrap_or_else(|| panic!("no unannotated warning for {count} entries:\n{report}"));
+        let listed = line
+            .strip_prefix(&format!("{PREFIX}{count}): "))
+            .unwrap_or_else(|| panic!("wrong count for {count} entries: {line}"));
+        let listed = match count - 10 {
+            0 => listed,
+            more => listed
+                .strip_suffix(&format!(" and {more} more"))
+                .unwrap_or_else(|| panic!("no `and {more} more` tail: {line}")),
+        };
+        let mut named: Vec<&str> = listed.split(", ").collect();
+        named.sort_unstable();
+        named.dedup();
+        assert_eq!(named.len(), 10, "{line}");
+        let expected: Vec<&str> = REVERTED[..count].iter().map(|(_, path)| *path).collect();
+        assert!(
+            named.iter().all(|path| expected.contains(path)),
+            "{line}\nexpected paths among {expected:?}"
+        );
+    }
+    std::fs::remove_dir_all(&root).unwrap();
+}
+
+// ---------------------------------------------------------------------------------------------
+// QA (§19.9 re-check, row 19-9 b, S19-3): the parts of the reverse check 3b contract that row
+// 19-10 leaves untested: every dependency table kind counts (dev, build, and a target variant of
+// one), each undeclared key is reported once and in sorted order, keys compare exactly (no case
+// folding), the root package's own tables count, and the check is skipped when a member table is
+// unusable (that table is reported instead).
+// ---------------------------------------------------------------------------------------------
+
+/// Row 19-9(b): declarations in `[dev-dependencies]`, `[build-dependencies]` and a
+/// `[target.<cfg>.dev-dependencies]` table count; the undeclared keys come once each, in sorted
+/// (code point) order; and a member's `case` does not declare the pin `Case`.
+#[test]
+fn undeclared_pins_are_reported_once_in_sorted_order_with_exact_keys() {
+    let manifest = format!(
+        "{CLEAN_ROOT_MANIFEST}\n[workspace.dependencies]\nzeta = \"=1.0.0\"\nalpha = \"=1.0.0\"\n\
+         Mid = \"=1.0.0\"\nCase = \"=1.0.0\"\ndev = \"=1.0.0\"\nbuild = \"=1.0.0\"\n\
+         windev = \"=1.0.0\"\n"
+    );
+    let root = manifest_project("docs-manifest-sorted-pins", &manifest);
+    let member = format!(
+        "{}\n[dependencies]\ncase = {{ workspace = true }}\n\n[dev-dependencies]\n\
+         dev = {{ workspace = true }}\n\n[build-dependencies]\nbuild = {{ workspace = true }}\n\n\
+         [target.'cfg(windows)'.dev-dependencies]\nwindev = {{ workspace = true }}\n",
+        package_manifest("va-core")
+    );
+    write_file(&root, "crates/va-core/Cargo.toml", member.as_bytes());
+    if let Some(problems) = manifest_problems(&root) {
+        assert_eq!(
+            problems,
+            [
+                undeclared_pin("Case"),
+                undeclared_pin("Mid"),
+                undeclared_pin("alpha"),
+                undeclared_pin("zeta"),
+            ]
+        );
+    }
+    std::fs::remove_dir_all(&root).unwrap();
+}
+
+/// Row 19-9(b): when the root manifest is also a package, its own tables (here a target variant)
+/// declare pins too; the check still runs, so the other undeclared pin is reported.
+#[test]
+fn root_package_tables_count_for_the_reverse_check() {
+    let manifest = format!(
+        "[package]\nname = \"fixture-root\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n\
+         {CLEAN_ROOT_MANIFEST}\n[workspace.dependencies]\nserde = \"=1.0.229\"\n\
+         toml = \"=1.0.0\"\n\n[target.'cfg(unix)'.dependencies]\nserde = {{ workspace = true }}\n"
+    );
+    let root = manifest_project("docs-manifest-root-package-pin", &manifest);
+    if let Some(problems) = manifest_problems(&root) {
+        let undeclared: Vec<&String> = problems
+            .iter()
+            .filter(|line| line.contains("is not declared by any member"))
+            .collect();
+        assert_eq!(undeclared, [&undeclared_pin("toml")], "{problems:?}");
+    }
+    std::fs::remove_dir_all(&root).unwrap();
+}
+
+/// Row 19-9(b): a member whose `[target]` or `[dependencies]` is not a table could hide a
+/// declaration, so the reverse check is skipped and only that table is reported.
+#[test]
+fn reverse_check_is_skipped_when_a_member_table_is_unusable() {
+    let manifest =
+        format!("{CLEAN_ROOT_MANIFEST}\n[workspace.dependencies]\nserde = \"=1.0.229\"\n");
+    for (key, expected) in [
+        (
+            "target = 1",
+            "[deps] crates/va-core/Cargo.toml: [target] is not a table",
+        ),
+        (
+            "dependencies = 1",
+            "[deps] crates/va-core/Cargo.toml: [dependencies] is not a table",
+        ),
+    ] {
+        let root = manifest_project("docs-manifest-unusable-member", &manifest);
+        let member = format!("{key}\n{}", package_manifest("va-core"));
+        write_file(&root, "crates/va-core/Cargo.toml", member.as_bytes());
+        if let Some(problems) = manifest_problems(&root) {
+            assert_eq!(problems, [expected], "{key}");
         }
         std::fs::remove_dir_all(&root).unwrap();
     }

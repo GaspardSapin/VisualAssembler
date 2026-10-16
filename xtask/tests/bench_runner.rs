@@ -1,9 +1,10 @@
 //! Tests for `src/bench/runner.rs` and the argument helpers of `src/bench/mod.rs`: the pure
-//! parts of building and spawning (cargo arguments, artifact message parsing, GUI arguments,
-//! timeouts, run-line detection, WSL detection, output caps), and, on Unix, the run engine
+//! parts of building and spawning (shipped-binary cargo arguments, artifact message parsing, GUI
+//! arguments with `--renderer`, timeouts, run-line detection and validation against the request,
+//! WSL detection, output caps; m0-foundations.md §17.8, §19.5), and, on Unix, the run engine
 //! against fake GUIs written in `sh` (deadlines, pipes held by a descendant, stderr tail,
-//! over-long lines; m0-foundations.md §17.8). Spawning a real GUI needs a display and is
-//! covered by the manual protocol of m0-foundations.md §12.
+//! over-long lines, forced and auto run lines). Spawning a real GUI needs a display and is
+//! covered by `cargo xtask bench` itself and the protocol of m0-foundations.md §19.7.
 #![allow(clippy::unwrap_used)]
 
 use std::{
@@ -15,12 +16,14 @@ use std::{
 use clap::Parser;
 use serde_json::json;
 use xtask::bench::{
-    BenchArgs, Renderer, Scenario, milliseconds, osrelease_is_wsl,
+    BenchArgs, RendererChoice, Scenario, milliseconds, osrelease_is_wsl,
+    report::BenchRun,
     runner::{
         CappedLine, IDLE_TIMEOUT_EXTRA_SECS, MAX_LINE_BYTES, READER_JOIN_TIMEOUT,
         STARTUP_TIMEOUT_SECS, STDERR_TAIL_BYTES, StreamTail, bench_copy_path, build_args,
-        gui_executable, parse_run_line, read_capped_line, run_args, run_timeout,
+        gui_executable, parse_run_line, read_capped_line, run_args, run_timeout, validate_run,
     },
+    used_renderer,
 };
 
 /// Minimal parser wrapping [`BenchArgs`] the way `cargo xtask bench` does.
@@ -36,21 +39,22 @@ fn parse(args: &[&str]) -> Result<BenchArgs, clap::Error> {
     Cli::try_parse_from(std::iter::once("bench").chain(args.iter().copied())).map(|cli| cli.bench)
 }
 
+/// §19.5 replaced the single-renderer builds: the bench builds the shipped binary once, with
+/// default features (both renderers).
 #[test]
-fn build_command_selects_one_renderer() {
+fn build_command_builds_the_shipped_binary_with_default_features() {
+    let args = build_args();
     assert_eq!(
-        build_args(Renderer::Glow),
+        args,
         [
             "build",
             "--release",
             "-p",
             "visual-assembler",
-            "--no-default-features",
-            "--features",
-            "renderer-glow",
             "--message-format=json-render-diagnostics",
         ]
     );
+    assert!(!args.iter().any(|arg| arg.contains("features")), "{args:?}");
 }
 
 #[test]
@@ -79,24 +83,39 @@ fn artifact_message_of_the_gui_binary_gives_its_executable() {
     assert_eq!(gui_executable(&json!({ "reason": "build-finished" })), None);
 }
 
+/// §19.5: the measured copy is `<target_directory>/bench/shipped/visual-assembler[.exe]`.
 #[test]
 fn bench_copy_lives_under_the_target_directory() {
-    let path = bench_copy_path(Path::new("target"), Renderer::Wgpu);
+    let path = bench_copy_path(Path::new("target"));
     let expected = Path::new("target")
         .join("bench")
-        .join("wgpu")
+        .join("shipped")
         .join(format!("visual-assembler{}", std::env::consts::EXE_SUFFIX));
     assert_eq!(path, expected);
 }
 
+/// §19.5: every run passes `--renderer <r>`; the duration still goes to idle runs only.
 #[test]
-fn gui_arguments_pass_the_duration_to_idle_only() {
-    assert_eq!(run_args(Scenario::Startup, None), ["--bench", "startup"]);
+fn gui_arguments_pass_the_renderer_and_the_duration_to_idle_only() {
     assert_eq!(
-        run_args(Scenario::Idle, Some(3)),
-        ["--bench", "idle", "--duration-secs", "3"]
+        run_args(Scenario::Startup, RendererChoice::Auto, None),
+        ["--renderer", "auto", "--bench", "startup"]
     );
-    assert_eq!(run_args(Scenario::Startup, Some(3)), ["--bench", "startup"]);
+    assert_eq!(
+        run_args(Scenario::Idle, RendererChoice::Glow, Some(3)),
+        [
+            "--renderer",
+            "glow",
+            "--bench",
+            "idle",
+            "--duration-secs",
+            "3"
+        ]
+    );
+    assert_eq!(
+        run_args(Scenario::Startup, RendererChoice::Wgpu, Some(3)),
+        ["--renderer", "wgpu", "--bench", "startup"]
+    );
 }
 
 /// §17.8 changed the deadlines: 75 s for startup, N + 75 s for idle.
@@ -112,19 +131,23 @@ fn timeouts_follow_the_spec() {
     );
 }
 
+/// §19.5: the shipped GUI prints `va.bench.run/2`; a `va.bench.run/1` line (an old binary) no
+/// longer counts as the run line.
 #[test]
 fn only_run_schema_lines_are_accepted() {
-    assert!(parse_run_line(r#"{"schema":"va.bench.run/1","scenario":"startup"}"#).is_some());
+    assert!(parse_run_line(r#"{"schema":"va.bench.run/2","scenario":"startup"}"#).is_some());
+    assert!(parse_run_line(r#"{"schema":"va.bench.run/1","scenario":"startup"}"#).is_none());
     assert!(parse_run_line(r#"{"schema":"va.info/1"}"#).is_none());
     assert!(parse_run_line("hello").is_none());
     assert!(parse_run_line("").is_none());
 }
 
+/// §19.5 changed the renderer default from `wgpu` to `auto`, what ships.
 #[test]
 fn bench_defaults_follow_the_spec() {
     let args = parse(&[]).unwrap();
     assert_eq!(args.scenarios(), [Scenario::Startup, Scenario::Idle]);
-    assert_eq!(args.renderers(), [Renderer::Wgpu]);
+    assert_eq!(args.renderers(), [RendererChoice::Auto]);
     assert_eq!(args.runs_for(Scenario::Startup), 20);
     assert_eq!(args.runs_for(Scenario::Idle), 3);
     assert_eq!(args.warmup, 1);
@@ -133,14 +156,61 @@ fn bench_defaults_follow_the_spec() {
     assert!(!args.json);
 }
 
+/// §19.5 changed `--renderer all`: glow, then wgpu, then auto.
 #[test]
 fn runs_override_both_scenarios() {
     let args = parse(&["idle", "--renderer", "all", "--runs", "5", "--warmup", "0"]).unwrap();
     assert_eq!(args.scenarios(), [Scenario::Idle]);
-    assert_eq!(args.renderers(), [Renderer::Wgpu, Renderer::Glow]);
+    assert_eq!(
+        args.renderers(),
+        [
+            RendererChoice::Glow,
+            RendererChoice::Wgpu,
+            RendererChoice::Auto
+        ]
+    );
     assert_eq!(args.runs_for(Scenario::Startup), 5);
     assert_eq!(args.runs_for(Scenario::Idle), 5);
     assert_eq!(args.warmup, 0);
+}
+
+/// §19.5: `--renderer auto|glow|wgpu|all`, each giving its choices in run order.
+#[test]
+fn renderer_values_parse() {
+    for (value, expected) in [
+        ("auto", &[RendererChoice::Auto][..]),
+        ("glow", &[RendererChoice::Glow]),
+        ("wgpu", &[RendererChoice::Wgpu]),
+        (
+            "all",
+            &[
+                RendererChoice::Glow,
+                RendererChoice::Wgpu,
+                RendererChoice::Auto,
+            ],
+        ),
+    ] {
+        let args = parse(&["startup", "--renderer", value]).unwrap();
+        assert_eq!(args.renderers(), expected, "{value}");
+    }
+    for bad in ["Auto", "GLOW", "gl", "dx12", "both"] {
+        let error = parse(&["--renderer", bad]).unwrap_err();
+        assert_eq!(error.exit_code(), 2, "{bad}");
+    }
+}
+
+#[test]
+fn renderer_choices_have_their_cli_spelling_and_only_auto_is_unforced() {
+    for (choice, text, forced) in [
+        (RendererChoice::Auto, "auto", false),
+        (RendererChoice::Glow, "glow", true),
+        (RendererChoice::Wgpu, "wgpu", true),
+    ] {
+        assert_eq!(choice.as_str(), text);
+        assert_eq!(choice.to_string(), text);
+        assert_eq!(serde_json::to_value(choice).unwrap(), text);
+        assert_eq!(choice.is_forced(), forced, "{text}");
+    }
 }
 
 #[test]
@@ -207,15 +277,16 @@ fn artifact_paths_with_spaces_and_unicode_are_kept_verbatim() {
 fn bench_copy_path_under_a_unicode_target_with_spaces() {
     let target = Path::new("tärget dir").join("文件 ✓");
     assert_eq!(
-        bench_copy_path(&target, Renderer::Glow),
+        bench_copy_path(&target),
         target
             .join("bench")
-            .join("glow")
+            .join("shipped")
             .join(format!("visual-assembler{}", std::env::consts::EXE_SUFFIX))
     );
 }
 
-/// §17.8 changed the deadlines: 75 s for startup, N + 75 s for idle.
+/// §17.8 changed the deadlines: 75 s for startup, N + 75 s for idle. §19.5 added `--renderer`
+/// to the GUI arguments.
 #[test]
 fn timeouts_cover_defaults_bounds_and_overflow() {
     assert_eq!(run_timeout(Scenario::Idle, None), Duration::from_secs(85));
@@ -235,23 +306,29 @@ fn timeouts_cover_defaults_bounds_and_overflow() {
         run_timeout(Scenario::Startup, Some(3600)),
         Duration::from_secs(75)
     );
-    assert_eq!(run_args(Scenario::Idle, None), ["--bench", "idle"]);
+    assert_eq!(
+        run_args(Scenario::Idle, RendererChoice::Auto, None),
+        ["--renderer", "auto", "--bench", "idle"]
+    );
 }
 
+/// §19.5 moved the accepted schema from `va.bench.run/1` to `va.bench.run/2`; the corner cases
+/// are the same, one version up, and `/1` is now rejected.
 #[test]
 fn run_line_detection_corner_cases() {
-    assert!(parse_run_line("  {\"schema\":\"va.bench.run/1\"}\r\n").is_some());
-    assert!(parse_run_line("\t{\"frames_painted\":0,\"schema\":\"va.bench.run/1\"} ").is_some());
+    assert!(parse_run_line("  {\"schema\":\"va.bench.run/2\"}\r\n").is_some());
+    assert!(parse_run_line("\t{\"frames_painted\":0,\"schema\":\"va.bench.run/2\"} ").is_some());
     for line in [
-        r#"{"schema":"va.bench.run/2"}"#,
-        r#"{"schema":"VA.BENCH.RUN/1"}"#,
+        r#"{"schema":"va.bench.run/1"}"#,
+        r#"{"schema":"va.bench.run/3"}"#,
+        r#"{"schema":"VA.BENCH.RUN/2"}"#,
         r#"{"schema":1}"#,
         r#"{"schema":null}"#,
-        r#"[{"schema":"va.bench.run/1"}]"#,
-        r#"{"run":{"schema":"va.bench.run/1"}}"#,
-        r#"{"schema":"va.bench.run/1"} {"schema":"va.bench.run/1"}"#,
-        r#"{"schema":"va.bench.run/1""#,
-        r#""va.bench.run/1""#,
+        r#"[{"schema":"va.bench.run/2"}]"#,
+        r#"{"run":{"schema":"va.bench.run/2"}}"#,
+        r#"{"schema":"va.bench.run/2"} {"schema":"va.bench.run/2"}"#,
+        r#"{"schema":"va.bench.run/2""#,
+        r#""va.bench.run/2""#,
         "null",
         "error: bench timed out",
     ] {
@@ -400,6 +477,150 @@ fn progress_lines_show_n_a_for_idle_runs() {
     assert_eq!(milliseconds(None), "n/a");
 }
 
+// ---------------------------------------------------------------------------------------------
+// Renderer decision (§19.5): run-line validation against the requested renderer.
+// ---------------------------------------------------------------------------------------------
+
+/// A startup run line requested with `requested`, running `renderer`, after a fallback from
+/// `fallback_from` when it is `Some`.
+fn v2_run(requested: &str, renderer: &str, fallback_from: Option<&str>) -> BenchRun {
+    let value = serde_json::json!({
+        "schema": "va.bench.run/2",
+        "scenario": "startup",
+        "renderer_requested": requested,
+        "renderer": renderer,
+        "fallback_from": fallback_from,
+        "fallback_reason": fallback_from.map(|_| "injected renderer failure (VA_TEST_FAIL_RENDERER)"),
+        "injected_failure": fallback_from,
+        "backend": if renderer == "glow" { "gl" } else { "dx12" },
+        "adapter": "Test Adapter",
+        "driver": "1.0",
+        "window_system": "win32",
+        "wsl": false,
+        "os": "windows",
+        "arch": "x86_64",
+        "version": "0.1.0",
+        "startup_ms": 150.0,
+        "frames_painted": 1,
+        "process_cpu_ms": 120.0,
+        "peak_rss_bytes": 104857600,
+        "peak_private_bytes": 52428800,
+        "settle_ms": null,
+        "idle_window_ms": null,
+    });
+    serde_json::from_value(value).unwrap()
+}
+
+#[test]
+fn forced_runs_must_use_the_forced_renderer_without_fallback() {
+    for (choice, name) in [
+        (RendererChoice::Glow, "glow"),
+        (RendererChoice::Wgpu, "wgpu"),
+    ] {
+        assert_eq!(
+            validate_run(&v2_run(name, name, None), Scenario::Startup, choice),
+            Ok(())
+        );
+    }
+    let error = validate_run(
+        &v2_run("glow", "wgpu", None),
+        Scenario::Startup,
+        RendererChoice::Glow,
+    )
+    .unwrap_err();
+    assert_eq!(
+        error,
+        "reported renderer `wgpu`, expected `glow` (forced by --renderer)"
+    );
+    let error = validate_run(
+        &v2_run("wgpu", "wgpu", Some("glow")),
+        Scenario::Startup,
+        RendererChoice::Wgpu,
+    )
+    .unwrap_err();
+    assert_eq!(
+        error,
+        "fell back from `glow` to `wgpu` although `--renderer wgpu` forbids a fallback"
+    );
+    // A fallback is rejected even when it lands on the forced renderer's name.
+    assert!(
+        validate_run(
+            &v2_run("glow", "glow", Some("wgpu")),
+            Scenario::Startup,
+            RendererChoice::Glow,
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn auto_runs_accept_any_renderer_and_a_fallback() {
+    for (renderer, fallback_from) in [
+        ("glow", None),
+        ("wgpu", None),
+        ("wgpu", Some("glow")),
+        ("glow", Some("wgpu")),
+    ] {
+        assert_eq!(
+            validate_run(
+                &v2_run("auto", renderer, fallback_from),
+                Scenario::Startup,
+                RendererChoice::Auto
+            ),
+            Ok(()),
+            "{renderer} {fallback_from:?}"
+        );
+    }
+}
+
+#[test]
+fn renderer_requested_must_echo_the_flag() {
+    for (choice, line_requested) in [
+        (RendererChoice::Auto, "glow"),
+        (RendererChoice::Glow, "auto"),
+        (RendererChoice::Wgpu, "glow"),
+        (RendererChoice::Auto, "AUTO"),
+        (RendererChoice::Auto, ""),
+    ] {
+        let error = validate_run(
+            &v2_run(line_requested, "glow", None),
+            Scenario::Startup,
+            choice,
+        )
+        .unwrap_err();
+        assert_eq!(
+            error,
+            format!(
+                "reported renderer_requested `{line_requested}`, expected `{}`",
+                choice.as_str()
+            )
+        );
+    }
+}
+
+#[test]
+fn a_run_line_for_another_scenario_is_rejected_first() {
+    let error = validate_run(
+        &v2_run("glow", "wgpu", Some("glow")),
+        Scenario::Idle,
+        RendererChoice::Glow,
+    )
+    .unwrap_err();
+    assert_eq!(error, "reported scenario `startup`, expected `idle`");
+}
+
+#[test]
+fn progress_lines_name_the_used_renderer_and_its_fallback() {
+    assert_eq!(
+        used_renderer(&v2_run("auto", "glow", None)),
+        "renderer glow"
+    );
+    assert_eq!(
+        used_renderer(&v2_run("auto", "wgpu", Some("glow"))),
+        "renderer wgpu (fallback from glow)"
+    );
+}
+
 /// The run engine against fake GUIs written in POSIX `sh` (Linux CI and WSL).
 #[cfg(unix)]
 mod fake_gui {
@@ -411,7 +632,7 @@ mod fake_gui {
     };
 
     use xtask::bench::{
-        Renderer, Scenario,
+        RendererChoice, Scenario,
         runner::{PIPES_OPEN_MESSAGE, READER_JOIN_TIMEOUT, STDERR_TAIL_BYTES, run_command},
     };
 
@@ -425,19 +646,36 @@ mod fake_gui {
         dir
     }
 
-    /// A complete `va.bench.run/1` line for `scenario` and `renderer`.
-    fn run_line(scenario: &str, renderer: &str) -> String {
+    /// A complete `va.bench.run/2` line for `scenario`, requested with `requested`, running
+    /// `renderer` after a fallback from `fallback_from` (a JSON value: `null` or `"glow"`).
+    fn run_line_v2(scenario: &str, requested: &str, renderer: &str, fallback_from: &str) -> String {
         format!(
-            r#"{{"schema":"va.bench.run/1","scenario":"{scenario}","renderer":"{renderer}","backend":"gl","adapter":null,"driver":null,"window_system":"x11","wsl":false,"os":"linux","arch":"x86_64","version":"0.1.0","startup_ms":12.5,"frames_painted":1,"process_cpu_ms":null,"peak_rss_bytes":null,"peak_private_bytes":null,"settle_ms":null,"idle_window_ms":null}}"#
+            r#"{{"schema":"va.bench.run/2","scenario":"{scenario}","renderer_requested":"{requested}","renderer":"{renderer}","fallback_from":{fallback_from},"fallback_reason":null,"injected_failure":null,"backend":"gl","adapter":null,"driver":null,"window_system":"x11","wsl":false,"os":"linux","arch":"x86_64","version":"0.1.0","startup_ms":12.5,"frames_painted":1,"process_cpu_ms":null,"peak_rss_bytes":null,"peak_private_bytes":null,"settle_ms":null,"idle_window_ms":null}}"#
         )
     }
 
-    /// Runs the `sh` script `body` as a measured run with `timeout`; returns the outcome (the
-    /// error rendered with its context) and the elapsed time.
+    /// A complete `va.bench.run/2` line for `scenario`, forced to `renderer` (no fallback).
+    fn run_line(scenario: &str, renderer: &str) -> String {
+        run_line_v2(scenario, renderer, renderer, "null")
+    }
+
+    /// Runs the `sh` script `body` as a measured run requested with wgpu, with `timeout`;
+    /// returns the outcome (the error rendered with its context) and the elapsed time.
     fn run_script(
         tag: &str,
         body: &str,
         scenario: Scenario,
+        timeout: Duration,
+    ) -> (Result<xtask::bench::report::Sample, String>, Duration) {
+        run_script_as(tag, body, scenario, RendererChoice::Wgpu, timeout)
+    }
+
+    /// Runs the `sh` script `body` as a measured run requested with `renderer`, with `timeout`.
+    fn run_script_as(
+        tag: &str,
+        body: &str,
+        scenario: Scenario,
+        renderer: RendererChoice,
         timeout: Duration,
     ) -> (Result<xtask::bench::report::Sample, String>, Duration) {
         let dir = temp_dir(tag);
@@ -446,8 +684,8 @@ mod fake_gui {
         let mut cmd = Command::new("sh");
         cmd.arg(&script);
         let started = Instant::now();
-        let outcome = run_command(cmd, scenario, Renderer::Wgpu, timeout)
-            .map_err(|error| format!("{error:#}"));
+        let outcome =
+            run_command(cmd, scenario, renderer, timeout).map_err(|error| format!("{error:#}"));
         let elapsed = started.elapsed();
         std::fs::remove_dir_all(&dir).unwrap();
         (outcome, elapsed)
@@ -560,9 +798,10 @@ mod fake_gui {
             Duration::from_secs(30),
         );
         let error = long.unwrap_err();
-        assert!(error.contains("printed no va.bench.run/1 line"), "{error}");
+        assert!(error.contains("printed no va.bench.run/2 line"), "{error}");
     }
 
+    /// §19.5: a forced run whose line names another requested renderer fails.
     #[test]
     fn a_run_line_for_another_renderer_fails_the_run() {
         let body = format!("printf '%s\\n' '{}'\nexit 0\n", run_line("startup", "glow"));
@@ -573,6 +812,69 @@ mod fake_gui {
             Duration::from_secs(30),
         );
         let error = outcome.unwrap_err();
-        assert!(error.contains("expected `startup` and `wgpu`"), "{error}");
+        assert!(
+            error.contains("reported renderer_requested `glow`, expected `wgpu`"),
+            "{error}"
+        );
+    }
+
+    /// §19.5: a forced run that fell back fails, with the child's stderr attached.
+    #[test]
+    fn a_forced_run_that_fell_back_fails_the_run() {
+        let body = format!(
+            "printf 'warning: the wgpu renderer failed\\n' >&2\nprintf '%s\\n' '{}'\nexit 0\n",
+            run_line_v2("startup", "wgpu", "glow", r#""wgpu""#)
+        );
+        let (outcome, _) = run_script(
+            "fake-forced-fallback",
+            &body,
+            Scenario::Startup,
+            Duration::from_secs(30),
+        );
+        let error = outcome.unwrap_err();
+        assert!(
+            error.contains("fell back from `wgpu` to `glow` although `--renderer wgpu`"),
+            "{error}"
+        );
+        assert!(
+            error.contains("warning: the wgpu renderer failed"),
+            "{error}"
+        );
+    }
+
+    /// §19.5: under auto, a fallback run is a valid sample.
+    #[test]
+    fn an_auto_run_that_fell_back_is_a_valid_sample() {
+        let body = format!(
+            "printf '%s\\n' '{}'\nexit 0\n",
+            run_line_v2("startup", "auto", "wgpu", r#""glow""#)
+        );
+        let (outcome, _) = run_script_as(
+            "fake-auto-fallback",
+            &body,
+            Scenario::Startup,
+            RendererChoice::Auto,
+            Duration::from_secs(30),
+        );
+        let sample = outcome.unwrap();
+        assert_eq!(sample.run.renderer, "wgpu");
+        assert_eq!(sample.run.fallback_from.as_deref(), Some("glow"));
+        assert!(sample.spawn_to_first_frame_ms.is_some());
+    }
+
+    /// §19.5: an old binary printing `va.bench.run/1` gives no run line.
+    #[test]
+    fn a_v1_run_line_is_not_a_run_line() {
+        let v1 = r#"{"schema":"va.bench.run/1","scenario":"startup","renderer":"glow","backend":"gl","adapter":null,"driver":null,"window_system":"x11","wsl":false,"os":"linux","arch":"x86_64","version":"0.1.0","startup_ms":12.5,"frames_painted":1,"process_cpu_ms":null,"peak_rss_bytes":null,"peak_private_bytes":null,"settle_ms":null,"idle_window_ms":null}"#;
+        let body = format!("printf '%s\\n' '{v1}'\nexit 0\n");
+        let (outcome, _) = run_script_as(
+            "fake-v1",
+            &body,
+            Scenario::Startup,
+            RendererChoice::Auto,
+            Duration::from_secs(30),
+        );
+        let error = outcome.unwrap_err();
+        assert!(error.contains("printed no va.bench.run/2 line"), "{error}");
     }
 }

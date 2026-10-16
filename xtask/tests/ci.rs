@@ -2,7 +2,8 @@
 //! with step 0 of §17.3.2), the build-configuration checks of step 0 — `check_build_env` (set
 //! variables, even empty, §18.3) and the canonical `.cargo/config.toml` comparison
 //! `check_cargo_config` / `check_cargo_config_files` (§18.4) — the real `cargo xtask ci`
-//! stopping at step 0, and the path used to move the running executable aside on Windows.
+//! stopping at step 0, the path used to move the running executable aside on Windows, and the
+//! §19.9 shape of `.github/workflows/ci.yml`, which runs `cargo xtask ci` (CR19-06, S19-5).
 #![allow(clippy::unwrap_used)]
 
 use std::{
@@ -86,7 +87,8 @@ const EXTRA: &str = "is not in the canonical configuration";
 /// Message part of a changed line.
 const CHANGED: &str = "differs from the canonical line";
 
-/// §17.3.2 changed the step order: step 0 "build configuration" now comes first.
+/// §17.3.2 changed the step order: step 0 "build configuration" now comes first. §19.6 added
+/// step 3b, the wgpu-only clippy run, right after the glow-only one.
 #[test]
 fn steps_match_the_spec_in_order() {
     assert_eq!(
@@ -96,6 +98,7 @@ fn steps_match_the_spec_in_order() {
             "cargo fmt --all -- --check",
             "cargo clippy --workspace --all-targets --all-features --locked -- -D warnings",
             "cargo clippy -p visual-assembler --all-targets --no-default-features --features renderer-glow --locked -- -D warnings",
+            "cargo clippy -p visual-assembler --all-targets --no-default-features --features renderer-wgpu --locked -- -D warnings",
             "layering and source checks",
             "cargo test --workspace --all-features --locked",
         ]
@@ -110,6 +113,30 @@ fn no_fmt_skips_only_the_format_check() {
     expected.extend_from_slice(&all[2..]);
     assert_eq!(labels(true), expected);
     assert_eq!(labels(true)[0], "build configuration");
+}
+
+/// §19.6: both single-renderer builds are linted, each with exactly one renderer feature and the
+/// default features off, so neither can hide behind the other renderer's code.
+#[test]
+fn each_single_renderer_build_is_linted_once() {
+    for renderer in ["renderer-glow", "renderer-wgpu"] {
+        let runs: Vec<&'static [&'static str]> = steps(&CiArgs::default())
+            .into_iter()
+            .filter_map(|step| match step {
+                Step::Cargo(args) if args.contains(&renderer) => Some(args),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(runs.len(), 1, "{renderer}: {runs:?}");
+        let args = runs[0];
+        assert_eq!(args.first(), Some(&"clippy"), "{renderer}");
+        assert!(args.contains(&"--no-default-features"), "{renderer}");
+        let features = args.iter().position(|arg| *arg == "--features").unwrap();
+        assert_eq!(args[features + 1], renderer);
+        assert!(args.contains(&"--all-targets"), "{renderer}");
+    }
+    assert_eq!(xtask::ci::CLIPPY_WGPU_ONLY[6], "renderer-wgpu");
+    assert_eq!(xtask::ci::CLIPPY_GLOW_ONLY[6], "renderer-glow");
 }
 
 #[test]
@@ -875,4 +902,105 @@ fn a_byte_order_mark_never_hides_a_forbidden_line() {
         "{problems:?}"
     );
     std::fs::remove_dir_all(&root).unwrap();
+}
+
+// ---------------------------------------------------------------------------------------------
+// QA (§19.9 re-check, row 19-9 a, CR19-06 and S19-5): `cargo xtask ci` is what the `check` job of
+// `.github/workflows/ci.yml` runs, and that file is normative. Its second Windows smoke step is
+// exactly the §19.9 block, the runner expression stays in `env:` and never reaches a `run:`
+// value, and every action stays pinned to a full commit SHA.
+// ---------------------------------------------------------------------------------------------
+
+/// The `ci.yml` block of m0-foundations.md §19.9.6 (row 19-9 a), verbatim.
+const FALLBACK_SMOKE_STEP: &str = "      # Section 19.9 (CR19-06): fail the first renderer of this runner's auto order on purpose, so\n      # the log documents a fallback on both images (x64: glow then wgpu; ARM64: wgpu then glow).\n      - name: GUI renderer fallback smoke (informational, never a support claim)\n        if: runner.os == 'Windows'\n        continue-on-error: true\n        timeout-minutes: 3\n        shell: bash\n        env:\n          VA_TEST_FAIL_RENDERER: ${{ runner.arch == 'ARM64' && 'wgpu' || 'glow' }}\n        run: ./target/release/visual-assembler.exe --bench startup\n";
+
+/// The repository's workflow file.
+fn workflow() -> String {
+    let root = xtask::locate::workspace_root().unwrap();
+    std::fs::read_to_string(root.join(".github").join("workflows").join("ci.yml")).unwrap()
+}
+
+/// Every `run:` value of a workflow, a `|` or `>` block scalar joined into one string (its lines
+/// are those indented deeper than the `run:` key).
+fn run_values(text: &str) -> Vec<String> {
+    let mut values = Vec::new();
+    let mut block: Option<(usize, String)> = None;
+    for line in text.lines() {
+        let indent = line.len() - line.trim_start().len();
+        if let Some((key_indent, body)) = block.as_mut() {
+            if line.trim().is_empty() || indent > *key_indent {
+                body.push_str(line.trim());
+                body.push('\n');
+                continue;
+            }
+            values.push(std::mem::take(body));
+            block = None;
+        }
+        let item = line.trim_start().trim_start_matches("- ");
+        if let Some(value) = item.strip_prefix("run:") {
+            let value = value.trim();
+            if value.starts_with('|') || value.starts_with('>') {
+                block = Some((line.len() - item.len(), String::new()));
+            } else {
+                values.push(value.to_owned());
+            }
+        }
+    }
+    values.extend(block.map(|(_, body)| body));
+    values
+}
+
+/// CR19-06: the second smoke step is the §19.9 block, once, and it is the only place that arms
+/// the test hook (the first smoke step stays a plain `auto` startup).
+#[test]
+fn renderer_fallback_smoke_step_is_the_spec_block() {
+    let text = workflow();
+    assert_eq!(
+        text.matches(FALLBACK_SMOKE_STEP).count(),
+        1,
+        "ci.yml lacks the §19.9 block:\n{text}"
+    );
+    assert_eq!(text.matches("VA_TEST_FAIL_RENDERER").count(), 1);
+    assert_eq!(
+        text.matches("run: ./target/release/visual-assembler.exe --bench startup\n")
+            .count(),
+        2
+    );
+}
+
+/// S19-5 and §8: no `run:` value holds a `${{ … }}` expression (the block scalar of the deny job
+/// included), and every `uses:` line names `owner/repo@<40 lowercase hex>`.
+#[test]
+fn workflow_run_values_hold_no_expression_and_actions_are_sha_pinned() {
+    let text = workflow();
+    let runs = run_values(&text);
+    assert!(
+        runs.iter()
+            .any(|run| run.contains("cargo install cargo-deny") && run.contains("GITHUB_PATH")),
+        "the block scalar of the deny job was not read: {runs:?}"
+    );
+    assert!(runs.len() >= 8, "{runs:?}");
+    for run in &runs {
+        assert!(!run.contains("${{"), "expression inside run: {run:?}");
+    }
+
+    let mut pinned = 0;
+    for line in text.lines() {
+        let item = line.trim_start().trim_start_matches("- ");
+        let Some(value) = item.strip_prefix("uses:") else {
+            continue;
+        };
+        let reference = value.split_whitespace().next().unwrap_or_default();
+        let (action, sha) = reference.split_once('@').unwrap_or_default();
+        assert!(action.contains('/'), "{line}");
+        assert!(
+            sha.len() == 40
+                && sha
+                    .chars()
+                    .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c)),
+            "not pinned to a commit SHA: {line}"
+        );
+        pinned += 1;
+    }
+    assert!(pinned >= 4, "{pinned} uses: lines");
 }

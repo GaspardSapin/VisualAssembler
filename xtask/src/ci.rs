@@ -1,5 +1,5 @@
 //! `cargo xtask ci`: the single source of the CI check list (m0-foundations.md §6, amended by
-//! §17.3, §18.3 and §18.4).
+//! §17.3, §18.3, §18.4 and §19.6, which adds step 3b, the wgpu-only clippy run).
 //!
 //! Steps run in order and the command stops at the first failure. `==> <step>` is printed on
 //! stderr before each step. Step 0, the build configuration check, always runs first, also with
@@ -57,6 +57,23 @@ pub const CLIPPY_GLOW_ONLY: &[&str] = &[
     "--no-default-features",
     "--features",
     "renderer-glow",
+    "--locked",
+    "--",
+    "-D",
+    "warnings",
+];
+
+/// Step 3b: clippy on the GUI built with the wgpu renderer only, warnings denied
+/// (m0-foundations.md §19.6). Together with step 3 it keeps both single-renderer builds
+/// compilable while the shipped binary carries both renderers.
+pub const CLIPPY_WGPU_ONLY: &[&str] = &[
+    "clippy",
+    "-p",
+    "visual-assembler",
+    "--all-targets",
+    "--no-default-features",
+    "--features",
+    "renderer-wgpu",
     "--locked",
     "--",
     "-D",
@@ -138,7 +155,7 @@ impl Step {
 
 /// Returns the steps of `cargo xtask ci`, in execution order.
 pub fn steps(args: &CiArgs) -> Vec<Step> {
-    let mut steps = Vec::with_capacity(6);
+    let mut steps = Vec::with_capacity(7);
     steps.push(Step::BuildConfiguration);
     if !args.no_fmt {
         steps.push(Step::Cargo(FMT));
@@ -146,6 +163,7 @@ pub fn steps(args: &CiArgs) -> Vec<Step> {
     steps.extend([
         Step::Cargo(CLIPPY_ALL_FEATURES),
         Step::Cargo(CLIPPY_GLOW_ONLY),
+        Step::Cargo(CLIPPY_WGPU_ONLY),
         Step::Layering,
         Step::Cargo(TEST_ALL),
     ]);
