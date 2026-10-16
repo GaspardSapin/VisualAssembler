@@ -401,8 +401,20 @@ Locations come from `directories::ProjectDirs::from("", "", "VisualAssembler")`:
   - Fallback happens at most once and only for a renderer *initialization* failure before the first frame.
   - Platform failures (no display, event-loop creation) never trigger a fallback.
 - **Forced renderer** (`glow` or `wgpu`, chosen through the precedence in §6): exactly that renderer and no fallback. A failure is reported and exits with 3.
-- **wgpu on Windows** is pinned to DX12 unless `WGPU_BACKEND` is set.
+- **wgpu backends.** On Windows, wgpu is pinned to DX12. A wgpu attempt that follows a failed glow
+  attempt leaves out wgpu's GL backend: the failed glow context can stay current on the thread,
+  wgpu's GL backend then panics, and it could only retry the OpenGL driver that has just failed.
+  Both overrides step aside only when `WGPU_BACKEND` names at least one backend that wgpu
+  recognizes (M0 spec §19.9). Consequence: on Linux, a host without any Vulkan driver cannot fall
+  back to wgpu after a glow failure and exits with 3.
+- **What cannot fall back:** a panic (exit 101) and a crash inside the graphics driver. The user
+  forces the other renderer.
 - **Under WSL**, the app uses X11 (Xwayland) for every renderer unless `VA_WAYLAND=1`. wgpu Wayland clients crash the WSLg 1.0.73 compositor, and a single window system per process is what makes the in-process fallback safe. Native Linux keeps winit's default (Wayland first).
+- **Reporting.** Selection warnings, the fallback and startup failures go to stderr (M0 spec §19.4),
+  and bench JSON records the requested and running renderer, the fallback and the test hook. The
+  Windows release build has no console, so its stderr is visible only when redirected. From M4,
+  the status bar also shows a fallback and an armed `VA_TEST_FAIL_RENDERER` test hook, and M4
+  decides how a startup failure that exits before any window reaches a user without a console.
 - *Rejected:* wgpu by default, which was the earlier measured rule. The user chose glow for its lower startup time and memory: on Windows, p95 302 ms and 93 MiB, against 465 ms and 342 MiB for wgpu-DX12.
 
 ---

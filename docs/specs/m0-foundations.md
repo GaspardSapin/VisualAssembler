@@ -1791,6 +1791,15 @@ Both are realistic accidents and cheap to catch, so they are fixed now:
 | §0 E1 | §17.14 |
 | §17.6 hook block | §18.2 |
 | §17.3.2 | §18.3, §18.4 |
+| §3.1 comment "Only crates used by at least one member (cargo-deny: unused = "deny")"; §3.6 "cargo-deny's `unused` check would flag them"; §15 row "`[workspace.dependencies]` holds only crates already used" | §19.9 S19-3, row 19-11 |
+| §4.1 `default = ["renderer-wgpu"]` | §19.1 |
+| §4.3 `--renderer` row and its default | §19.1, §19.4 |
+| §4.4 rows `lib.rs`, `cli.rs`, `spike.rs`, `bench/recorder.rs`, `bench/report.rs`; §4.5 step 1 `BenchRecorder::new(plan, started)` | §19.9 WP2-2, WP2-3 |
+| §4.6 `va.bench.run/1` and its example | §19.5 |
+| §6.1 step 1 and the renderer loop; §6.2 `va.bench.report/1` | §19.5, §19.9 WP4-1…WP4-6 |
+| §8 smoke bullet "reports whether wgpu initializes" | §19.1 (the step reports what `auto` starts); §19.9 CR19-06 for the second step |
+| §10 item 2 (`[deps]`, from members to the workspace only) | §19.9 row 19-9(b) (reverse direction added) |
+| §12.3/§12.4 decision rule; outcome W as the WSLg decision | §19 preamble, §19.1 |
 
 ### 18.9 Fix-wave table (only what must change)
 
@@ -2023,3 +2032,123 @@ E5 now reads: the report contains §11 with N1–N6, and the default features ma
 
 Order: 19-1 before 19-2 (workspace dependency). 19-2 and 19-3 can run in parallel, because the runner
 needs only the §19.5 contract. 19-5 runs after 19-2/19-3 are QA-green.
+
+### 19.9 Ratified implementation decisions (§19 audit round 1, 2026-10-16)
+
+Part of §19, with the same precedence. It settles every point where the landed §19 implementation
+goes beyond, interprets or diverges from §19.1–§19.8. Where §19.9 and an earlier §19 passage
+disagree, §19.9 wins: §19.9.7 lists the §19 passages it replaces, and the §18.8 index now also lists
+the body passages superseded by §19 and §19.9. §19 is folded into the body with §17/§18 when M0
+closes (CR1-09).
+
+Every item is **ratified** (the spec now says what the code does), **fixed** by a row of the §19.9.6
+fix wave, a **limitation** (accepted, recorded in SECURITY.md), or **deferred** to a named milestone.
+Ids come from the round-1 reports: developer deviations (WP2-n, WP4-n), conformance (CR19-nn),
+Security (S19-n) and QA (QA-n).
+
+#### 19.9.1 Renderer selection and fallback (WP2)
+
+| ID | Decision | The spec now says |
+|---|---|---|
+| WP2-1 (CR19-01) | Ratified | New §19.1 row **"wgpu after a failed glow attempt"**: that wgpu instance leaves out `wgpu::Backends::GL` (`exclude_wgpu_gl_backend`) unless `WGPU_BACKEND` is effective (S19-4). glutin drops a failed glow context without unbinding it, so the context stays current on the thread, and wgpu-hal 30.0.1 panics on `EGL_BAD_ACCESS` when its GL backend then probes EGL (reproduced under WSLg X11: exit 101 without the rule, fallback to Vulkan with it). The rule only touches a wgpu attempt that follows a glow failure in the same process: forced wgpu and the Windows aarch64 order are unaffected, and on Windows the DX12 pin already leaves GL out. Accepted consequence: a Linux host whose only wgpu backend is GL (no Vulkan driver, not even Mesa's lavapipe) exits 3 after a glow failure instead of retrying the OpenGL driver that has just failed. `WGPU_BACKEND=gl` brings wgpu-GL back at the user's risk (exit 101). *Rejected:* keeping GL, which turns the fallback into a crash on the hosts where glow fails. |
+| WP2-2 (CR19-04) | Ratified | §4.4 API. `cli.rs`: `RendererChoice { Auto, Glow, Wgpu }` (`as_str`, `from_name`, `forced`) next to the concrete `Renderer { Glow, Wgpu }`; `compiled_renderers() -> &'static [Renderer]` (membership only, the order is `auto_order`); `resolve(&GuiArgs, &[Renderer])`; `LaunchPlan { renderer: Option<RendererChoice>, bench }`, the command-line level only; `UsageError::RendererNotCompiled(Renderer)`; and the pure selection layer, kept in `cli.rs` because §19.3 puts its tests in `tests/cli.rs`: `ENV_RENDERER`, `ENV_FAIL_RENDERER`, `ENV_WAYLAND`, `auto_order`, `resolve_renderer` → `RendererResolution { plan: RendererPlan { requested, source: ChoiceSource, order }, warnings }`, `parse_injected_failures` → `InjectedFailures { renderers, raw, warnings }`, `window_system_policy` → `WindowSystemPolicy { force_x11, warning }`, `RendererInitError::Injected`, `is_renderer_init_error`, `is_fallback_eligible`, `describe_failure`, `classify_failure` → `AttemptFailure { FallBack { next, warning, reason }, Fatal { error, note } }`. `lib.rs`: `pub fn native_options(Renderer, force_x11: bool, after_glow_failure: bool) -> Result<eframe::NativeOptions, UsageError>`, public so tests check every attempt's options without a window (row 19-8 adds `wgpu_backend_env_is_effective`). `spike.rs`: `SpikeApp<'a>::new(Option<&'a mut BenchRecorder>, Arc<AtomicBool>)`, the flag set at the top of the first `ui`. `bench/recorder.rs`: `BenchRecorder::new(BenchPlan, Instant, SelectionFacts)`, `SelectionFacts { requested, fallback: Option<(Renderer, String)>, injected_failure: Option<String> }`, `record_fallback(Renderer, String)`. `bench/report.rs`: `RUN_SCHEMA = "va.bench.run/2"`, `BenchRun` with the 22 keys of §19.5. |
+| WP2-3 (CR19-04) | Ratified | §19.2 "State across attempts": the recorder is **owned by `launch`**, created before the first attempt and lent to each attempt's app (`Option<&'a mut BenchRecorder>`), instead of a shared `Option` slot that the creator takes from. The §19.2 guarantees are unchanged, and they also cover a failure after the creator returned but before the first frame: one recorder and one watchdog, no reset of its limit, the §17.11 D06 disconnect on shutdown. |
+| WP2-4 | Ratified | §19.1 WSL row: the X11 hook is installed on **every** attempt. eframe calls it only when it creates its thread-local event loop (the first attempt), so the first attempt still fixes the window system of the process, and the code stays correct if eframe ever builds a new loop. |
+| WP2-5 (CR19-02 b, c) | Ratified | `VA_RENDERER` takes exactly `auto`, `glow` or `wgpu`. Anything else, including an empty value, case variants, surrounding spaces and a non-Unicode value (shown lossily, escaped by row 19-8), prints the §19.1 warning and is ignored. The warning is printed **even when `--renderer` overrides the variable**: every level that is set is validated, and only the winning level is checked against the build (an overridden variable never causes exit 2). M4's `render.renderer` follows the same rule. *Rejected:* the §17.11 `VA_PYTHON` reading (empty = unset): an empty renderer variable is more likely a mistake worth one warning line, and the outcome (`auto`) is the same. |
+| WP2-6 (CR19-02 a) | Ratified | `VA_TEST_FAIL_RENDERER` is a comma-separated list. Each item is trimmed; blank items are skipped silently; `glow` and `wgpu` are exact and duplicates merge; every other item prints `warning: ignoring unknown VA_TEST_FAIL_RENDERER value '<v>' (expected glow or wgpu)`, once per item, in input order; a non-Unicode value is ignored as a whole with `warning: ignoring VA_TEST_FAIL_RENDERER='<v>' (not valid Unicode; expected glow, wgpu or glow,wgpu)`. The §19.3 startup warning is printed **only when at least one renderer is armed** (it says "simulating"). It quotes the raw value and is printed even when the plan never reaches the armed renderer. `injected_failure` holds the raw (lossy) value **whenever the variable is set**, even empty or with nothing armed, so a bench run with a stray variable stays visible. |
+| WP2-7 | Ratified | `VA_WAYLAND` keeps Wayland only when it is exactly `1` (` 1`, `0` and non-Unicode values mean X11). The compositor warning is printed only under WSL, with a plan that includes wgpu. |
+| WP2-8 (CR19-03) | Ratified | §19.4 additions. (a) A forced renderer that meets a platform failure, or any error after the first frame, gets the unchanged `cannot create the window or the renderer: <error>`. (b) In `auto`, a non-renderer error on the second attempt also gets that message; a renderer initialization error before the first frame on the last attempt gets `no renderer could be initialized …`. (c) The `tried …` list is the plan order joined by `, then ` (`tried wgpu, then glow` on Windows aarch64, `tried glow` for a single-renderer `auto`). (d) The renderer-initialization set is the union of the two §19.2 sets, whatever renderer was attempted; eframe only returns the attempted renderer's variants, so this cannot be observed. (e) `fallback_reason` is the first line of the description; the warning carries the whole text. (f) An attempt index outside the plan is fatal with the window message, never a panic. |
+| WP2-9 | Ratified | `--renderer` help reads `[default: $VA_RENDERER, else auto]`, with one user-facing line per value (clap help text, like the GUI `about` ratified in §17.11 D13). |
+| WP2-10 (CR19-05, CR19-07) | Ratified | §19.3 local tests (`tests/fallback.rs`, all ignored with the §19.3 reason): `injected_glow_failure_falls_back_to_wgpu` (not on Windows aarch64) and `injected_wgpu_failure_falls_back_to_glow` (Windows aarch64 only, where `auto` tries wgpu first); `both_failures_exit_3` (its `tried` order follows the target); `forced_renderer_never_falls_back` (through `--renderer` and through `VA_RENDERER`); `auto_uses_glow_first` (not on Windows aarch64); QA's `injected_glow_failure_falls_back_in_the_idle_scenario`, `forced_renderer_ignores_an_injection_of_the_other_renderer`, `unknown_injection_values_change_nothing` and `interactive_fallback_keeps_the_window_open` (the glow-first ones compiled out on Windows aarch64); and `wsl_defaults_to_x11_with_wayland_display_present` (Linux: keeps `WAYLAND_DISPLAY`, forces glow, expects `xlib` by default and with `VA_WAYLAND=0`, `wayland` with `VA_WAYLAND=1`; it closes CR19-07). stderr is matched line by line in order, not for equality, because Mesa prints its own `warning:` lines. QA runs them with `--test-threads=1` on Windows and under WSLg X11 (`env -u WAYLAND_DISPLAY`). |
+| WP2-11 | Ratified | Tests changed because §19 changed what they assert: `tests/cli.rs` (`default_renderer_is_wgpu_when_compiled` became `default_renderer_defers_to_auto`; `default_renderer_is_glow_without_wgpu` goes through `resolve_renderer`; the startup plan carries no command-line renderer; `Renderer` in compiled lists and `UsageError`), `tests/bench_report.rs` (22 keys, `/2`, the §19.5 example), `tests/binary.rs` (`missing_display_is_a_window_error` removes the `VA_*` selection variables). Single-renderer builds are compiled and linted (ci steps 3 and 3b), never tested: a test that needs both renderers is gated on `all(feature = "renderer-glow", feature = "renderer-wgpu")`, as QA did for `forced_renderer_platform_failure_keeps_the_window_message`. |
+| WP2-12 | Ratified | §19.3 genuine OpenGL failure: on the reference WSLg the libglvnd command does not fail GL (libglvnd falls back to Mesa), which is recorded as §19.3 allows. A second genuine command joins §19.3 and N5: `env -u WAYLAND_DISPLAY MESA_GL_VERSION_OVERRIDE=1.1 MESA_GLES_VERSION_OVERRIDE=1.0 "$CARGO_TARGET_DIR/bench/shipped/visual-assembler" --bench startup`. Observed by WP2 and QA (debug and release): `fallback_reason` `glutin error: [a7] GLXBadFBConfig`, `renderer` `wgpu` on Vulkan, `xlib`, exit 0. |
+| WP2-13 | Limitation | A crash inside the graphics driver kills the process before any error is returned, so it cannot fall back. Observed: `LIBGL_ALWAYS_INDIRECT=1` makes glow's GLX path end in SIGSEGV (exit 139) under WSLg; forced wgpu works there. As for a panic (§19.2), the README tells the user to force the other renderer. |
+| QA-1 | Ratified | Under WSL with `DISPLAY` unset, the forced X11 path cannot connect, even when `WAYLAND_DISPLAY` is set: a platform failure (exit 3, window message, no fallback). The README says to set `DISPLAY`, or to use `VA_WAYLAND=1` with glow. |
+
+#### 19.9.2 Bench runner and report (WP4)
+
+| ID | Decision | The spec now says |
+|---|---|---|
+| WP4-1 | Ratified | Key order of a `va.bench.report/2` result: `scenario, renderer_requested, renderer, fallbacks, binary, binary_bytes, warmup, runs, duration_secs, env, backend, adapter, driver, window_system, summary, samples`. The `env` map lists the five §6.2 variables, then `VA_RENDERER`, `VA_TEST_FAIL_RENDERER`, `VA_WAYLAND`. |
+| WP4-2 | Ratified | A result with no samples has `renderer: "unknown"`, like `backend` and `window_system` (unreachable, since `--runs` ≥ 1). |
+| WP4-3 | Ratified | Each run passes `--renderer <r> --bench <scenario> [--duration-secs N]`, in that order. |
+| WP4-4 | Ratified | Under `auto`, validation is the scenario rule plus `renderer_requested == "auto"`. No check relates `renderer` and `fallback_from`: that invariant belongs to the GUI and is tested there. |
+| WP4-5 | Ratified | xtask does not warn when `VA_RENDERER` is set: the `--renderer` it always passes overrides the variable, and the report's `env` map records it. |
+| WP4-6 | Ratified | Copies left under `<target>/bench/wgpu/` and `<target>/bench/glow/` by the pre-§19 runner are not cleaned up. xtask never reads them, and `make clean` removes them. |
+
+#### 19.9.3 Automation and CI (WP5)
+
+| ID | Decision | The spec now says |
+|---|---|---|
+| CR19-13 | Ratified | The scope extension of row 19-4 is accepted. The AGENCEMENT check (check 4 of `check_project_docs.py`) inspects tree entries only (`iter_entries` and `unannotated_entries` in `gen_agencement.py`). It warns `[layout] some entries are still unannotated (<n>): <paths>`, with at most 10 paths and then `and <k> more`, for each entry whose annotation is empty or still holds `<!-- annotate -->`. The header line never counts, and `--strict` exits 1 only when such entries exist. The generator footer may count a `<!-- annotate --> text` entry differently; the check is authoritative. Regression tests: row 19-10. |
+| CR19-06 | Fixed (row 19-9 a) | The second Windows smoke step injects a failure into the **first renderer of the runner's `auto` order**: `glow` on `windows-latest` (x64), `wgpu` on `windows-11-arm`. Its log then documents a fallback on both images (glow to wgpu, wgpu to glow). On ARM64 the glow fallback may itself fail when the hosted image has no usable OpenGL; the §19.4 lines are then the record. Both outcomes are informational. |
+
+#### 19.9.4 Security round 1
+
+| ID | Decision | The spec now says |
+|---|---|---|
+| S19-1 | Limitation (M0), deferred to M4 | On the Windows release build (GUI subsystem, §4.2), stderr exists only when redirected, so the §19.3 startup warning, the selection warnings and every §19.4 message are invisible when the app starts from Explorer, the Start menu or a PowerShell prompt. Accepted for M0: nothing is distributed before M8, whoever sets the environment already controls the process, and bench JSON records `renderer`, `fallback_from`, `fallback_reason` and `injected_failure`, so no measurement is misattributed. The last sentence of the §19.3 footgun analysis now reads: "The loud warning keeps it from going unnoticed on a console; on the Windows release build, bench JSON and, from M4, the status bar do." The README says these messages appear only on a console (Git Bash, a pipe, the debug build). **M4:** the §19.2 status-bar note shows a fallback **and** an armed `VA_TEST_FAIL_RENDERER` hook, and M4 decides how a startup failure that exits 3 before any window reaches a user who has no console. *Rejected:* a ` (test hook active)` window-title suffix in M0, which would widen the spike.rs i18n exception for a test-only path. |
+| S19-2 | Fixed (row 19-8 a) | Every environment value echoed in a warning goes through `str::escape_debug` of its lossy text: the invalid `VA_RENDERER` warning, both `VA_TEST_FAIL_RENDERER` warnings and the startup warning. A stray CR, newline or escape sequence becomes visible (`'glow\r'`) instead of breaking the line or driving the terminal. `injected_failure` keeps the unescaped lossy value, which serde_json escapes. |
+| S19-3 | Fixed (rows 19-9 b, 19-10, 19-11) | cargo-deny 0.20.2 `unused = "deny"` only proves that a pin's name, source and version exist in the resolved graph. A pin that no member declares passes when a dependency already pulls that version, and an internal path pin (M1+) would match its own member package. "Only crates declared by at least one member" is now enforced by a reverse check in `scripts/check_project_docs.py` check 3b. The row 19-1 acceptance check proves only that the graph is acceptable; that winit is used was proven by row 19-2's Linux target dependency and is now kept by check 3b. The root `Cargo.toml` comment, DEPENDANCE.md and CLAUDE.md stop attributing the rule to cargo-deny alone. |
+| S19-4 | Fixed (row 19-8 b) | `WGPU_BACKEND` is **effective** only when wgpu itself takes a non-empty backend set from it: the value is valid Unicode (wgpu-types 30.0.1 reads it with `std::env::var(..).ok()`) and `Backends::from_comma_list` of it is not empty. The Windows DX12 pin and the WP2-1 GL exclusion step aside only for an effective value, so an empty, blank, unrecognized or non-Unicode value no longer drops the pin or brings GL back after a glow failure. "Unless `WGPU_BACKEND` is set" in §17.13 and §19.1 means "unless it is effective", as architecture §9.8 now says. wgpu still applies its own reading: on Linux an empty or unrecognized value leaves eframe's instance with no backend, so forced wgpu exits 3 (accepted: the environment asked wgpu for no backend). |
+| S19-5 | Limitation | The real in-process retry needs a window, and the hosted runners only run informational GUI steps (architecture §9.1: never evidence). Compensating controls: (1) the CR19-06 step exercises a fallback on both Windows images, still `continue-on-error`; (2) **binding QA rule:** run `cargo test -p visual-assembler --test fallback -- --ignored --test-threads=1` on Windows and under WSLg X11 whenever `Cargo.lock` changes the version of eframe, egui, egui-wgpu, egui_glow, wgpu, glutin or winit, and before each milestone closes; (3) the headless tests cover the classification, the messages and every attempt's options. *Rejected:* an assertion inside the smoke step, because a `continue-on-error` step cannot gate. Revisit when branch protection makes CI required (§17.17 item 3). |
+
+#### 19.9.5 Items without a spec change
+
+- CR19-08, CR19-09, CR19-11 and CR19-12 are documentation and report deliverables of rows 19-5,
+  19-6 and the docs owner. Their content now includes the §19.9 items named in row "WP7" below.
+- CR19-10 and CR19-14 were refuted by verification round 1. The hosted-runner checks (the four
+  `check (…)` jobs, Windows ARM64, both smoke steps) happen after the orchestrator pushes.
+- WP1: the row 19-1 manifest value is exact; its cargo-deny observation is S19-3.
+
+#### 19.9.6 Fix-wave table (continues §19.8)
+
+| # | Owner | Change | Acceptance check |
+|---|---|---|---|
+| 19-8 | WP2 | (a) S19-2: in `cli.rs`, `resolve_renderer` (invalid `VA_RENDERER`), `parse_injected_failures` (non-Unicode and unknown-item warnings) and `InjectedFailures::startup_warning` print the echoed value as `escape_debug()` of the lossy `&str` (of the trimmed item, for unknown items). No other text changes; `InjectedFailures::raw` stays unescaped. (b) S19-4: `lib.rs` gains `#[cfg(feature = "renderer-wgpu")] pub fn wgpu_backend_env_is_effective(raw: Option<&std::ffi::OsStr>) -> bool`, true exactly when `raw` is valid Unicode and `eframe::wgpu::Backends::from_comma_list` of it is not empty. `pin_windows_wgpu_backend` and `exclude_wgpu_gl_backend` call it with `std::env::var_os("WGPU_BACKEND").as_deref()` instead of testing `var_os(..).is_none()`; their doc comments say "effective". | `tests/cli.rs`: `VA_RENDERER` = `"glow\r\n\u{1b}[2J"` gives exactly one warning, with no CR, LF or ESC character in it and the value spelled with backslash escapes; `VA_TEST_FAIL_RENDERER` = `"glow,bad\nerror: forged"` gives one unknown-item warning with the item escaped, a startup warning with no control character, and `raw` equal to the input; the existing exact-text tests pass unchanged. `tests/renderer_backend.rs`: the helper is false for `None`, `""`, `"  "`, `","`, `"bogus"` and a non-Unicode value (Unix `OsStr::from_bytes(b"\xff")`, Windows `OsString::from_wide(&[0xD800])`), and true for `"vulkan"`, `"gl"`, `"DX12"` and `" vk , bogus"`. The env-dependent branches of `dx12_pin_applies_to_every_wgpu_attempt` and `wgpu_gl_backend_is_left_out_after_a_glow_failure` use the helper: unset keeps today's assertions; effective gives eframe's choice; set but not effective gives DX12 on Windows and no GL after a glow failure. Clippy `-D warnings` is clean in the dual, glow-only and wgpu-only builds. |
+| 19-9 | WP5 | (a) CR19-06: the second Windows smoke step of `ci.yml` becomes exactly the block below; nothing else in `ci.yml` changes. (b) S19-3: check 3b of `scripts/check_project_docs.py` also reports, once per key and in sorted order, every key of the root `[workspace.dependencies]` (path entries included) that no member declares with `workspace = true` in any dependency table (`dependencies`, `dev-dependencies`, `build-dependencies` and their `target.<cfg>` variants, plus the root package's own tables when the root manifest has `[package]`): `[deps] Cargo.toml: workspace dependency '<name>' is not declared by any member (rule R6: remove the pin or declare it with workspace = true)`. Keys compare exactly. The reverse check is skipped when a member manifest or one of its tables is unusable, which is already reported. The module docstring (item 3b) says so. | (a) YAML parses; every `uses:` line is unchanged and pinned to a 40-hex SHA; no `${{` appears inside a `run:` value. After the push, the `windows-latest` log shows `"fallback_from":"glow"`, and the `windows-11-arm` log shows `"fallback_from":"wgpu"` or the `no renderer could be initialized (tried wgpu, then glow)` lines. (b) The real repository reports no `[deps]` problem; row 19-10 passes. |
+| 19-10 | WP4 | `xtask/tests/docs.rs`, with the existing manifest and golden-project helpers: `unused_workspace_dependency_is_reported` (a `serde` pin that no member declares gives exactly the 19-9(b) line for `serde`); `workspace_dependency_used_only_in_a_target_table_counts` (the member declares it under `[target.'cfg(target_os = "linux")'.dependencies]`: no `[deps]` line); `unused_path_workspace_dependency_is_reported` (`va-core = { path = "crates/va-core" }` pinned and declared by nobody); `unannotated_tree_entry_is_reported_with_its_path` (a fully annotated generated tree gives no `still unannotated` line and `--strict` exits 0; one entry set back to `# <!-- annotate -->` gives the warning with its path, and `--strict` exits 1). | `cargo test -p xtask --test docs` passes on Windows and in WSL |
+| 19-11 | WP1 | Root `Cargo.toml` line 28 becomes exactly `# Exact pins, each declared by at least one member (rule R6, enforced by check_project_docs.py check 3b).` It stays one line, so the SECURITY.md line references stay valid. | Only that line differs; `Cargo.lock` is unchanged; `cargo metadata --format-version 1 --no-deps` exits 0 |
+| — | WP7 | READMEs, CLAUDE.md, DEPENDANCE.md and IMPORT.md document WP2-1, WP2-5, WP2-6, WP2-13, QA-1, S19-1, S19-3, S19-4, S19-5 (QA rule), CR19-06 and CR19-13, together with row 19-6 and CR19-08/09/12 | E7 + Orchestrator review |
+| — | WP6 | M0-backend.md N5 records both genuine-failure commands with their outcomes (WP2-12) and the driver-crash case (WP2-13) | Orchestrator review (E5) |
+| — | Security | SECURITY.md: WP2-1 ratified; S19-1 and S19-5 accepted with their controls; S19-2, S19-3 and S19-4 closed once rows 19-8 and 19-9 land; the CR19-06 step; re-pointed line ranges | Security re-audit |
+
+The `ci.yml` block of row 19-9(a):
+
+```yaml
+      # Section 19.9 (CR19-06): fail the first renderer of this runner's auto order on purpose, so
+      # the log documents a fallback on both images (x64: glow then wgpu; ARM64: wgpu then glow).
+      - name: GUI renderer fallback smoke (informational, never a support claim)
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        timeout-minutes: 3
+        shell: bash
+        env:
+          VA_TEST_FAIL_RENDERER: ${{ runner.arch == 'ARM64' && 'wgpu' || 'glow' }}
+        run: ./target/release/visual-assembler.exe --bench startup
+```
+
+The expression sits in the step's `env:`, never inside `run:`, and `runner.arch` is set by the
+runner, not by a pull request.
+
+Order: rows 19-8, 19-9 and 19-11 touch disjoint files and run in parallel; 19-10 runs after 19-9(b).
+QA then re-runs on Windows and WSL: `make test`, `make lint`, `make docs`, `cargo xtask ci`
+(`--no-fmt` in WSL), `make security` (Windows), and the ignored fallback tests on Windows and WSLg
+X11, because row 19-8 touches `native_options`. No row changes the cost of the startup path: 19-8
+only reformats warnings and parses one variable that eframe already reads.
+
+#### 19.9.7 Superseded §19 passages
+
+| §19 passage | Read instead |
+|---|---|
+| §19.1 WSL row: "The hook must be set on the **first** attempt" | WP2-4 |
+| §19.1 Windows wgpu row: "unless `WGPU_BACKEND` is set" | S19-4 ("effective"), and the new WP2-1 row |
+| §19.2 State across attempts: "a shared `Option` slot that the creator takes from" | WP2-3 |
+| §19.2 Reporting: "M4 adds a status-bar note" | S19-1 |
+| §19.3 Hook: startup warning, unknown values, last sentence of the footgun analysis | WP2-6, S19-1 |
+| §19.3 local tests list | WP2-10 |
+| §19.3 genuine OpenGL failure | WP2-12 |
+| §19.3 CI GUI smoke (command and purpose); §19.6 `ci.yml` bullet | CR19-06, row 19-9(a) |
+| §19.4 table (the cases it leaves open) | WP2-8 |
+| §19.5 report result key order, runner arguments and validation | WP4-1…WP4-6 |
+| §19.8 row 19-1 acceptance: "(winit is now used, so `unused` is satisfied)" | S19-3 |
