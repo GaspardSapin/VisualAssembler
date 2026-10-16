@@ -356,8 +356,11 @@ fn wsl_defaults_to_x11_with_wayland_display_present() {
 }
 
 /// Kills and reaps the child when dropped, so a failing assertion never leaves a window open.
+/// Gated like its only user, `interactive_fallback_keeps_the_window_open`.
+#[cfg(not(all(windows, target_arch = "aarch64")))]
 struct KillOnDrop(std::process::Child);
 
+#[cfg(not(all(windows, target_arch = "aarch64")))]
 impl Drop for KillOnDrop {
     fn drop(&mut self) {
         // Already exited, or the kill races its exit: either way only the wait matters.
