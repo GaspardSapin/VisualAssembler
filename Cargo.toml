@@ -1,5 +1,6 @@
 # VisualAssembler virtual workspace manifest.
-# Normative content: docs/specs/m0-foundations.md §3.1, amended by §17.1 (licence) and §19.8 (winit).
+# Normative content: docs/specs/m0-foundations.md §3.1, amended by §17.1 (licence) and §19.8 (winit),
+# and amended by m1-core-isa-lexer.md §8 (fluent-bundle, unic-langid and the internal crates).
 # Comments may be added; values must not change.
 
 [workspace]
@@ -33,10 +34,15 @@ anyhow = "=1.0.104"
 clap = { version = "=4.6.7", features = ["derive"] }
 eframe = { version = "=0.36.2", default-features = false, features = ["accesskit", "default_fonts", "wayland", "x11"] }
 egui_kittest = "=0.36.2"
+fluent-bundle = "=0.16.0"
 libc = "=0.2.189"
 raw-window-handle = "=0.6.2"
 serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "=1.0.151"
+unic-langid = "=0.9.6"
+va-arch-m68k = { path = "arch/m68k" }
+va-core = { path = "crates/va-core" }
+va-workspace = { path = "crates/va-workspace" }
 windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_System_ProcessStatus", "Win32_System_Threading"] }
 # m0-foundations.md §19.1/§19.8 row 19-1: X11 event loop under WSL (EventLoopBuilderExtX11::with_x11).
 # Members declare it under [target.'cfg(target_os = "linux")'.dependencies]; same version eframe pulls.

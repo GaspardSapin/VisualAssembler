@@ -2,7 +2,8 @@
 # Each recipe line is a single command with no shell syntax, so it behaves the same whether
 # GNU make uses sh (Git for Windows, Ubuntu) or cmd.exe (Windows without sh on PATH).
 # Normative content: docs/specs/m0-foundations.md section 7, amended by sections 17.5 and 18.7
-# (security target) and 19.5 (RENDERER default). Comments may be added; values must not change.
+# (security target) and 19.5 (RENDERER default), and amended by m1-core-isa-lexer.md section 8
+# (bench-lexer target). Comments may be added; values must not change.
 
 CARGO    ?= cargo
 SCENARIO ?= all
@@ -10,7 +11,7 @@ RENDERER ?= auto
 RUNS     ?=
 
 .DEFAULT_GOAL := help
-.PHONY: help install hooks dev run test lint format security docs build clean bench ci
+.PHONY: help install hooks dev run test lint format security docs build clean bench bench-lexer ci
 
 help:
 	$(info VisualAssembler - make targets)
@@ -26,6 +27,7 @@ help:
 	$(info   build     release build of the GUI and the CLI)
 	$(info   clean     remove build artifacts)
 	$(info   bench     measure the GUI - SCENARIO=startup|idle|all RENDERER=auto|glow|wgpu|all RUNS=n)
+	$(info   bench-lexer  measure lexer throughput on 100000 generated lines in release)
 	$(info   ci        run the CI checks locally - fmt clippy layering tests)
 
 install:
@@ -68,6 +70,9 @@ clean:
 
 bench:
 	$(CARGO) xtask bench $(SCENARIO) --renderer $(RENDERER) $(if $(RUNS),--runs $(RUNS))
+
+bench-lexer:
+	$(CARGO) test -p va-arch-m68k --release --test syntax_bench -- --ignored --nocapture
 
 ci:
 	$(CARGO) xtask ci

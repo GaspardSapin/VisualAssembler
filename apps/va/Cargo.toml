@@ -14,6 +14,15 @@ license.workspace = true
 clap = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+va-arch-m68k = { workspace = true, optional = true }
+va-core = { workspace = true }
+va-workspace = { workspace = true }
+
+# m1-core-isa-lexer.md §7.1, §8: each CPU crate is an optional feature, registered by
+# src/arch_registry.rs; a build without any `arch-*` feature has no architecture.
+[features]
+default = ["arch-m68k"]
+arch-m68k = ["dep:va-arch-m68k"]
 
 [lints]
 workspace = true

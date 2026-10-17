@@ -7,5 +7,13 @@ rust-version.workspace = true
 publish.workspace = true
 license.workspace = true
 
+# m1-core-isa-lexer.md §8. fluent-bundle only parses and formats the embedded .ftl files in tests
+# (§6.3); the crate itself never renders text.
+[dependencies]
+va-core = { workspace = true }
+
+[dev-dependencies]
+fluent-bundle = { workspace = true }
+
 [lints]
 workspace = true
