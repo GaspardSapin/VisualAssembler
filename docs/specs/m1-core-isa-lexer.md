@@ -754,7 +754,9 @@ va [--json] [--lang en|fr] info | lex <FILE|-> | isa <MNEMONIC[.SIZE]> | isa --l
 ```
 
 - `isa` takes exactly one of `MNEMONIC` and `--list` (clap: both or neither is a usage error, 2).
-- `--lang` becomes a global flag **in M1** (m0 §5 said M2), because `va isa` renders docs.
+- `--lang` becomes a global flag **in M1** (m0 §5 said M2), because `va isa` renders docs. Its
+  values are `en` and `fr` only (architecture §5); `--lang auto` is a usage error (exit 2): to get
+  `auto`, omit the flag.
   `VA_LANG` and `auto` follow §6.2. An ignored `VA_LANG` prints `warning: ignoring VA_LANG=<value>
   (expected en, fr or auto)` on stderr; the `var` closure reads `var_os` lossily, so a non-Unicode
   value is reported too. With `--lang`, no variable is read and nothing is reported.
@@ -834,8 +836,9 @@ conversion is an M4 editor feature ("reopen as Windows-1252").
   `plus_ea`.
 - **`--list`, JSON `va.isa.list/1`:** `{"schema":"va.isa.list/1","arch":"m68k","lang":"en","mnemonics":[{"spelling":"ABCD","canonical":"ABCD","summary":"…"}, …]}`
   with the 126 spellings in order; text mode prints `<SPELLING>  <summary>` per line.
-- Unknown spelling: exit 1 with `error: unknown mnemonic 'MOV' (did you mean MOVE, MOVEA, MOVEQ?)`:
-  up to 3 spellings within edit distance 2. Size not accepted: exit 1.
+- Unknown spelling: exit 1 with `error: unknown mnemonic 'MOV' (did you mean MOVE, MOVEA, MOVEM?)`:
+  up to 3 spellings within edit distance 2, ordered by distance, then longest common prefix, then
+  spelling order (§12.7). Size not accepted: exit 1.
 
 ### 7.5 Errors and exit codes (`src/report.rs`)
 
@@ -850,7 +853,7 @@ strings before any GUI exists; M4 does it).
 | 0 | success (`lex` without error diagnostic) |
 | 1 | `lex` found an error diagnostic, blocking or not (result document, not `va.error/1`); `isa-unknown-mnemonic`, `isa-size-not-accepted` |
 | 2 | clap usage errors (unchanged) |
-| 3 | `read-failed`, `input-too-large`, `input-not-utf8`, `no-architecture` (built without `arch-*`), `locale-invalid` (embedded resource fails to load: a build defect), stdout failure |
+| 3 | `read-failed`, `input-too-large`, `input-not-utf8`, `no-architecture` (built without `arch-*`), `locale-invalid` (embedded resource fails to load: a build defect), stdout failure, stderr failure while `va lex` prints diagnostics in text mode (§12.7) |
 | 101 | panic (a bug) |
 
 ## 8. Manifests, Makefile and dependencies (WP0)
@@ -974,7 +977,7 @@ Same precedence as the body it amends; where §12 and an earlier passage differ,
 passages WP-F reads (§3.5, §4.1, §5.2, §5.7, §7.1, §7.4, §8) were also corrected in place.
 Source: the wave-2 notes per WP, checked against the code at `66fd916` and a68k where stated.
 
-### 12.1 Fix-now (small, local; before WP-F closes)
+### 12.1 Fix-now (small, local; before WP-F closes; R12-4 is in §12.7)
 
 | # | Owner | Files | Exact change |
 |---|---|---|---|
@@ -1045,3 +1048,39 @@ for a state that ends in M3.
   `message`/`help`/`note` (JSON `null` when absent, text `  help:` line); docs via
   `message(id, None | Some("details") | Some("flags"), &[])`.
 - `fix` is present only for R1/R2 diagnostics (§5.7); after R12-1 a dangling `#` has a real fix.
+
+### 12.7 WP-F (`va lex`, `va isa`; commit `5d2d205`)
+
+| Item | Decision |
+|---|---|
+| §7.4 suggestion example | **Ratified, example fixed in §7.4.** Candidates within edit distance 2 are ordered by distance, then longest common prefix, then spelling order, at most 3: `MOV` gives `MOVE, MOVEA, MOVEM` (MOVEP, MOVEQ, EOR, NOT, NOP, OR, ROL, ROR are also within 2). The old `MOVEQ` example matched no defined order. Tests pin "MOVE first, at most 3, all start with MOV"; they may now pin the exact list. |
+| `--lang auto` | **Ratified** (§7.1 updated): `--lang` takes `en` or `fr`, as architecture §5 says; `auto` exists only for `VA_LANG` and, from M4, `ui.language`. `--lang auto` is a usage error (exit 2). |
+| `va.lex/1` tokens | Ratified: the JSON lists every token, whitespace included (the byte coverage is visible), and `summary.tokens` counts them all; the text mode omits whitespace tokens. Golden comparisons are byte-for-byte. |
+| JSON diagnostics | Ratified: computed by a second, identical lexing pass so memory stays one line (the lexer is deterministic, §3.4; cost ≤ 2× the lexing time). |
+| stderr failure in `va lex` text mode | Ratified: exit 3. In text mode the diagnostics on stderr are part of the result (same rule as m0 §17.10 for clap messages). Text mode also prints `  note:` lines when `.note` exists, and flushes stdout before each line's diagnostics so the two streams interleave in line order. |
+| I/O error text | Ratified: `cannot read <file>: <io::ErrorKind> (os error <n>)`, because Windows localizes OS messages and CLI messages are English (§7.5); a directory gives `it is a directory`; stdin is named `standard input` in messages and `-` in JSON. |
+| `va info` | Ratified: reads no language variable and prints no `VA_LANG` warning (it has no localized content). |
+| `va isa` text layout | Ratified as a human layout, not a contract (§7.4): a blank line between form blocks, 1-based operand lines, one `cycles` line per row. Only the first line and the flags lines are tested. |
+| `ea_timing` | Ratified: the whole 24-entry table when any row of the shown forms has `plus_ea`, else `[]` (not filtered to the modes used). |
+| Missing Fluent text | Ratified: `summary`/`details` fall back to the message id, `flags_note` to `null`. Unreachable in shipped builds (§6.3 completeness test). Lookup-error message wording and the clap `ArgGroup` usage line are ratified as implemented. |
+| `locale-invalid` untested | Ratified as untested by design: the path is unreachable in shipped builds (§6.3 parses every embedded resource), `Localizer` errors are covered by the WP-E tests on synthetic resources, and the CLI mapping is a reviewed one-liner. *Rejected:* a compiled-in test hook to break a resource, which ships code for a defect the build already rules out. |
+| `no-architecture` test only without default features | **Fix-now R12-4.** CI runs `--all-features`, so the build without any `arch-*` feature (the state of `va` before a CPU is added, and the shape a second CPU must keep compiling) is never compiled or tested. |
+| No `va lex` throughput figure | Deferred: the lexer budget (§5.6) is the gate; an end-to-end `va lex` figure (I/O and JSON included) belongs to M7. |
+
+**R12-4 (owner: the WP-F developer, scope extended to `xtask/src/ci.rs` and `xtask/tests/ci.rs`;
+the Documentarian then updates `xtask/README.md` and the `make ci` row of `CLAUDE.md`).** Add two
+steps to `cargo xtask ci`:
+
+```rust
+/// Step 3c: clippy on `va` built without any CPU (`no-architecture` path), warnings denied (m1 §12.7).
+pub const CLIPPY_VA_NO_ARCH: &[&str] =
+    &["clippy", "-p", "va", "--all-targets", "--no-default-features", "--locked", "--", "-D", "warnings"];
+/// Step 5b: the `va` tests without any CPU, which run the `no-architecture` test (m1 §12.7).
+pub const TEST_VA_NO_ARCH: &[&str] = &["test", "-p", "va", "--no-default-features", "--locked"];
+```
+
+`steps()` order becomes: build configuration, fmt, `CLIPPY_ALL_FEATURES`, `CLIPPY_GLOW_ONLY`,
+`CLIPPY_WGPU_ONLY`, `CLIPPY_VA_NO_ARCH`, layering, `TEST_ALL`, `TEST_VA_NO_ARCH`. Neither new step
+rebuilds xtask (`-p va` only). `xtask/tests/ci.rs` updates its expected step labels and asserts that
+both new steps carry `--no-default-features`. The CI workflow is unchanged (it runs `cargo xtask ci`).
+*Rejected:* waiting for a second CPU; the feature-gated path would rot unseen until then.
