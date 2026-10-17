@@ -195,11 +195,13 @@ impl Lexer<'_, '_> {
     }
 
     /// Lexes the label field `start..stop` (§5.2 label rows) and tells whether it is exactly a
-    /// label followed by `:`.
+    /// label followed by its colon run.
     ///
     /// A label is a run of pieces: `Label` (ID_START ID_CONT*), `LocalLabel` (DIGIT+ `$` or `\`
     /// ID_START ID_CONT*, first piece only) and `MacroParam` (`\0`–`\9`, `\@`); text after a
-    /// macro parameter continues the name with the kind of its first piece. One `:` may follow.
+    /// macro parameter continues the name with the kind of its first piece. A run of `:` may
+    /// follow, as one `Punctuation` token (a68k assembles `lab::` and `lab:::` like `lab:`,
+    /// m1 §12.1 R12-2).
     /// The first byte that fits none of this starts an `Invalid` token to `stop`:
     /// `lex-bad-label` if no piece came before it, else `lex-label-junk`.
     fn label(&mut self, start: usize, stop: usize) -> bool {
@@ -246,7 +248,11 @@ impl Lexer<'_, '_> {
                     Some((name_kind, skip_id_cont(bytes, at + 1, stop)))
                 }
                 State::Text | State::Param if byte == b':' => {
-                    Some((TokenKind::Punctuation, at + 1))
+                    let mut colons_end = at + 1;
+                    while colons_end < stop && bytes[colons_end] == b':' {
+                        colons_end += 1;
+                    }
+                    Some((TokenKind::Punctuation, colons_end))
                 }
                 _ => None,
             };

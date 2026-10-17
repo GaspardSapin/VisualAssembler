@@ -21,3 +21,5 @@ lab:nop
 -x	nop
   name:nop
 lab::	nop
+lab:::
+  other:: nop

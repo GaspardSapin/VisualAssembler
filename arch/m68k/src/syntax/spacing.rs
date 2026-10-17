@@ -147,12 +147,14 @@ pub(crate) fn unquoted_semicolon(bytes: &[u8], from: usize, end: usize) -> usize
 }
 
 /// Tells whether a whitespace run next to `byte` is removed by the quick fix: `byte` is `,`,
-/// `(`, `)` or an operator char (`<` and `>` stand for `<<` and `>>`).
+/// `#`, `(`, `)` or an operator char (`<` and `>` stand for `<<` and `>>`). `#` is in the set
+/// so that the fix of a dangling `#` (rule R1) is not a no-op (m1 §12.1 R12-1).
 fn joins(byte: Option<u8>) -> bool {
     matches!(
         byte,
         Some(
-            b',' | b'('
+            b',' | b'#'
+                | b'('
                 | b')'
                 | b'+'
                 | b'-'

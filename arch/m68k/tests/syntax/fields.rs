@@ -94,11 +94,51 @@ fn bad_label_and_label_junk() {
     );
     check("1$x", &[(LOCAL, "1$"), (invalid(LEX_LABEL_JUNK), "x")]);
     check("lab-1", &[(LABEL, "lab"), (invalid(LEX_LABEL_JUNK), "-1")]);
-    // Literal reading of §5.2 ("trailing `:`" is one colon); a68k itself accepts `lab::`.
     check(
-        "lab::",
-        &[(LABEL, "lab"), (PUNCT, ":"), (invalid(LEX_LABEL_JUNK), ":")],
+        "lab::nop",
+        &[
+            (LABEL, "lab"),
+            (PUNCT, "::"),
+            (invalid(LEX_LABEL_JUNK), "nop"),
+        ],
     );
+    check(
+        "lab:\\@",
+        &[
+            (LABEL, "lab"),
+            (PUNCT, ":"),
+            (invalid(LEX_LABEL_JUNK), "\\@"),
+        ],
+    );
+}
+
+#[test]
+fn a_colon_run_after_a_label_is_one_punctuation_token() {
+    // m1 §12.1 R12-2: a68k assembles `lab::` and `lab:::` like `lab:`.
+    check("lab::", &[(LABEL, "lab"), (PUNCT, "::")]);
+    check("lab:::", &[(LABEL, "lab"), (PUNCT, ":::")]);
+    check(
+        "lab::\tnop",
+        &[(LABEL, "lab"), (PUNCT, "::"), (WS, "\t"), (MNEMONIC, "nop")],
+    );
+    check("1$::", &[(LOCAL, "1$"), (PUNCT, "::")]);
+    check("lbl\\@::", &[(LABEL, "lbl"), (PARAM, "\\@"), (PUNCT, "::")]);
+    check(
+        "  other:: nop",
+        &[
+            (WS, "  "),
+            (LABEL, "other"),
+            (PUNCT, "::"),
+            (WS, " "),
+            (MNEMONIC, "nop"),
+        ],
+    );
+    check(
+        "\tother:::",
+        &[(WS, "\t"), (LABEL, "other"), (PUNCT, ":::")],
+    );
+    // A colon run is not a label.
+    check("::", &[(invalid(LEX_BAD_LABEL), "::")]);
 }
 
 #[test]
@@ -833,13 +873,12 @@ const SUSPECT_ROWS: [SuspectRow; 19] = [
         fix: None,
     },
     // Extra cases: R1 on `#` and on an open parenthesis, R2 on `<<`, quoted `;`, R3 shapes.
-    // Spec gap (reported): `#` is not in the §5.7 join set (`,` `(` `)` operators), so R1 fires
-    // on a dangling `#` but its fix keeps the space and changes nothing.
+    // m1 §12.1 R12-1: `#` joins, so the fix of a dangling `#` removes the space.
     SuspectRow {
         line: " move.l # 1,d0",
         suspect: "1,d0",
         cause: "inside-expression",
-        fix: Some((" 1,d0", " move.l # 1,d0")),
+        fix: Some(("1,d0", " move.l #1,d0")),
     },
     SuspectRow {
         line: " move.l (a0 ,d0)",
