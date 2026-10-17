@@ -93,6 +93,13 @@ xtask: no workspace dependency (drives cargo and the built binaries as processes
 The names and shapes below are binding in spirit. M1 finalizes lifetimes, error types and
 module paths. Trait objects are `Send` (and `Sync` when shared) so they can move to worker threads.
 
+> **Finalized by `m1-core-isa-lexer.md` §3** (which wins over this sketch): spans use a `Copy`
+> `TextRange { start, end }` instead of `Range<u32>`; `TokenKind` adds `Whitespace`, `MacroName` and
+> `SuspectComment(DiagCode)`, and `Invalid` carries its `DiagCode`; `Diagnostic` gains `blocking`
+> (an error may be shown without stopping output); `Architecture` gains `instruction_set()` (a CPU-agnostic
+> instruction view for `va isa` and hover) and `diagnostic_codes()`; `assembler`/`disassembler`
+> land in M2 and `emulators`/`io_profiles` in M3, with the signatures of m1 §3.7.
+
 ```rust
 // ── Registry ──────────────────────────────────────────────────────────────
 pub trait Architecture: Send + Sync {
@@ -224,6 +231,7 @@ pub struct Segment { pub address: u64, pub bytes: Vec<u8>, pub kind: SegmentKind
 - **Fallback chain:** requested language → `en`. English must be complete: from M1 on, a test lists every `DiagCode` and every `ui-` id in use and fails when one is missing from `en`.
 - **Single renderer.** `va-workspace` provides `Localizer::render(&Diagnostic) -> RenderedDiagnostic`, used by both the GUI and the CLI. Assemblers and emulators never produce prose.
 - **Language selection (highest priority first):** CLI `--lang en|fr`, then env `VA_LANG`, then the `ui.language` setting (`auto|en|fr`), then `auto`. `auto` resolves to the OS locale, falling back to `en`.
+  - From M1 (m1 §6.2, §7.1): `--lang` is a global `va` flag, and `auto` reads only `LC_ALL`, `LC_MESSAGES`, `LANG`. The Windows UI language and the `ui.language` setting arrive in M4.
 
 ---
 
@@ -280,7 +288,7 @@ Locations come from `directories::ProjectDirs::from("", "", "VisualAssembler")`:
 | `peak_rss_bytes` | Windows: `PeakWorkingSetSize`. Linux: `VmHWM`. | GUI self-report | < 500 MB with `bench/generated/5k` open, after 5 s idle (M4+) |
 | keystroke latency | Input event timestamp → end of present of the frame that shows it | M4 bench | p95 < 16 ms over 500 keystrokes in a 100,000-line file |
 | large files | Open, scroll and type in a generated 100,000-line file | M4 bench | p95 frame time < 16 ms |
-| micro-benchmarks | Lexer, assembler (5k and 100k lines), rope edits, symbol index | criterion in each crate's `benches/` (M1+) | Tracked, never pass/fail in CI |
+| micro-benchmarks | Lexer, assembler (5k and 100k lines), rope edits, symbol index | criterion in each crate's `benches/` from M7; until then ignored release-mode tests (lexer: `make bench-lexer`, m1 §5.6) | Tracked, never pass/fail in CI |
 
 - Bench results are JSON files in `bench/results/` (gitignored).
 - Every optimization ships a report at `docs/perf/YYYY-MM-DD-<topic>.md` with before/after numbers and the exact command.
@@ -306,7 +314,7 @@ Locations come from `directories::ProjectDirs::from("", "", "VisualAssembler")`:
 | Crate tests | Pure logic through the public API | yes |
 | CLI tests | Spawn the binary via `env!("CARGO_BIN_EXE_<name>")`; assert exit code, stdout/stderr, JSON schema | yes |
 | UI tests | `egui_kittest` over the AccessKit tree; no window, no GPU. Image/snapshot tests are not used until a GPU-free renderer is decided. | yes |
-| Golden files (M2) | Assembler output, listing, S-record, diagnostics, under `arch/m68k/tests/fixtures/` | yes |
+| Golden files (M1 lexer, M2) | Lexer tokens, assembler output, listing, S-record, diagnostics, under `arch/m68k/fixtures/<area>/` (moved out of `tests/` for the depth rule, m1 §2.1) | yes |
 | Round trip (M2) | asm → binary → disassembly → asm | yes |
 | CPU conformance (M3) | SingleStepTests 680x0 subset. The upstream repository publishes no licence, so vectors are fetched by xtask into gitignored `xtask/cache/` and never committed. | yes (fetched at test time) |
 | a68k comparison (M2) | Byte-for-byte comparison with `a68k.exe`, only when `VA_A68K_PATH` is set | **never** (tool cannot be redistributed) |
@@ -437,6 +445,10 @@ Candidate future folders: `arch/z80`, `arch/mos6502`, `arch/riscv`, `arch/arm`, 
 - `Capabilities` reports reality (no undo, no write log), and `va-debug`/`va-ui` hide features based on capabilities, never on factory ids.
 - `va-gdb` depends on `va-core` only.
 - *Rejected:* running the emulator out of process from V1. In-process gives minimal latency and simpler tests; the trait keeps this door open.
+
+### 10.3 Assembler dialect profiles (deferred, user decision 2026-10-17)
+
+- V1 ships one 68000 dialect, strict A68k (m1 §5.7). A permissive EASy68K/vasm-style profile (spaces allowed after commas in operands) comes later as a dialect chosen per project, like the I/O profile, through a second `SyntaxProvider` in `arch/m68k`. No change in `crates/`.
 
 ---
 
