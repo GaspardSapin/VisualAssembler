@@ -9,7 +9,7 @@ A change to a spec is an Architect decision, never a side edit by another role.
 |-------|------|---------|
 | `architecture.md` | spec | Durable architecture: goals and non-goals, crate map and rules R1–R8, core contracts, threading (T1–T6), i18n, settings files, performance definitions, testing strategy, platforms and support tiers, offline and unsafe policies with the tripwire threat model (§9.3, §9.4), licence (§9.7), renderer policy (§9.8, with the renderer setting in §6), extension paths |
 | `m0-foundations.md` | spec | File-level spec of milestone M0: workspace, toolchain, GUI spike, CLI, xtask, Makefile, CI, cargo-deny, tests, renderer protocol, dependencies, fragile points; amended by §17 and §18, then by §19 (the user's renderer decision of 2026-10-14, with §19.9 ratifying its implementation) |
-| `m1-core-isa-lexer.md` | spec | File-level spec of milestone M1: frozen `va-core` contracts (and the M2/M3 signatures), 68000 ISA tables (spellings, forms, flags, cycles, encodings), the A68k-dialect lexer (with the §5.7 operand-spacing error of 2026-10-17), EN/FR instruction docs with Fluent, `va lex` and `va isa`, work packages, tests, lexer budget |
+| `m1-core-isa-lexer.md` | spec | File-level spec of milestone M1: frozen `va-core` contracts (and the M2/M3 signatures), 68000 ISA tables (spellings, forms, flags, cycles, encodings), the A68k-dialect lexer (with the §5.7 operand-spacing error of 2026-10-17), EN/FR instruction docs with Fluent, `va lex` and `va isa`, work packages, tests, lexer budget; amended by §12 (ratified wave 1–2 implementation, fix-now items R12-1…R12-3) |
 
 ## Entry points
 - Read `architecture.md` first; milestone specs refine it and must not contradict it.
@@ -22,7 +22,7 @@ A change to a spec is an Architect decision, never a side edit by another role.
     passages superseded by §19 and §19.9.
 
 - `m1-core-isa-lexer.md` refines architecture §3, §5, §7 and §8; each refined passage there carries
-  a cross-reference to it.
+  a cross-reference to it. Its §12 has the same precedence as the body it amends and wins where they differ.
 
 Naming: one file per milestone, `mN-<topic>.md` (`m2-…` next). The approved Phase 0 plan stays
 outside the repository; `architecture.md` restates everything developers need from it.

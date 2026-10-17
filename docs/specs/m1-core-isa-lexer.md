@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Ready for development |
+| Status | Ready for development; amended by §12 (ratified wave 1–2 implementation, 2026-10-17) |
 | Owner | Architect role |
 | Date | 2026-10-17 |
 | Depends on | `architecture.md` (crate map R1–R8, contracts §3, i18n §5, perf §7, tests §8, policies §9); `m0-foundations.md` §3 (workspace), §5 (CLI conventions), §17.4/§18.5 (source scan) |
@@ -247,7 +247,7 @@ pub struct InstructionInfo {
 }
 pub struct ConditionInfo { pub name: &'static str, pub test: &'static str, pub doc_id: &'static str }
 pub struct FormInfo {
-    pub syntax: String,                                                // "ADD.B/W/L <ea>,Dn" (notation)
+    pub syntax: String,                                                // "ADD.W/L <ea>,Dn" (notation)
     pub sizes: Vec<&'static str>, pub default_size: Option<&'static str>, pub privileged: bool,
     pub operands: Vec<OperandInfo>, pub flags: Vec<FlagInfo>, pub timing: Vec<TimingInfo>,
 }
@@ -361,8 +361,12 @@ SMI SNE SPL ST STOP SUB SUBA SUBI SUBQ SUBX SVC SVS SWAP TAS TRAP TRAPV TST UNLK
   LSL memory, MOVE SR). A single-size form accepts its own suffix (`LEA.L`, `SWAP.W`, `EXG.L`,
   `MOVEQ.L` observed) and rejects others. Unsized forms (NOP, RTS, RTE, RTR, RESET, TRAPV, ILLEGAL,
   STOP, TRAP, JMP, JSR, UNLK) reject any suffix. BTST/BCHG/BCLR/BSET are `.L` on Dn and `.B` on
-  memory. Branches (Bcc, BRA, BSR) have sizes S and W; suffix `.B` means S and `.L` means W (A68k
-  compatibility, observed); without a suffix M2 chooses. DBcc is W.
+  memory. Branches (Bcc, BRA, BSR) have two forms, `.S` (non-zero 8-bit displacement) and `.W`
+  (low byte zero, extension word); suffix `.B` means S and `.L` means W (A68k compatibility,
+  observed); without a suffix M2 chooses. DBcc is W. **Byte forms are separate** from forms whose
+  operand may be An, which is never a byte operand (a68k: "Operand size error" on `add.b a0,d0`):
+  `ADD.B <ea>,Dn` (data modes) and `ADD.W/L <ea>,Dn` (all modes, default W), likewise SUB, CMP and
+  MOVE; ADDQ/SUBQ have a `#<1-8>,An` form (W/L, flags unaffected).
 - **68000 only.** No 68010+ form: no CHK.L, no TST/CMPI on An, PC-relative or immediate operands,
   MOVE from SR is not privileged, no BKPT, RTD, MOVEC, EXTB, 32-bit branch displacements.
 - **Privileged** forms are exactly: ANDI/EORI/ORI to SR, MOVE to SR, MOVE USP (both directions),
@@ -512,9 +516,9 @@ case-insensitive and allocation-free (a fixed table searched with `eq_ignore_asc
 | any | `;` outside quotes | `Comment` to end of line |
 | label (column 1, up to ws or `;`) | ID_START ID_CONT* | `Label` |
 | label | DIGIT+ `$`, or `\` ID_START ID_CONT* | `LocalLabel` (A68k `1$`; TIGCC-style `\name`) |
-| label | trailing `:` | `Punctuation` |
+| label | trailing run of `:` (`lab:`, `lab::`, `lab:::`; a68k assembles them identically) | one `Punctuation` |
 | label | anything else | `Invalid(lex-bad-label)` to the field end if no label token yet, else `Invalid(lex-label-junk)` (e.g. `lab:nop`) |
-| op (first word after ws) | label form followed by `:`, when column 1 was blank | `Label`/`LocalLabel` + `Punctuation`, then the op field follows (A68k accepts `  name: nop`) |
+| op (first word after ws) | label form followed by a run of `:`, when column 1 was blank | `Label`/`LocalLabel` + `Punctuation`, then the op field follows (A68k accepts `  name: nop`) |
 | op | `=` | `Directive` |
 | op | ID, split at its first `.` | stem: `Mnemonic` (a §4.1 spelling), `Directive` (§5.3) or `MacroName`; then `.` + one of B W L S → `SizeSuffix` (the token includes the dot); `.` + macro parameter → `Punctuation` + `MacroParam`; any other suffix → `Invalid(lex-bad-size-suffix)` to the field end |
 | op | anything else | `Invalid(lex-bad-operation)` to the field end |
@@ -527,7 +531,7 @@ case-insensitive and allocation-free (a fixed table searched with `eq_ignore_asc
 | operand | other identifier (may contain `.` and `@`, A68k) | `Symbol` |
 | operand | `\` ID_START ID_CONT* | `LocalLabel` |
 | any field | `\0`–`\9`, `\@` (not in strings or comments) | `MacroParam`; the text around it is lexed by the field's rules (`lbl\@:` → `Label`, `MacroParam`, `Punctuation`) |
-| operand | `\` + anything else | `Invalid(lex-bad-backslash)` (the backslash and the next char, if any) |
+| operand | `\` + anything else | `Invalid(lex-bad-backslash)`: the backslash and the next char, or the backslash alone before whitespace, `;` or the line end |
 | operand | `+ - * / ~ & ! \| << >>` | `Operator` (`*` is also the location counter; M2 decides) |
 | operand | `# , ( )` | `Punctuation` |
 | operand | `.` + one of B W L S right after `)` or a `Number` | `SizeSuffix` |
@@ -538,7 +542,7 @@ case-insensitive and allocation-free (a fixed table searched with `eq_ignore_asc
 Every whitespace run is one `Whitespace` token; tabs are whitespace and count as one column. An
 empty line yields no token. A line longer than `MAX_LINE_BYTES` is exactly one
 `Invalid(lex-line-too-long)` token; any shorter line is lexed in linear time. A `\r` or `\n` inside
-a line (API misuse) is `Invalid(lex-unexpected-char)`. Non-ASCII text is valid only in comments and
+a line (API misuse) is `Invalid(lex-unexpected-char)`, and the text after it is lexed as a new line. Non-ASCII text is valid only in comments and
 strings (`DC.B 'é'` is two UTF-8 bytes; M2 may warn); identifiers are ASCII.
 
 ### 5.3 Directives and operand policy (A68k 2.71.F3w directive table, observed)
@@ -629,11 +633,11 @@ underline the user asked for. `M68kSyntax::line_diagnostics` overrides the defau
 - args `text` (Str, the ignored text, truncated as in §3.4) and `cause` (Str, the id above);
 - for R1/R2, a `Suggestion` (the quick-fix data): span = from the whitespace that separates O from
   T to the end of the token; replacement = the token text with every unquoted whitespace run
-  removed when it touches `,`, `(`, `)` or an operator. `dc.b 1, 2, 3 bytes` becomes
+  removed when it touches `,`, `#`, `(`, `)` or an operator. `dc.b 1, 2, 3 bytes` becomes
   `dc.b 1,2,3 bytes`. M1 computes and outputs this data; applying it in the editor is M5's
   quick-fix. R3 gets no fix (joining `3,4` to `1,2` is a guess).
 
-**Messages.** M1 (`diag-lex-operands-in-comment`, value and `.help` selected on `$cause`):
+**Messages.** M1 (`diag-lex-operands-in-comment`: fixed value, `.help` selected on `$cause`):
 EN "a68k will ignore “{ $text }”: the operands end at the first space." / help "Remove the spaces
 after the commas." (`after-comma`), "Remove the spaces inside the expression."
 (`inside-expression`), "Join the operands, or start the comment with “;”." (`operand-list`).
@@ -649,7 +653,8 @@ the line produces) and `kept` (Str, the operands a68k uses). EN "a68k will ignor
 « { $kept } » est assemblé.". The FR/EN files of M2 carry these ids; M1 carries only the lexer one.
 
 **Expected results** (`tests/syntax/fields.rs` and the `comments` fixture; a68k 2.71.F3w column
-observed on 2026-10-17):
+observed on 2026-10-17). Each line is a statement: the tests put it behind whitespace, since
+column 1 is the label field.
 
 | Line (tabs written `⇥`) | Token after the operands | a68k |
 |---|---|---|
@@ -660,6 +665,7 @@ observed on 2026-10-17):
 | `dc.b 1, 2 ; three` | `SuspectComment "2"`, then `Comment "; three"` | 1 byte, no error |
 | `dc.b 'a, b', 2` | `SuspectComment "2"` (the string keeps its space and comma) | 4 bytes `612C2062`, no error |
 | `dc.b 1 + 2` | `SuspectComment "+ 2"`, inside-expression, fix `1+2` | 1 byte `01`, no error |
+| `move.l # 1,d0` | `SuspectComment "1,d0"`, inside-expression, fix `#1,d0` (`#` joins, §12) | errors ("Undefined Symbol", "Error in operand format") |
 | `move.l #1 + 2,d0` | `SuspectComment "+ 2,d0"`, inside-expression, fix `#1+2,d0` | error |
 | `lea 4( a0),a1` | `SuspectComment "a0),a1"`, inside-expression, fix `4(a0),a1` | errors |
 | `movem.l d0-d7, -(sp)` | `SuspectComment "-(sp)"`, after-comma, fix `d0-d7,-(sp)` | error |
@@ -750,7 +756,8 @@ va [--json] [--lang en|fr] info | lex <FILE|-> | isa <MNEMONIC[.SIZE]> | isa --l
 - `isa` takes exactly one of `MNEMONIC` and `--list` (clap: both or neither is a usage error, 2).
 - `--lang` becomes a global flag **in M1** (m0 §5 said M2), because `va isa` renders docs.
   `VA_LANG` and `auto` follow §6.2. An ignored `VA_LANG` prints `warning: ignoring VA_LANG=<value>
-  (expected en, fr or auto)` on stderr.
+  (expected en, fr or auto)` on stderr; the `var` closure reads `var_os` lossily, so a non-Unicode
+  value is reported too. With `--lang`, no variable is read and nothing is reported.
 - `src/arch_registry.rs`: `pub fn architectures() -> Vec<&'static dyn Architecture>` and
   `default_architecture()` (the first one). Feature `arch-m68k` (default) adds `&va_arch_m68k::M68K`.
   No `--arch` flag until a second CPU exists. *Rejected:* `--arch` now (one CPU; M4's
@@ -811,13 +818,17 @@ conversion is an M4 editor feature ("reopen as Windows-1252").
 {"schema":"va.isa/1","arch":"m68k","lang":"fr","query":"beq.s","spelling":"BEQ","canonical":"BEQ",
  "family":"Bcc","condition":{"name":"EQ","test":"Z","summary":"…"},"aliases":[],"also_accepts":[],
  "size":"S","summary":"…","details":"…","flags_note":null,
- "forms":[{"syntax":"BEQ.S/W <label>","sizes":["S","W"],"default_size":null,"privileged":false,
+ "forms":[{"syntax":"BEQ.S <label>","sizes":["S"],"default_size":null,"privileged":false,
    "operands":[{"notation":"<label>","modes":[]}],
    "flags":[{"flag":"X","effect":"unaffected"},{"flag":"N","effect":"unaffected"},…],
    "timing":[{"sizes":["S"],"when":[],"outcome":"taken","clocks":10,"reads":2,"writes":0,"plus_ea":[],"per_unit":null,"bound":"exact"}]}],
  "ea_timing":[]}
 ```
 
+  Without a size, `BEQ` lists two forms, `BEQ.S <label>` (`["S"]`) and `BEQ.W <label>` (`["W"]`).
+  `outcome` is `null` for rows that do not depend on an outcome. `summary`, `details` and
+  `flags_note` are the raw Fluent values: `details` may contain newlines (a single newline is a
+  soft wrap, a blank line a paragraph break); text mode prints it as is, M5 hover reflows it.
   `per_unit` is `{"clocks":2,"reads":0,"writes":0,"unit":"shift-count"}` when present. `ea_timing`
   lists `{"mode","sizes","clocks","reads","writes"}` entries and is non-empty iff a row has
   `plus_ea`.
@@ -874,7 +885,8 @@ m1-core-isa-lexer.md §8".
 New transitive packages (resolved on 2026-10-17): fluent-langneg, fluent-syntax, intl-memoizer,
 intl_pluralrules, type-map, unic-langid-impl, tinystr (Unicode-3.0), displaydoc, self_cell
 (Apache-2.0 OR GPL-2.0-only, Apache chosen), smallvec, rustc-hash, memchr (Unlicense OR MIT),
-thiserror 2. `cargo deny check licenses bans` with `.cargo/deny.toml` passed on that closure; no
+thiserror 2, and zerofrom 0.1.8 and zerovec 0.11.8 (Unicode-3.0, through tinystr's default
+features; ratified in §12). `cargo deny check licenses bans` with `.cargo/deny.toml` passed on that closure; no
 licence or ban change is needed. *Rejected:* `thiserror` as a direct dependency (std `Error` impls
 suffice for the few M1 error types); `criterion` (§5.6).
 
@@ -955,3 +967,81 @@ make bench-lexer                                                # va.bench.lexer
   layer over the strict rule.
 - Open questions: none blocking. The d68k/TP I/O profile still needs the user's lab handouts before
   M3 (plan §6).
+
+## 12. Ratified implementation decisions (waves 1–2, 2026-10-17)
+
+Same precedence as the body it amends; where §12 and an earlier passage differ, §12 wins. The
+passages WP-F reads (§3.5, §4.1, §5.2, §5.7, §7.1, §7.4, §8) were also corrected in place.
+Source: the wave-2 notes per WP, checked against the code at `66fd916` and a68k where stated.
+
+### 12.1 Fix-now (small, local; before WP-F closes)
+
+| # | Owner | Files | Exact change |
+|---|---|---|---|
+| R12-1 | WP-C | `arch/m68k/src/syntax/spacing.rs`, `arch/m68k/tests/syntax/fields.rs` | Add `b'#'` to `joins()`. Test row ` move.l # 1,d0` → `SuspectComment "1,d0"`, cause `inside-expression`, replacement `1,d0` → line `move.l #1,d0` (today the fix is a no-op). |
+| R12-2 | WP-C | `arch/m68k/src/syntax/lexer.rs`, `tests/syntax/fields.rs`, `fixtures/lex/labels.{asm,tokens}` | A run of `:` after a label (column 1 or indented) is one `Punctuation` token: `lab::`, `lab:::`, `  other:: nop` no longer give `lex-label-junk`; `lab:nop` still does. Reason (strict A68k): a68k 2.71.F3w assembles `lab::` and `lab:::` to an object byte-identical to `lab:` (run 2026-10-17). Re-bless `labels.tokens`. |
+| R12-3 | WP-D | `arch/m68k/locales/{en,fr}/isa.ftl` | Remove from `.details` every clock-period count that the timing tables give (Bcc 10/8, BRA 10, BSR 18, DBcc 10, EXG 6, LINK 16, MOVEM per register, MULS/MULU 38 + 2n and 70, NOP 4, RTE 20, "2 more clock periods per bit position", …); keep qualitative wording. Timing facts absent from the tables (RESET holds its output for 124 clock periods) may stay. Reason: one source of truth, and the table values are provisional (§12.3). |
+
+### 12.2 Ratified as implemented
+
+| WP | Decisions (the spec now says what the code does) |
+|---|---|
+| Wave 1 (WP0, WP-A) | zerofrom 0.1.8 and zerovec 0.11.8 (Unicode-3.0, already allowed) through tinystr (§8). The 16 MiB limit counts input bytes including a BOM. `lines("")` yields one empty line. `position()` inside a terminator gives the column after the content, inside a multi-byte char that char's column. `check_line_tokens` reports Gap/Overlap, then Empty, Long, NotCharBoundary, Short. `ImageError::Overlap` holds input positions, smaller first; overflow is checked before overlap; empty segments never overlap; a segment may end exactly at 2^64. `SourceMap::at_address` skips zero-length entries, `addresses()` includes them. Additions: `Default` for `SourceMap`, `#[must_use]` on `with_arg`/`non_blocking`. The fake `Architecture` lives in `va-core/tests/regs.rs` (no `tests/arch.rs`). |
+| WP-B | Bcc/BRA/BSR have separate `.S` (non-zero disp8) and `.W` (zero low byte) forms. Byte forms are split from forms that admit An (a68k "Operand size error"); ADDQ/SUBQ gain `#<1-8>,An` (W/L, flags unaffected). MOVE to CCR/SR, RTE, RTR, STOP flags are `Result`; `Special` is used exactly as §4.3 lists (pinned by a test). `Form::matches(op, Some(c))` places `c` in bits 11–8; rows with `ModeSet::NONE` are mode-independent; forms without outcomes declare `[Outcome::Always]` (view: `outcome` null); `cycles()` ignores the size of unsized forms; DIVU/DIVS have no divide-by-zero outcome (the exception is M3's); the view renders MOVE rows per destination group (a test proves equality with the matrices); `ea_timing` has 24 entries (12 modes × 2 size classes); `EaField::MoveDest` stays frozen but unused (MOVE uses `Both`); `takes_operands` is the §5.2 no-operand list (tested); extra public helpers are allowed. |
+| WP-C | §5.7 table lines are statements behind whitespace. `\r`/`\n` inside a line: invalid run, rest lexed as a new line. A bad backslash before whitespace, `;` or the end is the backslash alone. Any other operation field is one `Invalid(lex-bad-operation)`; operand rules then apply, §5.7 does not. `b\1` → `MacroName` + `MacroParam`. INCLUDE/INCBIN paths: `String`, no §5.7. `1.5`, `$12.x` → `lex-bad-number`; `$1000.w` → `Number` + `SizeSuffix`. `errors.asm` holds one 65,542-byte line (`lex-line-too-long`; `errors.tokens` ~67 KB). |
+| WP-D | `.flags` exists iff a form has a `Special` flag (MOVE to CCR/SR and STOP explain in `.details`). Outcome ids: taken, not-taken, true, false, not-expired, expired, trap, no-trap (no `always`); 4 unit ids. `locale_resources` matches exactly `"en"`/`"fr"`. `.details` may span lines (§7.4). French uses regular spaces before `:` `;` `»` and after `«` (*rejected:* U+202F, rendered unevenly in terminals). The §5.7 message is a fixed value with `.help` selected on `$cause`. |
+| WP-E | An empty or differently-cased `VA_LANG` is "another value" (ignored, reported); `Lang::parse` accepts exactly `en`/`fr`. With `--lang`, no variable is read. Under `auto`, the source is `Environment` when the first non-empty locale variable starts with `fr`/`en`, else `Default`. English fallback works per pattern (a FR message without `.help` gets the EN `.help`). Resolver errors give best-effort text, never a fallback. `DiagArg::Int` beyond ±2^53 is passed as text (default plural). `LocalizerError` has an English `Display` and `std::error::Error` (build defects only), `Parse.errors` as `line <n>: <msg>`, first error wins. English is loaded once when the language is En. `render()` ignores `Related` in M1 (no M1 producer emits one; callers use `message(&related.code.fluent_id(), None, &related.args)`). |
+
+### 12.3 Cycle and opword facts: verification status
+
+The timing values and `VALID_OPWORDS = 45_816` were typed without the manual at hand. They stay as
+they are and are **provisional**, in particular: TRAPV trap 34(5/3), CHK trap 40(4/3)+ea, TAS memory
+10(1/1)+ea, ANDI.L #,Dn 14(3/0), ANDI.L #,memory 20(3/2) (some printings show 20(3/1)), RESET
+132(1/0), the MOVEM per-mode bases. Verification: (a) QA checks this list against the manual only
+if the user supplies a copy (no web fetch); (b) **M3 makes it binding**: `cycles()` and the
+valid-opword set are cross-checked against the `m68k` crate and the SingleStepTests 680x0 vectors
+(on-demand test data in gitignored `xtask/cache/`), every disagreement is settled from the manual or
+the vectors, and the pinned count is updated with a recorded reason. Until then
+`arch/m68k/src/isa/README.md` (Documentarian) says the values are provisional, citing this section.
+*Rejected:* a per-row "verified" flag in the tables and in `va.isa/1`, which would churn the schema
+for a state that ends in M3.
+
+### 12.4 Deferred
+
+| Item | When |
+|---|---|
+| a68k leniencies seen in wave 2: `chk.l d0,d1` assembles as CHK.W (`4380`); `$1000.w` is rejected; `d0.w` outside an index is read as a symbol. The M2 a68k comparison decides; `sizes`/`describe` may then accept such suffixes. Until then `va isa chk.l` exits 1. | M2 |
+| `RenderedDiagnostic` with rendered `related` entries | M2 (first producer of `Related`) |
+| Reflow of multi-line `.details` in hover | M5 |
+| Allocation-free lexer: code review only in M1 (a counting allocator needs `unsafe`, hence an allow-list entry) | M7 decides |
+| Binding timing and opword verification | M3 (§12.3) |
+
+### 12.5 QA-check list
+
+1. §12.3 values against the manual, if the user supplies one; otherwise record "deferred to M3".
+2. `VALID_OPWORDS = 45_816`: plausibility (per-instruction counts printed by the test, negative
+   golden opwords of §4.7); the binding check is M3.
+3. WP-D facts: CLR reads before it writes; BTST with a register destination accepts an immediate
+   bit number; MOVEP byte order; NBCD ten's/nine's complement wording; STOP wake-up conditions;
+   RESET 124 clock periods on the line versus 132 for the instruction; CHK N undefined when no
+   exception occurs; MOVEM never stores to PC-relative modes; DIVS/DIVU N and Z undefined after
+   overflow; ASR "V is cleared" against the table's `Result`.
+4. French terminology of both `fr/*.ftl`, and the E9 legal spot check (10 entries, own words).
+5. E7: the formal lexer bench on mains, "Best performance" (wave-2 developer run: median 7.663 ms
+   for 100,000 lines on "Balanced"; budget 50 ms).
+6. Lexer hot path reviewed for allocations (§3.4 contract).
+7. After R12-1 to R12-3: `make test`, `make lint`, re-blessed `labels.tokens` reviewed in the diff.
+
+### 12.6 For WP-F
+
+§7 keeps its content; only these points change or are made explicit:
+- §7.1: the `var` closure uses `var_os` lossily (non-Unicode `VA_LANG` reported); no variable is
+  read with `--lang`.
+- §7.4: `beq.s` gives one form `BEQ.S <label>` with `["S"]`; without a size there are two forms;
+  `outcome` is `null` for outcome-independent rows; `details` is the raw multi-line value.
+- API (WP-E): `resolve_lang(flag, &var)` → `LangChoice` (`ignored_va_lang` drives the warning,
+  `Lang::code()` the JSON `lang`); `Localizer::for_architecture(lang, arch)` built once, its error →
+  exit 3, code `locale-invalid`, message = its English `Display`; `render(&diag)` gives
+  `message`/`help`/`note` (JSON `null` when absent, text `  help:` line); docs via
+  `message(id, None | Some("details") | Some("flags"), &[])`.
+- `fix` is present only for R1/R2 diagnostics (§5.7); after R12-1 a dangling `#` has a real fix.
