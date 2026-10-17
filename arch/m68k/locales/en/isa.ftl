@@ -3,13 +3,15 @@
 # Written in our own words (m1 §4.6): no sentence comes from the Motorola manuals or from the
 # help of another program. Ids are English and kebab-case:
 #   isa-m68k-<entry>         one-line summary; .details (2 to 6 sentences: syntax, effect,
-#                            addressing modes, flags X N Z V C, timing notes); .flags when a
-#                            form of the entry has an instruction-specific flag rule
+#                            addressing modes, flags X N Z V C, qualitative timing notes);
+#                            .flags when a form of the entry has an instruction-specific
+#                            flag rule
 #   isa-m68k-cond-<name>     meaning of a condition code
 #   isa-m68k-outcome-<id>    case of a timing row (short phrase)
 #   isa-m68k-unit-<id>       counted unit of a timing row (short phrase)
 # Exact operand modes, flags and cycle counts come from the tables and are shown next to these
-# texts, so the texts explain rather than repeat them.
+# texts, so the texts explain rather than repeat them: .details never quotes a clock-period
+# count that the timing tables give (m1 §12.1, R12-3).
 # Style: no braces in the text, no continuation line starting with a dot, a star or a bracket,
 # typographic apostrophes (’) only.
 #
@@ -83,30 +85,29 @@ isa-m68k-andi = Bitwise AND of an immediate value into the destination, CCR or S
         immediate value: a 0 bit clears the flag and a 1 bit keeps it as it was.
 
 isa-m68k-asl = Arithmetic shift to the left.
-    .details = Syntax: ASL.B/W/L Dx,Dy (count in Dx, modulo 64), ASL.B/W/L #<1-8>,Dy, or ASL <ea>
-        to shift a word in alterable memory by one bit. Zeros enter on the right and each step
-        multiplies the value by 2. X and C receive the last bit shifted out, N and Z describe
-        the result, and V is set if the sign bit changed at any moment, which signals a signed
-        overflow. With a count of 0, C is cleared and X is unchanged. The register forms take 2
-        more clock periods per bit position.
+    .details = Syntax: ASL.B/W/L Dx,Dy (count in Dx, modulo 64), ASL.B/W/L #<1-8>,Dy, or ASL <ea> to
+        shift a word in alterable memory by one bit. Zeros enter on the right and each step
+        multiplies the value by 2. X and C receive the last bit shifted out, N and Z describe the
+        result, and V is set if the sign bit changed at any moment, which signals a signed overflow.
+        With a count of 0, C is cleared and X is unchanged. In the register forms, the time grows
+        with the number of bit positions shifted.
 
 isa-m68k-asr = Arithmetic shift to the right.
-    .details = Syntax: ASR.B/W/L Dx,Dy (count in Dx, modulo 64), ASR.B/W/L #<1-8>,Dy, or ASR <ea>
-        to shift a word in alterable memory by one bit. The sign bit is copied into the vacated
-        positions, so each step divides a signed value by 2, rounding towards minus infinity.
-        X and C receive the last bit shifted out, N and Z describe the result, and V is
-        cleared. With a count of 0, C is cleared and X is unchanged. The register forms take 2
-        more clock periods per bit position.
+    .details = Syntax: ASR.B/W/L Dx,Dy (count in Dx, modulo 64), ASR.B/W/L #<1-8>,Dy, or ASR <ea> to
+        shift a word in alterable memory by one bit. The sign bit is copied into the vacated
+        positions, so each step divides a signed value by 2, rounding towards minus infinity. X and
+        C receive the last bit shifted out, N and Z describe the result, and V is cleared. With a
+        count of 0, C is cleared and X is unchanged. In the register forms, the time grows with the
+        number of bit positions shifted.
 
 isa-m68k-bcc = Branches to a label when the condition holds.
-    .details = Syntax: Bcc <label>, where cc is HI, LS, CC (or HS), CS (or LO), NE, EQ, VC, VS,
-        PL, MI, GE, LT, GT or LE. The condition is evaluated on the flags left by an earlier
-        instruction, usually CMP or TST: if it holds, execution continues at the label,
-        otherwise at the next instruction. The short size S stores an 8-bit offset (about 128
-        bytes either way) and the word size W a 16-bit offset (about 32 KB); A68k reads the
-        suffix B as S and L as W, and the assembler chooses when no suffix is given. No flag
-        is changed. A taken branch costs 10 clock periods; a branch not taken costs 8 in the
-        short size and 12 in the word size.
+    .details = Syntax: Bcc <label>, where cc is HI, LS, CC (or HS), CS (or LO), NE, EQ, VC, VS, PL,
+        MI, GE, LT, GT or LE. The condition is evaluated on the flags left by an earlier
+        instruction, usually CMP or TST: if it holds, execution continues at the label, otherwise at
+        the next instruction. The short size S stores an 8-bit offset (about 128 bytes either way)
+        and the word size W a 16-bit offset (about 32 KB); A68k reads the suffix B as S and L as W,
+        and the assembler chooses when no suffix is given. No flag is changed. In the short size a
+        taken branch costs more than one not taken, and in the word size it is the reverse.
 
 isa-m68k-bchg = Tests a bit, then inverts it.
     .details = Syntax: BCHG Dn,<ea> or BCHG #<number>,<ea>; the first operand gives the bit
@@ -123,11 +124,11 @@ isa-m68k-bclr = Tests a bit, then clears it.
         On a register the time depends on the bit number, so the tables give the maximum.
 
 isa-m68k-bra = Branches to a label unconditionally.
-    .details = Syntax: BRA <label>, in the short size S (8-bit offset) or the word size W
-        (16-bit offset); A68k reads the suffix B as S and L as W. Execution always continues at
-        the label, whose distance is stored relative to the program counter, so the code keeps
-        working wherever it is loaded. No flag is changed. Both sizes take 10 clock periods;
-        for a target beyond about 32 KB, use JMP.
+    .details = Syntax: BRA <label>, in the short size S (8-bit offset) or the word size W (16-bit
+        offset); A68k reads the suffix B as S and L as W. Execution always continues at the label,
+        whose distance is stored relative to the program counter, so the code keeps working wherever
+        it is loaded. No flag is changed. Both sizes take the same time; for a target beyond about
+        32 KB, use JMP.
 
 isa-m68k-bset = Tests a bit, then sets it.
     .details = Syntax: BSET Dn,<ea> or BSET #<number>,<ea>; the first operand gives the bit
@@ -137,11 +138,11 @@ isa-m68k-bset = Tests a bit, then sets it.
         a register the time depends on the bit number, so the tables give the maximum.
 
 isa-m68k-bsr = Calls a subroutine at a nearby label.
-    .details = Syntax: BSR <label>, in the short size S or the word size W, like BRA. The address
-        of the next instruction is pushed on the stack as a long word (A7 decreases by 4), then
+    .details = Syntax: BSR <label>, in the short size S or the word size W, like BRA. The address of
+        the next instruction is pushed on the stack as a long word (A7 decreases by 4), then
         execution continues at the label; RTS later returns there. The target is PC-relative and
-        must lie within about 32 KB; use JSR beyond that. No flag is changed, and the call
-        takes 18 clock periods.
+        must lie within about 32 KB; use JSR beyond that. No flag is changed, and both sizes take
+        the same time.
 
 isa-m68k-btst = Tests a bit.
     .details = Syntax: BTST Dn,<ea> or BTST #<number>,<ea>. Z is set if the chosen bit is 0 and
@@ -194,12 +195,12 @@ isa-m68k-cmpm = Compares two memory operands and advances both pointers.
         and C are set and X is unchanged.
 
 isa-m68k-dbcc = Loop control: decrements a counter and branches until the condition holds or the counter runs out.
-    .details = Syntax: DBcc Dn,<label>, where cc is any of the 16 conditions; DBF is also
-        written DBRA. If the condition is true, the loop ends and execution falls through.
-        Otherwise the low word of Dn is decremented, and the CPU branches to the label unless
-        the counter has just reached -1; a DBRA loop whose counter starts at n therefore runs
-        n + 1 times. Only the low word of Dn changes, and no flag is affected. The label must
-        lie within about 32 KB, and each repetition (branch taken) costs 10 clock periods.
+    .details = Syntax: DBcc Dn,<label>, where cc is any of the 16 conditions; DBF is also written
+        DBRA. If the condition is true, the loop ends and execution falls through. Otherwise the low
+        word of Dn is decremented, and the CPU branches to the label unless the counter has just
+        reached -1; a DBRA loop whose counter starts at n therefore runs n + 1 times. Only the low
+        word of Dn changes, and no flag is affected. The label must lie within about 32 KB, and the
+        repeating case (branch taken) is the fastest of the three cases.
 
 isa-m68k-divs = Signed division of a 32-bit register by a 16-bit source.
     .details = Syntax: DIVS <ea>,Dn, word size; the source may use any data mode. The 32-bit
@@ -236,9 +237,8 @@ isa-m68k-eori = Bitwise exclusive OR of an immediate value into the destination,
         inverted; the other flags keep their value.
 
 isa-m68k-exg = Exchanges the contents of two registers.
-    .details = Syntax: EXG Rx,Ry, with two data registers, two address registers, or one of
-        each. All 32 bits are swapped, so the only size is long. No flag is changed, and it
-        takes 6 clock periods.
+    .details = Syntax: EXG Rx,Ry, with two data registers, two address registers, or one of each.
+        All 32 bits are swapped, so the only size is long. No flag is changed.
 
 isa-m68k-ext = Sign-extends a data register.
     .details = Syntax: EXT.W Dn copies bit 7 into bits 8 to 15 (byte to word), and EXT.L Dn
@@ -273,26 +273,25 @@ isa-m68k-lea = Loads an effective address into an address register.
         a PC-relative operand such as LEA text(PC),A0. No flag is changed.
 
 isa-m68k-link = Creates a stack frame for a subroutine.
-    .details = Syntax: LINK An,#<displacement>, with a signed 16-bit displacement that is
-        usually negative. The CPU pushes An, copies the stack pointer into An, then adds the
-        displacement to the stack pointer, which reserves room for local variables. Inside the
-        subroutine, the arguments are then at positive offsets from An and the locals at
-        negative offsets; UNLK removes the frame. No flag is changed, and it takes 16 clock
-        periods.
+    .details = Syntax: LINK An,#<displacement>, with a signed 16-bit displacement that is usually
+        negative. The CPU pushes An, copies the stack pointer into An, then adds the displacement to
+        the stack pointer, which reserves room for local variables. Inside the subroutine, the
+        arguments are then at positive offsets from An and the locals at negative offsets; UNLK
+        removes the frame. No flag is changed.
 
 isa-m68k-lsl = Logical shift to the left.
-    .details = Syntax: LSL.B/W/L Dx,Dy (count in Dx, modulo 64), LSL.B/W/L #<1-8>,Dy, or LSL <ea>
-        to shift a word in alterable memory by one bit. Zeros enter on the right, and each step
+    .details = Syntax: LSL.B/W/L Dx,Dy (count in Dx, modulo 64), LSL.B/W/L #<1-8>,Dy, or LSL <ea> to
+        shift a word in alterable memory by one bit. Zeros enter on the right, and each step
         multiplies an unsigned value by 2. X and C receive the last bit shifted out, N and Z
-        describe the result, and V is cleared. With a count of 0, C is cleared and X is
-        unchanged. The register forms take 2 more clock periods per bit position.
+        describe the result, and V is cleared. With a count of 0, C is cleared and X is unchanged.
+        In the register forms, the time grows with the number of bit positions shifted.
 
 isa-m68k-lsr = Logical shift to the right.
-    .details = Syntax: LSR.B/W/L Dx,Dy (count in Dx, modulo 64), LSR.B/W/L #<1-8>,Dy, or LSR <ea>
-        to shift a word in alterable memory by one bit. Zeros enter on the left, and each step
-        divides an unsigned value by 2. X and C receive the last bit shifted out, N and Z
-        describe the result, and V is cleared. With a count of 0, C is cleared and X is
-        unchanged. The register forms take 2 more clock periods per bit position.
+    .details = Syntax: LSR.B/W/L Dx,Dy (count in Dx, modulo 64), LSR.B/W/L #<1-8>,Dy, or LSR <ea> to
+        shift a word in alterable memory by one bit. Zeros enter on the left, and each step divides
+        an unsigned value by 2. X and C receive the last bit shifted out, N and Z describe the
+        result, and V is cleared. With a count of 0, C is cleared and X is unchanged. In the
+        register forms, the time grows with the number of bit positions shifted.
 
 isa-m68k-move = Copies the source to the destination.
     .details = Syntax: MOVE.B/W/L <ea>,<ea>; without a suffix the size is word. The source may
@@ -311,14 +310,13 @@ isa-m68k-movea = Copies the source to an address register.
         write MOVE with an address register destination.
 
 isa-m68k-movem = Moves several registers to or from memory.
-    .details = Syntax: MOVEM.W/L <list>,<ea> to store or MOVEM.W/L <ea>,<list> to load, where a
-        list such as D0-D3/A0/A2 names the registers. A store accepts -(An) or a control mode
-        other than PC-relative, and a load accepts (An)+ or any control mode, so that
-        MOVEM.L D0-D7/A0-A6,-(SP) saves registers and MOVEM.L (SP)+,D0-D7/A0-A6 restores them.
-        In memory the registers always appear in the order D0 to A7, from the lowest address
-        up, and words loaded into registers are sign-extended to 32 bits. No flag is changed.
-        The time grows with the number of registers: 4 clock periods each in word size and 8 in
-        long size.
+    .details = Syntax: MOVEM.W/L <list>,<ea> to store or MOVEM.W/L <ea>,<list> to load, where a list
+        such as D0-D3/A0/A2 names the registers. A store accepts -(An) or a control mode other than
+        PC-relative, and a load accepts (An)+ or any control mode, so that MOVEM.L D0-D7/A0-A6,-(SP)
+        saves registers and MOVEM.L (SP)+,D0-D7/A0-A6 restores them. In memory the registers always
+        appear in the order D0 to A7, from the lowest address up, and words loaded into registers
+        are sign-extended to 32 bits. No flag is changed. The time grows with the number of
+        registers transferred, more steeply in long size than in word size.
 
 isa-m68k-movep = Moves data between a data register and every other byte of memory.
     .details = Syntax: MOVEP.W/L Dx,d16(Ay) or MOVEP.W/L d16(Ay),Dx. The bytes of the register,
@@ -327,24 +325,24 @@ isa-m68k-movep = Moves data between a data register and every other byte of memo
         16-bit data bus. A word transfers 2 bytes and a long word 4. No flag is changed.
 
 isa-m68k-moveq = Loads a small signed constant into a data register.
-    .details = Syntax: MOVEQ #<data>,Dn, with a constant from -128 to 127; the size is always
-        long. The 8-bit constant is stored inside the opcode and sign-extended to 32 bits, so
-        MOVEQ #-1,D0 sets D0 to $FFFFFFFF. It is the fastest way to load a small value, at 4
-        clock periods. N and Z are set from the value, V and C are cleared and X is unchanged.
+    .details = Syntax: MOVEQ #<data>,Dn, with a constant from -128 to 127; the size is always long.
+        The 8-bit constant is stored inside the opcode and sign-extended to 32 bits, so MOVEQ #-1,D0
+        sets D0 to $FFFFFFFF. It is the fastest way to load a small value. N and Z are set from the
+        value, V and C are cleared and X is unchanged.
 
 isa-m68k-muls = Signed multiplication of two 16-bit values into a 32-bit result.
-    .details = Syntax: MULS <ea>,Dn, word size; the source may use any data mode. The low word
-        of Dn is multiplied by the source word, both taken as signed numbers, and the full
-        32-bit product replaces Dn, so the result cannot overflow. N and Z are set from the
-        product, V and C are cleared and X is unchanged. The time depends on the bit pattern of
-        the source: 38 clock periods plus 2 for each pair of differing adjacent bits, at most 70.
+    .details = Syntax: MULS <ea>,Dn, word size; the source may use any data mode. The low word of Dn
+        is multiplied by the source word, both taken as signed numbers, and the full 32-bit product
+        replaces Dn, so the result cannot overflow. N and Z are set from the product, V and C are
+        cleared and X is unchanged. The time depends on the bit pattern of the source: it grows with
+        the number of pairs of differing adjacent bits.
 
 isa-m68k-mulu = Unsigned multiplication of two 16-bit values into a 32-bit result.
-    .details = Syntax: MULU <ea>,Dn, word size; the source may use any data mode. The low word
-        of Dn is multiplied by the source word, both taken as unsigned numbers, and the full
-        32-bit product replaces Dn, so the result cannot overflow. N and Z are set from the
-        product, V and C are cleared and X is unchanged. The time depends on the source: 38
-        clock periods plus 2 for each bit at 1, at most 70.
+    .details = Syntax: MULU <ea>,Dn, word size; the source may use any data mode. The low word of Dn
+        is multiplied by the source word, both taken as unsigned numbers, and the full 32-bit
+        product replaces Dn, so the result cannot overflow. N and Z are set from the product, V and
+        C are cleared and X is unchanged. The time depends on the source: it grows with the number
+        of bits at 1.
 
 isa-m68k-nbcd = Negates a packed-BCD byte together with the X flag.
     .details = Syntax: NBCD <ea>, byte size only, with a data register or an alterable memory
@@ -371,8 +369,8 @@ isa-m68k-negx = Negates the destination together with the X flag.
 
 isa-m68k-nop = Does nothing.
     .details = Syntax: NOP, with no operand and no size. The CPU simply goes on to the next
-        instruction, which takes 4 clock periods and 2 bytes. It reserves room for a later
-        patch or adds a short, precise delay. No flag is changed.
+        instruction; NOP itself occupies 2 bytes. It reserves room for a later patch or adds a
+        short, precise delay. No flag is changed.
 
 isa-m68k-not = Inverts every bit of the destination (one’s complement).
     .details = Syntax: NOT.B/W/L <ea>, with a data register or an alterable memory destination.
@@ -408,18 +406,18 @@ isa-m68k-reset = Resets the external devices (privileged).
         in user mode it raises a privilege violation exception. No flag is changed.
 
 isa-m68k-rol = Rotates to the left, without the X flag.
-    .details = Syntax: ROL.B/W/L Dx,Dy (count in Dx, modulo 64), ROL.B/W/L #<1-8>,Dy, or ROL <ea>
-        to rotate a word in alterable memory by one bit. The bit leaving on the left comes back
-        on the right, so no bit is lost. C receives the last bit rotated out, N and Z describe
-        the result, V is cleared and X is unchanged; with a count of 0, C is cleared. The
-        register forms take 2 more clock periods per bit position.
+    .details = Syntax: ROL.B/W/L Dx,Dy (count in Dx, modulo 64), ROL.B/W/L #<1-8>,Dy, or ROL <ea> to
+        rotate a word in alterable memory by one bit. The bit leaving on the left comes back on the
+        right, so no bit is lost. C receives the last bit rotated out, N and Z describe the result,
+        V is cleared and X is unchanged; with a count of 0, C is cleared. In the register forms, the
+        time grows with the number of bit positions rotated.
 
 isa-m68k-ror = Rotates to the right, without the X flag.
-    .details = Syntax: ROR.B/W/L Dx,Dy (count in Dx, modulo 64), ROR.B/W/L #<1-8>,Dy, or ROR <ea>
-        to rotate a word in alterable memory by one bit. The bit leaving on the right comes
-        back on the left, so no bit is lost. C receives the last bit rotated out, N and Z
-        describe the result, V is cleared and X is unchanged; with a count of 0, C is cleared.
-        The register forms take 2 more clock periods per bit position.
+    .details = Syntax: ROR.B/W/L Dx,Dy (count in Dx, modulo 64), ROR.B/W/L #<1-8>,Dy, or ROR <ea> to
+        rotate a word in alterable memory by one bit. The bit leaving on the right comes back on the
+        left, so no bit is lost. C receives the last bit rotated out, N and Z describe the result, V
+        is cleared and X is unchanged; with a count of 0, C is cleared. In the register forms, the
+        time grows with the number of bit positions rotated.
 
 isa-m68k-roxl = Rotates to the left through the X flag.
     .details = Syntax: ROXL.B/W/L Dx,Dy (count in Dx, modulo 64), ROXL.B/W/L #<1-8>,Dy, or
@@ -440,20 +438,18 @@ isa-m68k-roxr = Rotates to the right through the X flag.
 isa-m68k-rte = Returns from an exception handler (privileged).
     .details = Syntax: RTE, with no operand. The CPU pops the status register, then the program
         counter, from the supervisor stack, which restores the mode, the interrupt mask and the
-        flags saved when the exception began. It is privileged, because it may switch back to
-        user mode. It takes 20 clock periods.
+        flags saved when the exception began. It is privileged, because it may switch back to user
+        mode.
 
 isa-m68k-rtr = Returns from a subroutine and restores the condition flags.
     .details = Syntax: RTR, with no operand. The CPU pops a word whose low byte becomes the
-        condition code register, then pops the return address into the program counter. It
-        pairs with a subroutine that begins with MOVE SR,-(SP), so that the caller gets its
-        flags back. It takes 20 clock periods.
+        condition code register, then pops the return address into the program counter. It pairs
+        with a subroutine that begins with MOVE SR,-(SP), so that the caller gets its flags back.
 
 isa-m68k-rts = Returns from a subroutine.
-    .details = Syntax: RTS, with no operand. The CPU pops the long-word return address pushed by
-        BSR or JSR and continues there, and A7 increases by 4. The stack pointer must be back
-        where it was right after the call, otherwise the CPU returns to a wrong address. No
-        flag is changed; it takes 16 clock periods.
+    .details = Syntax: RTS, with no operand. The CPU pops the long-word return address pushed by BSR
+        or JSR and continues there, and A7 increases by 4. The stack pointer must be back where it
+        was right after the call, otherwise the CPU returns to a wrong address. No flag is changed.
 
 isa-m68k-sbcd = Subtracts packed-BCD bytes together with the X flag.
     .details = Syntax: SBCD Dy,Dx or SBCD -(Ay),-(Ax), byte size only. The CPU computes
@@ -465,11 +461,11 @@ isa-m68k-sbcd = Subtracts packed-BCD bytes together with the X flag.
         cleared) before the first one. N and V are undefined.
 
 isa-m68k-scc = Sets a byte to all ones when the condition holds, and to zero otherwise.
-    .details = Syntax: Scc <ea>, byte size, with a data register or an alterable memory
-        destination; cc is any of the 16 conditions, including T (always) and F (never). The
-        byte becomes $FF if the condition is true and $00 if it is false, which stores the
-        outcome of a test as a boolean value. No flag is changed. On a data register, a true
-        condition takes 2 clock periods more than a false one.
+    .details = Syntax: Scc <ea>, byte size, with a data register or an alterable memory destination;
+        cc is any of the 16 conditions, including T (always) and F (never). The byte becomes $FF if
+        the condition is true and $00 if it is false, which stores the outcome of a test as a
+        boolean value. No flag is changed. On a data register, a true condition takes a little
+        longer than a false one.
 
 isa-m68k-stop = Loads the status register and waits for an interrupt (privileged).
     .details = Syntax: STOP #<data>, with a 16-bit immediate value. The value is copied into the
@@ -516,9 +512,8 @@ isa-m68k-subx = Subtracts the source and the X flag from the destination.
 
 isa-m68k-swap = Exchanges the two halves of a data register.
     .details = Syntax: SWAP Dn, word size. Bits 31 to 16 trade places with bits 15 to 0, which
-        brings the high word within reach, for example the remainder after a division. N and Z
-        are set from the whole 32-bit result, V and C are cleared and X is unchanged. It takes 4
-        clock periods.
+        brings the high word within reach, for example the remainder after a division. N and Z are
+        set from the whole 32-bit result, V and C are cleared and X is unchanged.
 
 isa-m68k-tas = Tests a byte and sets its bit 7 in one indivisible operation.
     .details = Syntax: TAS <ea>, byte size, with a data register or an alterable memory
@@ -528,11 +523,11 @@ isa-m68k-tas = Tests a byte and sets its bit 7 in one indivisible operation.
         and X is unchanged.
 
 isa-m68k-trap = Calls the system through one of 16 trap vectors.
-    .details = Syntax: TRAP #<vector>, with a number from 0 to 15. The CPU enters supervisor
-        mode, saves the program counter and the status register on the supervisor stack, and
-        continues at the handler whose address is in vector 32 + n. Simulators and operating
-        systems use it for their services; EASy68K, for example, provides its input and output
-        through TRAP #15. The condition flags are not changed, and it takes 34 clock periods.
+    .details = Syntax: TRAP #<vector>, with a number from 0 to 15. The CPU enters supervisor mode,
+        saves the program counter and the status register on the supervisor stack, and continues at
+        the handler whose address is in vector 32 + n. Simulators and operating systems use it for
+        their services; EASy68K, for example, provides its input and output through TRAP #15. The
+        condition flags are not changed.
 
 isa-m68k-trapv = Raises an exception if the overflow flag is set.
     .details = Syntax: TRAPV, with no operand. If V is set, the CPU takes the TRAPV exception
@@ -546,10 +541,9 @@ isa-m68k-tst = Compares the operand with zero.
         follow.
 
 isa-m68k-unlk = Removes a stack frame created by LINK.
-    .details = Syntax: UNLK An, with the register of the matching LINK. The stack pointer is set
-        to An, which frees the local variables, then the saved value of An is popped back into
-        An. It usually comes right before RTS. No flag is changed, and it takes 12 clock
-        periods.
+    .details = Syntax: UNLK An, with the register of the matching LINK. The stack pointer is set to
+        An, which frees the local variables, then the saved value of An is popped back into An. It
+        usually comes right before RTS. No flag is changed.
 
 ## Conditions (cc in Bcc, DBcc and Scc; after CMP src,dst they compare dst with src)
 

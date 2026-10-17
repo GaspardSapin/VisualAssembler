@@ -3,7 +3,8 @@
 # Same ids and attributes as locales/en/isa.ftl. Written in our own words (m1 §4.6), in natural
 # French rather than a word-for-word translation, with one term per notion: registre de données,
 # registre d’adresse, indicateur, retenue, emprunt, débordement, octet, mot, mot long, pile,
-# sous-programme, étiquette, branchement, saut, cycles d’horloge.
+# sous-programme, étiquette, branchement, saut, cycles d’horloge. As in English, .details never
+# quotes a clock-period count that the timing tables give (m1 §12.1, R12-3).
 # Style: no braces in the text, no continuation line starting with a dot, a star or a bracket,
 # typographic apostrophes (’) only.
 #
@@ -84,30 +85,30 @@ isa-m68k-andi = ET logique bit à bit d’une valeur immédiate dans la destinat
 isa-m68k-asl = Décalage arithmétique vers la gauche.
     .details = Syntaxe : ASL.B/W/L Dx,Dy (nombre de positions dans Dx, modulo 64),
         ASL.B/W/L #<1-8>,Dy, ou ASL <ea> pour décaler d’un bit un mot en mémoire modifiable. Des
-        zéros entrent par la droite et chaque décalage d’une position multiplie la valeur par 2.
-        X et C reçoivent le dernier bit sorti, N et Z décrivent le résultat, et V passe à 1 si le
-        bit de signe a changé à un moment quelconque, ce qui signale un débordement signé. Avec
-        un décalage de 0, C est mis à 0 et X ne change pas. Les formes sur registre coûtent 2
-        cycles d’horloge de plus par position.
+        zéros entrent par la droite et chaque décalage d’une position multiplie la valeur par 2. X
+        et C reçoivent le dernier bit sorti, N et Z décrivent le résultat, et V passe à 1 si le bit
+        de signe a changé à un moment quelconque, ce qui signale un débordement signé. Avec un
+        décalage de 0, C est mis à 0 et X ne change pas. Dans les formes sur registre, la durée
+        croît avec le nombre de positions de décalage.
 
 isa-m68k-asr = Décalage arithmétique vers la droite.
     .details = Syntaxe : ASR.B/W/L Dx,Dy (nombre de positions dans Dx, modulo 64),
-        ASR.B/W/L #<1-8>,Dy, ou ASR <ea> pour décaler d’un bit un mot en mémoire modifiable. Le
-        bit de signe est recopié dans les positions libérées : chaque décalage d’une position
-        divise donc une valeur signée par 2, en arrondissant vers moins l’infini. X et C
-        reçoivent le dernier bit sorti, N et Z décrivent le résultat, et V est mis à 0. Avec un
-        décalage de 0, C est mis à 0 et X ne change pas. Les formes sur registre coûtent 2 cycles
-        d’horloge de plus par position.
+        ASR.B/W/L #<1-8>,Dy, ou ASR <ea> pour décaler d’un bit un mot en mémoire modifiable. Le bit
+        de signe est recopié dans les positions libérées : chaque décalage d’une position divise
+        donc une valeur signée par 2, en arrondissant vers moins l’infini. X et C reçoivent le
+        dernier bit sorti, N et Z décrivent le résultat, et V est mis à 0. Avec un décalage de 0, C
+        est mis à 0 et X ne change pas. Dans les formes sur registre, la durée croît avec le nombre
+        de positions de décalage.
 
 isa-m68k-bcc = Se branche à une étiquette si la condition est vraie.
-    .details = Syntaxe : Bcc <label>, où cc vaut HI, LS, CC (ou HS), CS (ou LO), NE, EQ, VC, VS,
-        PL, MI, GE, LT, GT ou LE. La condition porte sur les indicateurs laissés par une
-        instruction précédente, en général CMP ou TST : si elle est vraie, l’exécution continue
-        à l’étiquette, sinon à l’instruction suivante. La taille courte S code un déplacement
-        sur 8 bits (environ 128 octets dans chaque sens) et la taille mot W un déplacement sur
-        16 bits (environ 32 Ko) ; A68k lit le suffixe B comme S et L comme W, et l’assembleur
-        choisit lui-même sans suffixe. Aucun indicateur n’est modifié. Un branchement pris coûte
-        10 cycles d’horloge ; non pris, il en coûte 8 en taille courte et 12 en taille mot.
+    .details = Syntaxe : Bcc <label>, où cc vaut HI, LS, CC (ou HS), CS (ou LO), NE, EQ, VC, VS, PL,
+        MI, GE, LT, GT ou LE. La condition porte sur les indicateurs laissés par une instruction
+        précédente, en général CMP ou TST : si elle est vraie, l’exécution continue à l’étiquette,
+        sinon à l’instruction suivante. La taille courte S code un déplacement sur 8 bits (environ
+        128 octets dans chaque sens) et la taille mot W un déplacement sur 16 bits (environ 32 Ko) ;
+        A68k lit le suffixe B comme S et L comme W, et l’assembleur choisit lui-même sans suffixe.
+        Aucun indicateur n’est modifié. En taille courte, un branchement pris coûte plus cher qu’un
+        branchement non pris ; en taille mot, c’est l’inverse.
 
 isa-m68k-bchg = Teste un bit, puis l’inverse.
     .details = Syntaxe : BCHG Dn,<ea> ou BCHG #<number>,<ea> ; le premier opérande donne le
@@ -126,12 +127,12 @@ isa-m68k-bclr = Teste un bit, puis le met à 0.
         les tables en donnent le maximum.
 
 isa-m68k-bra = Se branche à une étiquette sans condition.
-    .details = Syntaxe : BRA <label>, en taille courte S (déplacement sur 8 bits) ou en taille mot
-        W (déplacement sur 16 bits) ; A68k lit le suffixe B comme S et L comme W. L’exécution
-        continue toujours à l’étiquette, dont la distance est relative au compteur ordinal : le
-        code fonctionne donc quelle que soit l’adresse où il est chargé. Aucun indicateur n’est
-        modifié. Les deux tailles prennent 10 cycles d’horloge ; pour une cible à plus de 32 Ko
-        environ, il faut JMP.
+    .details = Syntaxe : BRA <label>, en taille courte S (déplacement sur 8 bits) ou en taille mot W
+        (déplacement sur 16 bits) ; A68k lit le suffixe B comme S et L comme W. L’exécution continue
+        toujours à l’étiquette, dont la distance est relative au compteur ordinal : le code
+        fonctionne donc quelle que soit l’adresse où il est chargé. Aucun indicateur n’est modifié.
+        Les deux tailles prennent le même temps ; pour une cible à plus de 32 Ko environ, il faut
+        JMP.
 
 isa-m68k-bset = Teste un bit, puis le met à 1.
     .details = Syntaxe : BSET Dn,<ea> ou BSET #<number>,<ea> ; le premier opérande donne le
@@ -142,11 +143,11 @@ isa-m68k-bset = Teste un bit, puis le met à 1.
         du bit : les tables en donnent le maximum.
 
 isa-m68k-bsr = Appelle un sous-programme situé à une étiquette proche.
-    .details = Syntaxe : BSR <label>, en taille courte S ou en taille mot W, comme BRA. L’adresse
-        de l’instruction suivante est empilée sous forme de mot long (A7 diminue de 4), puis
+    .details = Syntaxe : BSR <label>, en taille courte S ou en taille mot W, comme BRA. L’adresse de
+        l’instruction suivante est empilée sous forme de mot long (A7 diminue de 4), puis
         l’exécution continue à l’étiquette ; RTS y reviendra ensuite. La cible est relative au
-        compteur ordinal et doit se trouver à moins de 32 Ko environ ; au-delà, utilisez JSR.
-        Aucun indicateur n’est modifié, et l’appel prend 18 cycles d’horloge.
+        compteur ordinal et doit se trouver à moins de 32 Ko environ ; au-delà, utilisez JSR. Aucun
+        indicateur n’est modifié, et les deux tailles prennent le même temps.
 
 isa-m68k-btst = Teste un bit.
     .details = Syntaxe : BTST Dn,<ea> ou BTST #<number>,<ea>. Z passe à 1 si le bit choisi vaut 0
@@ -202,12 +203,12 @@ isa-m68k-cmpm = Compare deux opérandes en mémoire et fait avancer les deux poi
 
 isa-m68k-dbcc = Contrôle de boucle : décrémente un compteur et se branche tant que la condition est fausse et que le compteur n’est pas épuisé.
     .details = Syntaxe : DBcc Dn,<label>, où cc est l’une des 16 conditions ; DBF s’écrit aussi
-        DBRA. Si la condition est vraie, la boucle s’arrête et l’exécution passe à la suite.
-        Sinon, le mot bas de Dn est décrémenté, et le processeur se branche à l’étiquette sauf
-        si le compteur vient d’atteindre -1 ; une boucle DBRA dont le compteur part de n
-        s’exécute donc n + 1 fois. Seul le mot bas de Dn change, et aucun indicateur n’est
-        modifié. L’étiquette doit se trouver à moins de 32 Ko environ, et chaque tour de boucle
-        (branchement pris) coûte 10 cycles d’horloge.
+        DBRA. Si la condition est vraie, la boucle s’arrête et l’exécution passe à la suite. Sinon,
+        le mot bas de Dn est décrémenté, et le processeur se branche à l’étiquette sauf si le
+        compteur vient d’atteindre -1 ; une boucle DBRA dont le compteur part de n s’exécute donc
+        n + 1 fois. Seul le mot bas de Dn change, et aucun indicateur n’est modifié. L’étiquette
+        doit se trouver à moins de 32 Ko environ, et le cas où la boucle repart (branchement pris)
+        est le plus rapide des trois.
 
 isa-m68k-divs = Division signée d’un registre de 32 bits par une source de 16 bits.
     .details = Syntaxe : DIVS <ea>,Dn, en taille mot ; la source accepte tous les modes de
@@ -245,9 +246,9 @@ isa-m68k-eori = OU exclusif bit à bit d’une valeur immédiate dans la destina
         immédiate est inversé ; les autres gardent leur valeur.
 
 isa-m68k-exg = Échange le contenu de deux registres.
-    .details = Syntaxe : EXG Rx,Ry, avec deux registres de données, deux registres d’adresse, ou
-        un de chaque. Les 32 bits sont échangés : la seule taille est donc le mot long. Aucun
-        indicateur n’est modifié, et l’instruction prend 6 cycles d’horloge.
+    .details = Syntaxe : EXG Rx,Ry, avec deux registres de données, deux registres d’adresse, ou un
+        de chaque. Les 32 bits sont échangés : la seule taille est donc le mot long. Aucun
+        indicateur n’est modifié.
 
 isa-m68k-ext = Étend le signe d’un registre de données.
     .details = Syntaxe : EXT.W Dn recopie le bit 7 dans les bits 8 à 15 (d’octet à mot), et
@@ -287,27 +288,26 @@ isa-m68k-lea = Charge une adresse effective dans un registre d’adresse.
 isa-m68k-link = Crée le cadre de pile d’un sous-programme.
     .details = Syntaxe : LINK An,#<displacement>, avec un déplacement signé sur 16 bits,
         généralement négatif. Le processeur empile An, copie le pointeur de pile dans An, puis
-        ajoute le déplacement au pointeur de pile, ce qui réserve la place des variables
-        locales. Dans le sous-programme, les arguments se trouvent alors à des déplacements
-        positifs par rapport à An et les variables locales à des déplacements négatifs ; UNLK
-        supprime le cadre. Aucun indicateur n’est modifié, et l’instruction prend 16 cycles
-        d’horloge.
+        ajoute le déplacement au pointeur de pile, ce qui réserve la place des variables locales.
+        Dans le sous-programme, les arguments se trouvent alors à des déplacements positifs par
+        rapport à An et les variables locales à des déplacements négatifs ; UNLK supprime le cadre.
+        Aucun indicateur n’est modifié.
 
 isa-m68k-lsl = Décalage logique vers la gauche.
     .details = Syntaxe : LSL.B/W/L Dx,Dy (nombre de positions dans Dx, modulo 64),
         LSL.B/W/L #<1-8>,Dy, ou LSL <ea> pour décaler d’un bit un mot en mémoire modifiable. Des
         zéros entrent par la droite, et chaque décalage d’une position multiplie une valeur non
-        signée par 2. X et C reçoivent le dernier bit sorti, N et Z décrivent le résultat, et V
-        est mis à 0. Avec un décalage de 0, C est mis à 0 et X ne change pas. Les formes sur
-        registre coûtent 2 cycles d’horloge de plus par position.
+        signée par 2. X et C reçoivent le dernier bit sorti, N et Z décrivent le résultat, et V est
+        mis à 0. Avec un décalage de 0, C est mis à 0 et X ne change pas. Dans les formes sur
+        registre, la durée croît avec le nombre de positions de décalage.
 
 isa-m68k-lsr = Décalage logique vers la droite.
     .details = Syntaxe : LSR.B/W/L Dx,Dy (nombre de positions dans Dx, modulo 64),
         LSR.B/W/L #<1-8>,Dy, ou LSR <ea> pour décaler d’un bit un mot en mémoire modifiable. Des
-        zéros entrent par la gauche, et chaque décalage d’une position divise une valeur non
-        signée par 2. X et C reçoivent le dernier bit sorti, N et Z décrivent le résultat, et V
-        est mis à 0. Avec un décalage de 0, C est mis à 0 et X ne change pas. Les formes sur
-        registre coûtent 2 cycles d’horloge de plus par position.
+        zéros entrent par la gauche, et chaque décalage d’une position divise une valeur non signée
+        par 2. X et C reçoivent le dernier bit sorti, N et Z décrivent le résultat, et V est mis à
+        0. Avec un décalage de 0, C est mis à 0 et X ne change pas. Dans les formes sur registre, la
+        durée croît avec le nombre de positions de décalage.
 
 isa-m68k-move = Copie la source dans la destination.
     .details = Syntaxe : MOVE.B/W/L <ea>,<ea> ; sans suffixe, la taille est le mot. La source
@@ -328,15 +328,14 @@ isa-m68k-movea = Copie la source dans un registre d’adresse.
         d’adresse en destination.
 
 isa-m68k-movem = Transfère plusieurs registres vers la mémoire ou depuis la mémoire.
-    .details = Syntaxe : MOVEM.W/L <list>,<ea> pour ranger, ou MOVEM.W/L <ea>,<list> pour
-        charger, où une liste comme D0-D3/A0/A2 désigne les registres. Le rangement accepte -(An)
-        ou un mode de contrôle autre que relatif au PC, le chargement (An)+ ou n’importe quel
-        mode de contrôle : MOVEM.L D0-D7/A0-A6,-(SP) sauvegarde des registres et
-        MOVEM.L (SP)+,D0-D7/A0-A6 les restaure. En mémoire, les registres apparaissent toujours
-        dans l’ordre D0 à A7 depuis l’adresse la plus basse, et les mots chargés dans des
-        registres sont étendus à 32 bits avec leur signe. Aucun indicateur n’est modifié. La
-        durée croît avec le nombre de registres : 4 cycles d’horloge chacun en taille mot et 8 en
-        mot long.
+    .details = Syntaxe : MOVEM.W/L <list>,<ea> pour ranger, ou MOVEM.W/L <ea>,<list> pour charger,
+        où une liste comme D0-D3/A0/A2 désigne les registres. Le rangement accepte -(An) ou un mode
+        de contrôle autre que relatif au PC, le chargement (An)+ ou n’importe quel mode de
+        contrôle : MOVEM.L D0-D7/A0-A6,-(SP) sauvegarde des registres et MOVEM.L (SP)+,D0-D7/A0-A6
+        les restaure. En mémoire, les registres apparaissent toujours dans l’ordre D0 à A7 depuis
+        l’adresse la plus basse, et les mots chargés dans des registres sont étendus à 32 bits avec
+        leur signe. Aucun indicateur n’est modifié. La durée croît avec le nombre de registres
+        transférés, plus vite en mot long qu’en taille mot.
 
 isa-m68k-movep = Transfère des données entre un registre de données et un octet sur deux en mémoire.
     .details = Syntaxe : MOVEP.W/L Dx,d16(Ay) ou MOVEP.W/L d16(Ay),Dx. Les octets du registre,
@@ -346,26 +345,25 @@ isa-m68k-movep = Transfère des données entre un registre de données et un oct
         un mot long 4. Aucun indicateur n’est modifié.
 
 isa-m68k-moveq = Charge une petite constante signée dans un registre de données.
-    .details = Syntaxe : MOVEQ #<data>,Dn, avec une constante de -128 à 127 ; la taille est
-        toujours le mot long. La constante de 8 bits est stockée dans le code opération et
-        étendue à 32 bits avec son signe : MOVEQ #-1,D0 donne donc $FFFFFFFF à D0. C’est la
-        façon la plus rapide de charger une petite valeur, en 4 cycles d’horloge. N et Z
-        dépendent de la valeur, V et C sont mis à 0 et X ne change pas.
+    .details = Syntaxe : MOVEQ #<data>,Dn, avec une constante de -128 à 127 ; la taille est toujours
+        le mot long. La constante de 8 bits est stockée dans le code opération et étendue à 32 bits
+        avec son signe : MOVEQ #-1,D0 donne donc $FFFFFFFF à D0. C’est la façon la plus rapide de
+        charger une petite valeur. N et Z dépendent de la valeur, V et C sont mis à 0 et X ne change
+        pas.
 
 isa-m68k-muls = Multiplication signée de deux valeurs de 16 bits en un résultat de 32 bits.
-    .details = Syntaxe : MULS <ea>,Dn, en taille mot ; la source accepte tous les modes de
-        données. Le mot bas de Dn est multiplié par le mot source, tous deux pris comme des
-        nombres signés, et le produit complet sur 32 bits remplace Dn : aucun débordement n’est
-        possible. N et Z dépendent du produit, V et C sont mis à 0 et X ne change pas. La durée
-        dépend des bits de la source : 38 cycles d’horloge plus 2 par paire de bits voisins
-        différents, 70 au maximum.
+    .details = Syntaxe : MULS <ea>,Dn, en taille mot ; la source accepte tous les modes de données.
+        Le mot bas de Dn est multiplié par le mot source, tous deux pris comme des nombres signés,
+        et le produit complet sur 32 bits remplace Dn : aucun débordement n’est possible. N et Z
+        dépendent du produit, V et C sont mis à 0 et X ne change pas. La durée dépend des bits de la
+        source : elle croît avec le nombre de paires de bits voisins différents.
 
 isa-m68k-mulu = Multiplication non signée de deux valeurs de 16 bits en un résultat de 32 bits.
-    .details = Syntaxe : MULU <ea>,Dn, en taille mot ; la source accepte tous les modes de
-        données. Le mot bas de Dn est multiplié par le mot source, tous deux pris comme des
-        nombres non signés, et le produit complet sur 32 bits remplace Dn : aucun débordement
-        n’est possible. N et Z dépendent du produit, V et C sont mis à 0 et X ne change pas. La
-        durée dépend de la source : 38 cycles d’horloge plus 2 par bit à 1, 70 au maximum.
+    .details = Syntaxe : MULU <ea>,Dn, en taille mot ; la source accepte tous les modes de données.
+        Le mot bas de Dn est multiplié par le mot source, tous deux pris comme des nombres non
+        signés, et le produit complet sur 32 bits remplace Dn : aucun débordement n’est possible. N
+        et Z dépendent du produit, V et C sont mis à 0 et X ne change pas. La durée dépend de la
+        source : elle croît avec le nombre de bits à 1.
 
 isa-m68k-nbcd = Calcule l’opposé d’un octet en BCD condensé, en tenant compte de l’indicateur X.
     .details = Syntaxe : NBCD <ea>, uniquement sur un octet, avec un registre de données ou un
@@ -392,9 +390,8 @@ isa-m68k-negx = Calcule l’opposé de la destination en tenant compte de l’in
 
 isa-m68k-nop = Ne fait rien.
     .details = Syntaxe : NOP, sans opérande ni taille. Le processeur passe simplement à
-        l’instruction suivante, ce qui prend 4 cycles d’horloge et 2 octets. Elle réserve de la
-        place pour une correction ultérieure ou ajoute un délai court et précis. Aucun
-        indicateur n’est modifié.
+        l’instruction suivante ; NOP elle-même occupe 2 octets. Elle réserve de la place pour une
+        correction ultérieure ou ajoute un délai court et précis. Aucun indicateur n’est modifié.
 
 isa-m68k-not = Inverse chaque bit de la destination (complément à un).
     .details = Syntaxe : NOT.B/W/L <ea>, avec un registre de données ou un opérande mémoire
@@ -433,19 +430,19 @@ isa-m68k-reset = Réinitialise les périphériques externes (privilégiée).
 
 isa-m68k-rol = Rotation vers la gauche, sans l’indicateur X.
     .details = Syntaxe : ROL.B/W/L Dx,Dy (nombre de positions dans Dx, modulo 64),
-        ROL.B/W/L #<1-8>,Dy, ou ROL <ea> pour faire tourner d’un bit un mot en mémoire
-        modifiable. Le bit qui sort à gauche revient à droite : aucun bit n’est perdu. C reçoit
-        le dernier bit sorti, N et Z décrivent le résultat, V est mis à 0 et X ne change pas ;
-        avec une rotation de 0, C est mis à 0. Les formes sur registre coûtent 2 cycles
-        d’horloge de plus par position.
+        ROL.B/W/L #<1-8>,Dy, ou ROL <ea> pour faire tourner d’un bit un mot en mémoire modifiable.
+        Le bit qui sort à gauche revient à droite : aucun bit n’est perdu. C reçoit le dernier bit
+        sorti, N et Z décrivent le résultat, V est mis à 0 et X ne change pas ; avec une rotation de
+        0, C est mis à 0. Dans les formes sur registre, la durée croît avec le nombre de positions
+        de rotation.
 
 isa-m68k-ror = Rotation vers la droite, sans l’indicateur X.
     .details = Syntaxe : ROR.B/W/L Dx,Dy (nombre de positions dans Dx, modulo 64),
-        ROR.B/W/L #<1-8>,Dy, ou ROR <ea> pour faire tourner d’un bit un mot en mémoire
-        modifiable. Le bit qui sort à droite revient à gauche : aucun bit n’est perdu. C reçoit
-        le dernier bit sorti, N et Z décrivent le résultat, V est mis à 0 et X ne change pas ;
-        avec une rotation de 0, C est mis à 0. Les formes sur registre coûtent 2 cycles
-        d’horloge de plus par position.
+        ROR.B/W/L #<1-8>,Dy, ou ROR <ea> pour faire tourner d’un bit un mot en mémoire modifiable.
+        Le bit qui sort à droite revient à gauche : aucun bit n’est perdu. C reçoit le dernier bit
+        sorti, N et Z décrivent le résultat, V est mis à 0 et X ne change pas ; avec une rotation de
+        0, C est mis à 0. Dans les formes sur registre, la durée croît avec le nombre de positions
+        de rotation.
 
 isa-m68k-roxl = Rotation vers la gauche à travers l’indicateur X.
     .details = Syntaxe : ROXL.B/W/L Dx,Dy (nombre de positions dans Dx, modulo 64),
@@ -468,22 +465,20 @@ isa-m68k-roxr = Rotation vers la droite à travers l’indicateur X.
 isa-m68k-rte = Termine un gestionnaire d’exception (privilégiée).
     .details = Syntaxe : RTE, sans opérande. Le processeur dépile le registre d’état, puis le
         compteur ordinal, depuis la pile superviseur, ce qui rétablit le mode, le masque
-        d’interruption et les indicateurs sauvegardés au début de l’exception. Elle est
-        privilégiée, car elle peut faire repasser le processeur en mode utilisateur. Elle prend
-        20 cycles d’horloge.
+        d’interruption et les indicateurs sauvegardés au début de l’exception. Elle est privilégiée,
+        car elle peut faire repasser le processeur en mode utilisateur.
 
 isa-m68k-rtr = Revient d’un sous-programme en restaurant les indicateurs.
-    .details = Syntaxe : RTR, sans opérande. Le processeur dépile un mot dont l’octet bas devient
-        le registre des codes condition, puis dépile l’adresse de retour dans le compteur
-        ordinal. Elle va de pair avec un sous-programme qui commence par MOVE SR,-(SP), afin que
-        l’appelant retrouve ses indicateurs. Elle prend 20 cycles d’horloge.
+    .details = Syntaxe : RTR, sans opérande. Le processeur dépile un mot dont l’octet bas devient le
+        registre des codes condition, puis dépile l’adresse de retour dans le compteur ordinal. Elle
+        va de pair avec un sous-programme qui commence par MOVE SR,-(SP), afin que l’appelant
+        retrouve ses indicateurs.
 
 isa-m68k-rts = Revient d’un sous-programme.
-    .details = Syntaxe : RTS, sans opérande. Le processeur dépile l’adresse de retour, un mot
-        long empilé par BSR ou JSR, et continue à cette adresse ; A7 augmente de 4. Le pointeur
-        de pile doit être revenu là où il était juste après l’appel, sinon le processeur repart
-        à une mauvaise adresse. Aucun indicateur n’est modifié ; elle prend 16 cycles
-        d’horloge.
+    .details = Syntaxe : RTS, sans opérande. Le processeur dépile l’adresse de retour, un mot long
+        empilé par BSR ou JSR, et continue à cette adresse ; A7 augmente de 4. Le pointeur de pile
+        doit être revenu là où il était juste après l’appel, sinon le processeur repart à une
+        mauvaise adresse. Aucun indicateur n’est modifié.
 
 isa-m68k-sbcd = Soustrait des octets en BCD condensé, en tenant compte de l’indicateur X.
     .details = Syntaxe : SBCD Dy,Dx ou SBCD -(Ay),-(Ax), uniquement sur un octet. Le processeur
@@ -496,12 +491,11 @@ isa-m68k-sbcd = Soustrait des octets en BCD condensé, en tenant compte de l’i
         X à 0) avant la première. N et V sont indéfinis.
 
 isa-m68k-scc = Met un octet à 1 partout si la condition est vraie, à zéro sinon.
-    .details = Syntaxe : Scc <ea>, sur un octet, avec un registre de données ou un opérande
-        mémoire modifiable ; cc est l’une des 16 conditions, y compris T (toujours) et F
-        (jamais). L’octet devient $FF si la condition est vraie et $00 si elle est fausse, ce qui
-        conserve le résultat d’un test sous forme de booléen. Aucun indicateur n’est modifié.
-        Sur un registre de données, une condition vraie coûte 2 cycles d’horloge de plus qu’une
-        condition fausse.
+    .details = Syntaxe : Scc <ea>, sur un octet, avec un registre de données ou un opérande mémoire
+        modifiable ; cc est l’une des 16 conditions, y compris T (toujours) et F (jamais). L’octet
+        devient $FF si la condition est vraie et $00 si elle est fausse, ce qui conserve le résultat
+        d’un test sous forme de booléen. Aucun indicateur n’est modifié. Sur un registre de données,
+        une condition vraie prend un peu plus de temps qu’une condition fausse.
 
 isa-m68k-stop = Charge le registre d’état et attend une interruption (privilégiée).
     .details = Syntaxe : STOP #<data>, avec une valeur immédiate sur 16 bits. La valeur est
@@ -549,10 +543,9 @@ isa-m68k-subx = Soustrait la source et l’indicateur X de la destination.
         avant la suite.
 
 isa-m68k-swap = Échange les deux moitiés d’un registre de données.
-    .details = Syntaxe : SWAP Dn, en taille mot. Les bits 31 à 16 et 15 à 0 échangent leurs
-        places, ce qui rend le mot haut accessible, par exemple le reste après une division. N
-        et Z dépendent du résultat complet sur 32 bits, V et C sont mis à 0 et X ne change pas.
-        Elle prend 4 cycles d’horloge.
+    .details = Syntaxe : SWAP Dn, en taille mot. Les bits 31 à 16 et 15 à 0 échangent leurs places,
+        ce qui rend le mot haut accessible, par exemple le reste après une division. N et Z
+        dépendent du résultat complet sur 32 bits, V et C sont mis à 0 et X ne change pas.
 
 isa-m68k-tas = Teste un octet et met son bit 7 à 1 en une seule opération indivisible.
     .details = Syntaxe : TAS <ea>, sur un octet, avec un registre de données ou un opérande
@@ -564,11 +557,10 @@ isa-m68k-tas = Teste un octet et met son bit 7 à 1 en une seule opération indi
 
 isa-m68k-trap = Appelle le système par l’un des 16 vecteurs de trappe.
     .details = Syntaxe : TRAP #<vector>, avec un numéro de 0 à 15. Le processeur passe en mode
-        superviseur, sauvegarde le compteur ordinal et le registre d’état sur la pile
-        superviseur, et continue au gestionnaire dont l’adresse se trouve dans le vecteur
-        32 + n. Les simulateurs et les systèmes d’exploitation s’en servent pour leurs
-        services ; EASy68K, par exemple, fournit ses entrées et sorties par TRAP #15. Les
-        indicateurs ne changent pas, et l’instruction prend 34 cycles d’horloge.
+        superviseur, sauvegarde le compteur ordinal et le registre d’état sur la pile superviseur,
+        et continue au gestionnaire dont l’adresse se trouve dans le vecteur 32 + n. Les simulateurs
+        et les systèmes d’exploitation s’en servent pour leurs services ; EASy68K, par exemple,
+        fournit ses entrées et sorties par TRAP #15. Les indicateurs ne changent pas.
 
 isa-m68k-trapv = Déclenche une exception si l’indicateur de débordement est à 1.
     .details = Syntaxe : TRAPV, sans opérande. Si V vaut 1, le processeur déclenche l’exception
@@ -583,10 +575,9 @@ isa-m68k-tst = Compare l’opérande à zéro.
         ou BPL puisse suivre.
 
 isa-m68k-unlk = Supprime un cadre de pile créé par LINK.
-    .details = Syntaxe : UNLK An, avec le registre du LINK correspondant. Le pointeur de pile
-        reçoit la valeur de An, ce qui libère les variables locales, puis l’ancienne valeur de
-        An est dépilée dans An. Elle précède en général immédiatement RTS. Aucun indicateur n’est
-        modifié, et l’instruction prend 12 cycles d’horloge.
+    .details = Syntaxe : UNLK An, avec le registre du LINK correspondant. Le pointeur de pile reçoit
+        la valeur de An, ce qui libère les variables locales, puis l’ancienne valeur de An est
+        dépilée dans An. Elle précède en général immédiatement RTS. Aucun indicateur n’est modifié.
 
 ## Conditions (cc in Bcc, DBcc and Scc; after CMP src,dst they compare dst with src)
 
