@@ -1,5 +1,6 @@
 //! End-to-end tests of the `va` binary: clap behaviour, exit codes, and `va info` human and JSON
-//! output (docs/specs/m0-foundations.md §5 and §11).
+//! output (docs/specs/m0-foundations.md §5 and §11; m1-core-isa-lexer.md §7.1 for the registered
+//! architectures and `--lang`, §7.5 for `no-architecture`).
 #![allow(clippy::unwrap_used)]
 
 use std::ffi::OsString;
@@ -12,6 +13,23 @@ const EXIT_USAGE: i32 = 2;
 
 /// Exit code of an I/O or environment error (docs/specs/m0-foundations.md §5).
 const EXIT_IO: i32 = 3;
+
+/// Ids of the architectures `va info` lists: the default `arch-m68k` feature registers the
+/// 68000; a build without any `arch-*` feature lists none (m1 §7.1, §8).
+const ARCHITECTURES: &[&str] = if cfg!(feature = "arch-m68k") {
+    &["m68k"]
+} else {
+    &[]
+};
+
+/// The `architectures:` value of the human `va info` output.
+fn architectures_text() -> String {
+    if ARCHITECTURES.is_empty() {
+        "(none)".to_owned()
+    } else {
+        ARCHITECTURES.join(", ")
+    }
+}
 
 /// Version line printed by `va --version` and first line of `va info`.
 fn version_line() -> String {
@@ -53,7 +71,10 @@ fn help_lists_info() {
     let stdout = text(&output.stdout);
     assert!(stdout.contains("Usage:"), "stdout: {stdout}");
     assert!(stdout.contains("info"), "stdout: {stdout}");
+    assert!(stdout.contains("lex"), "stdout: {stdout}");
+    assert!(stdout.contains("isa"), "stdout: {stdout}");
     assert!(stdout.contains("--json"), "stdout: {stdout}");
+    assert!(stdout.contains("--lang <LANG>"), "stdout: {stdout}");
     assert_eq!(text(&output.stderr), "");
 }
 
@@ -194,10 +215,11 @@ fn info_human() {
     let stdout = text(&output.stdout);
     assert!(stdout.starts_with(&version_line()), "stdout: {stdout}");
     let expected = format!(
-        "{}\nos: {}\narch: {}\narchitectures: (none)\n",
+        "{}\nos: {}\narch: {}\narchitectures: {}\n",
         version_line(),
         std::env::consts::OS,
-        std::env::consts::ARCH
+        std::env::consts::ARCH,
+        architectures_text()
     );
     assert_eq!(stdout, expected);
     assert_eq!(text(&output.stderr), "");
@@ -233,16 +255,17 @@ fn info_json() {
         assert!(document["arch"].is_string(), "args: {args:?}");
         assert_eq!(
             document["architectures"],
-            Value::Array(Vec::new()),
+            serde_json::json!(ARCHITECTURES),
             "args: {args:?}"
         );
 
         // Exact line, which also pins the key order of the spec.
         let expected = format!(
-            "{{\"schema\":\"va.info/1\",\"version\":\"{}\",\"os\":\"{}\",\"arch\":\"{}\",\"architectures\":[]}}",
+            "{{\"schema\":\"va.info/1\",\"version\":\"{}\",\"os\":\"{}\",\"arch\":\"{}\",\"architectures\":{}}}",
             env!("CARGO_PKG_VERSION"),
             std::env::consts::OS,
-            std::env::consts::ARCH
+            std::env::consts::ARCH,
+            serde_json::to_string(ARCHITECTURES).unwrap()
         );
         assert_eq!(line, expected, "args: {args:?}");
     }
@@ -417,5 +440,44 @@ fn usage_error_on_a_closed_stderr_pipe_is_io_error() {
             .unwrap();
         assert_eq!(output.status.code(), Some(EXIT_IO), "args: {args:?}");
         assert!(output.stdout.is_empty(), "args: {args:?}");
+    }
+}
+
+/// `--lang` is global: accepted before or after the subcommand, and without effect on `va info`.
+#[test]
+fn lang_flag_is_global_and_info_ignores_it() {
+    let plain = run_va(&["info"]);
+    for args in [&["--lang", "fr", "info"][..], &["info", "--lang", "en"]] {
+        let output = run_va(args);
+        assert_eq!(output.status.code(), Some(0), "args: {args:?}");
+        assert_eq!(output.stdout, plain.stdout, "args: {args:?}");
+        assert_eq!(text(&output.stderr), "", "args: {args:?}");
+    }
+}
+
+/// A build without any `arch-*` feature cannot lex or describe: exit 3 with `no-architecture`,
+/// and a `va.error/1` document in JSON mode (m1 §7.5). Runs with
+/// `cargo test -p va --no-default-features`.
+#[cfg(not(feature = "arch-m68k"))]
+#[test]
+fn commands_without_architecture_exit_3() {
+    for args in [&["lex", "-"][..], &["isa", "MOVE"], &["isa", "--list"]] {
+        let output = run_va(args);
+        assert_eq!(output.status.code(), Some(EXIT_IO), "args: {args:?}");
+        assert_eq!(text(&output.stdout), "", "args: {args:?}");
+        let stderr = text(&output.stderr);
+        assert!(
+            stderr.starts_with("error: this build of va has no CPU architecture"),
+            "args: {args:?}, stderr: {stderr}"
+        );
+
+        let mut json_args = vec!["--json"];
+        json_args.extend_from_slice(args);
+        let output = run_va(&json_args);
+        assert_eq!(output.status.code(), Some(EXIT_IO), "args: {json_args:?}");
+        let stdout = text(&output.stdout);
+        let document: Value = serde_json::from_str(stdout.trim_end()).unwrap();
+        assert_eq!(document["schema"], "va.error/1", "args: {json_args:?}");
+        assert_eq!(document["code"], "no-architecture", "args: {json_args:?}");
     }
 }

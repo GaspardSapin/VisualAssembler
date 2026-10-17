@@ -1,15 +1,16 @@
 //! `va info`: prints build information (version, target OS and architecture, registered CPUs).
 //!
-//! Human output (docs/specs/m0-foundations.md §5):
-//! `va 0.1.0\nos: <os>\narch: <arch>\narchitectures: (none)\n`.
-//! With `--json`, exactly one line of schema [`INFO_SCHEMA`]:
-//! `{"schema":"va.info/1","version":"0.1.0","os":"windows","arch":"x86_64","architectures":[]}`.
+//! Human output (docs/specs/m0-foundations.md §5, m1-core-isa-lexer.md §7.1):
+//! `va 0.1.0\nos: <os>\narch: <arch>\narchitectures: m68k\n`, or `(none)` in a build without any
+//! `arch-*` feature. With `--json`, exactly one line of schema [`INFO_SCHEMA`]:
+//! `{"schema":"va.info/1","version":"0.1.0","os":"windows","arch":"x86_64","architectures":["m68k"]}`.
 
 use std::io::{self, Write};
 
 use serde::Serialize;
 
-use crate::commands::CommandError;
+use crate::arch_registry;
+use crate::report::CommandError;
 
 /// Schema identifier of the JSON document printed by `va info --json`.
 pub const INFO_SCHEMA: &str = "va.info/1";
@@ -23,8 +24,8 @@ pub struct InfoReport {
     pub os: &'static str,
     /// CPU architecture the binary was built for (`std::env::consts::ARCH`).
     pub arch: &'static str,
-    /// Names of the CPU architectures registered in this binary. Always empty in M0: no CPU is
-    /// registered before M1.
+    /// Ids of the CPU architectures registered in this binary (`crate::arch_registry`), default
+    /// first; empty in a build without any `arch-*` feature.
     pub architectures: Vec<String>,
 }
 
@@ -45,7 +46,10 @@ impl InfoReport {
             version: env!("CARGO_PKG_VERSION"),
             os: std::env::consts::OS,
             arch: std::env::consts::ARCH,
-            architectures: Vec::new(),
+            architectures: arch_registry::architectures()
+                .into_iter()
+                .map(|arch| arch.id().to_owned())
+                .collect(),
         }
     }
 

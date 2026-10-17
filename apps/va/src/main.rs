@@ -1,13 +1,18 @@
 //! `va`: the headless VisualAssembler command-line interface.
 //!
 //! The command line is parsed by clap ([`cli::Cli`]) and dispatched to one module per subcommand
-//! ([`commands`]). Exit codes (docs/specs/m0-foundations.md §5): 0 success, including `--help` and
-//! `--version`; 2 usage error; 3 I/O or environment error (output that cannot be written).
-//! Human errors go to stderr, prefixed `error: `. This binary never depends on a GUI crate
-//! (architecture rule R4), so it builds and runs on headless machines.
+//! ([`commands`]). Exit codes (docs/specs/m0-foundations.md §5, m1-core-isa-lexer.md §7.5): 0
+//! success, including `--help` and `--version`; 1 the command ran and found problems; 2 usage
+//! error; 3 I/O or environment error; 101 panic (a bug). Human errors go to stderr, prefixed
+//! `error: `; in `--json` mode a failure also prints a `va.error/1` document on stdout
+//! ([`report`]). This binary never depends on a GUI crate (architecture rule R4), so it builds and
+//! runs on headless machines.
 
+mod arch_registry;
 mod cli;
 mod commands;
+mod input;
+mod report;
 
 use std::io::{self, Write};
 use std::process::ExitCode;
@@ -15,12 +20,7 @@ use std::process::ExitCode;
 use clap::Parser;
 
 use crate::cli::Cli;
-
-/// Exit code of a usage error (unknown flag, missing subcommand, bad value), as clap reports it.
-pub const EXIT_USAGE: u8 = 2;
-
-/// Exit code of an I/O or environment error, such as an output stream that cannot be written.
-pub const EXIT_IO: u8 = 3;
+use crate::report::{EXIT_IO, EXIT_USAGE};
 
 /// Parses the command line, runs the selected subcommand and returns the process exit code.
 fn main() -> ExitCode {
@@ -29,11 +29,8 @@ fn main() -> ExitCode {
         Err(error) => return print_parse_outcome(&error),
     };
     match commands::run(&cli) {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(error) => {
-            print_error_line(&error.to_string());
-            ExitCode::from(error.exit_code())
-        }
+        Ok(outcome) => ExitCode::from(outcome.exit_code()),
+        Err(error) => ExitCode::from(report::report_failure(&error, cli.json)),
     }
 }
 
@@ -49,20 +46,10 @@ fn print_parse_outcome(error: &clap::Error) -> ExitCode {
         // usage error rather than a success.
         Ok(()) => ExitCode::from(u8::try_from(error.exit_code()).unwrap_or(EXIT_USAGE)),
         Err(io_error) => {
-            print_error_line(&format!(
+            report::print_error_line(&format!(
                 "cannot print the command-line message: {io_error}"
             ));
             ExitCode::from(EXIT_IO)
         }
     }
-}
-
-/// Writes `error: <message>` and a newline on stderr.
-///
-/// stderr is the last reporting channel. If it cannot be written either, nothing else can carry
-/// the message, so the write result is dropped on purpose: the caller's non-zero exit code still
-/// signals the failure.
-fn print_error_line(message: &str) {
-    let mut stderr = io::stderr().lock();
-    let _ = writeln!(stderr, "error: {message}");
 }
