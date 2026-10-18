@@ -1084,3 +1084,35 @@ pub const TEST_VA_NO_ARCH: &[&str] = &["test", "-p", "va", "--no-default-feature
 rebuilds xtask (`-p va` only). `xtask/tests/ci.rs` updates its expected step labels and asserts that
 both new steps carry `--no-default-features`. The CI workflow is unchanged (it runs `cargo xtask ci`).
 *Rejected:* waiting for a second CPU; the feature-gated path would rot unseen until then.
+
+### 12.8 QA round 1 (HEAD `9f86ae0`, 2026-10-18)
+
+QA's new tests in the tree stay; each owner below makes them pass.
+
+| # | Decision | Owner, files, exact change |
+|---|---|---|
+| F-1 OS-localized I/O text | **Fix-now.** Every `io::Error` that `va` prints goes through one English renderer: `kind (os error n)` when the error has an OS code, else the standard library's text (§7.5, §12.7). Expected: `error: cannot write to stdout: broken pipe (os error 232)` on Windows, `… broken pipe (os error 32)` on Linux, `… no storage space (os error 28)` for `/dev/full`; same shape for `cannot write to stderr:` and `cannot print the command-line message:`. | WP-F: move `english()` from `apps/va/src/input.rs` to `apps/va/src/report.rs` as `pub fn english_io(error: &io::Error) -> String`; use it in `input.rs`, in `CommandError`'s `Display` (Stdout, Stderr), in `report_failure` (`cannot write to stdout: …`) and in `main.rs` (`cannot print the command-line message: …`). Tests: the closed-pipe and `/dev/full` cases assert the exact ASCII text above for their OS. |
+| F-2 RUSTSEC-2026-0370/0371/0372 (zvariant 5.15.0, zbus_names 4.3.4, zvariant_derive) | **Approved ignore, subject to Security's sign-off.** The advisories are "unmaintained" (the crates were merged into zbus 6), not vulnerabilities; cargo-deny reports no safe upgrade; they reach only Linux builds of `visual-assembler` through eframe 0.36.2 → egui-winit → accesskit_winit → accesskit_unix → zbus 5/atspi (AT-SPI accessibility over the local D-Bus), and `va` does not contain them. *Rejected:* a bump (no zbus 5 fix exists, and leaving zbus 5 means an eframe/egui/accesskit stack change, which triggers the S19-5 fallback-test rule, with no known target version); dropping AccessKit (accessibility is a V1 requirement, M7). | WP0 scope (`.cargo/deny.toml`, normative, amended here): replace `ignore = []` by the block below; Security records the three IDs in `SECURITY.md` with the same revisit rule. Revisit at the next eframe/egui bump and no later than M8 (release); remove an entry as soon as `cargo deny` stops reporting it. |
+| N-1 no-op fix on an unclosed `(` | **Fix-now** (same class as R12-1). A `Suggestion` is attached only when its replacement differs from the replaced text; the diagnostic stays. JSON then has `"fix":null`. | WP-C: `arch/m68k/src/syntax/spacing.rs` (`line_diagnostics` path); test rows ` move.l 8(a0 d0),d1` and ` dc.b (1 2)` → `SuspectComment`, `fix` absent; QA's 386 probes give no no-op fix. |
+| N-2 raw `VA_LANG` echo | **Fix-now**, same rule as m0 §19.9 S19-2. Text: `warning: ignoring VA_LANG=<escape_debug of the lossy value> (expected en, fr or auto)`. | WP-F: `apps/va/src/commands/mod.rs`; test: `VA_LANG="fr\r\n\u{1b}[2J"` gives one warning line with no CR, LF or ESC and backslash escapes in it. |
+| N-3 `va isa ""` suggests `OR, SF, ST` | **Fix-now.** No suggestion when the spelling part is empty (`""`, `.l`): exit 1, `error: unknown mnemonic ''` (same text in `va.error/1`). | WP-F: `apps/va/src/commands/isa.rs`; tests for `""` and `.l`. |
+| N-4 ASR V | **Fix-now**: ASR's V is `Cleared`. The PRM gives one rule for ASL/ASR (V set if the most significant bit changes during the shift); an arithmetic right shift copies that bit, so V is always 0 for ASR. ASL keeps `Result`. | WP-B: `arch/m68k/src/isa/table_logic.rs`; `tests/isa/forms.rs` spot check ASR `* * * 0 *`. The ASR doc ("V is cleared") is then consistent; M3's cross-check confirms. |
+| N-5 STOP wake-up | **Fix-now.** `.details` (EN and FR, own words) must say the processor resumes on a reset, on an interrupt whose level is above the new mask, on a level-7 interrupt even with mask 7 (level 7 is never masked), or on a trace exception when T is set. | WP-D: `arch/m68k/locales/{en,fr}/isa.ftl`, entry `isa-m68k-stop`. QA rechecks the facts (§12.5 item 3). |
+| N-6 MOVEP wording close to the manual | **Fix-now**: rewrite the summary and `.details` in our own words (E9), for example "Copies a data register to or from alternate bytes of memory, as 8-bit peripherals expect." | WP-D: `arch/m68k/locales/{en,fr}/isa.ftl`, entry `isa-m68k-movep`; QA re-runs the E9 spot check on it. |
+| N-7 apostrophe swallows a real `;` comment | **Fix-now** (the user's rule: a real `;` comment stays plain grey). When §5.7 searches T for its first `;` and when the fix scans T, a quote opens a string only if the same delimiter closes it later on the line. `dc.b 1, don't ; real comment` → `SuspectComment "don't"`, then `Comment "; real comment"`. | WP-C: `arch/m68k/src/syntax/spacing.rs`; test rows for that line and for `dc.b 1, 'a;b' x` (closed quote: the `;` stays inside the suspect token). |
+
+**F-2, exact `.cargo/deny.toml` change** (comments may be reworded, values not):
+
+```toml
+# Approved in m1-core-isa-lexer.md §12.8 and SECURITY.md: "unmaintained" advisories (merged into
+# zbus 6), no safe upgrade; Linux-only AT-SPI path eframe 0.36.2 -> egui-winit -> accesskit_winit ->
+# accesskit_unix -> zbus 5 / atspi. Revisit at the next eframe/egui bump, at the latest in M8.
+ignore = [
+    { id = "RUSTSEC-2026-0370", reason = "zvariant unmaintained (merged into zbus 6); Linux AT-SPI via eframe 0.36.2; revisit at next eframe bump, latest M8" },
+    { id = "RUSTSEC-2026-0371", reason = "zbus_names unmaintained (merged into zbus 6); Linux AT-SPI via eframe 0.36.2; revisit at next eframe bump, latest M8" },
+    { id = "RUSTSEC-2026-0372", reason = "zvariant_derive unmaintained (merged into zbus 6); Linux AT-SPI via eframe 0.36.2; revisit at next eframe bump, latest M8" },
+]
+```
+
+Acceptance: `make security` exits 0 on Windows and in WSL; the CI `deny` job is green; no other
+advisory is ignored.
