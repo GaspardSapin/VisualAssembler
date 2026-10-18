@@ -4,7 +4,12 @@ This file lists the protections that are actually in place. The Security agent a
 protection when it is implemented. It is not a list of good intentions: anything not implemented is
 left out, and planned work appears only in the tables at the end.
 
-Last audit: M0 (foundations), the §19.9 recording pass (Security row of the m0-foundations.md
+Last audit: M1 (core contracts, 68000 ISA tables, lexer, Fluent, `va lex` and `va isa`), Security
+wave 3 of m1-core-isa-lexer.md §1, 2026-10-17 and 2026-10-18, on the M1 diff `cc827b0..9f86ae0`
+(`9f86ae0` is a spec-only commit on top of `5d2d205`). The M1 crates were re-read, a release `va`
+was built with `--locked` on Windows x64 and in WSL, and crafted inputs were run through it (each
+M1 entry below says what was run). QA's uncommitted test additions in the tree were not audited.
+Before it: M0 (foundations), the §19.9 recording pass (Security row of the m0-foundations.md
 §19.9.6 fix wave), 2026-10-16, on the uncommitted §19 working tree with fix-wave rows 19-8 to 19-11
 landed. A second recording pass the same day, after the final QA certification, re-checked the WP7
 pilot-file statements against `README.md`, `CLAUDE.md` and `DEPENDANCE.md`, and read the branch
@@ -16,6 +21,16 @@ fix wave of §18, 2026-10-14. Every entry below
 was checked against the code at the date it gives. Where a check was actually run, the entry says
 so. Bypasses are classified under the tripwire threat model below (§18.1).
 
+- Findings of the M1 round are numbered M1-S1 to M1-S7: M1-S1 and M1-S2 are medium, the others
+  are low. None is critical or high, so none is blocking. None is a tripwire bypass. All are open
+  and listed under "Threats identified and not covered":
+  - M1-S1: `va lex` text mode writes source text unescaped to stderr (terminal escape injection
+    from a crafted source file);
+  - M1-S2: `make security` exits 1 on three RustSec "unmaintained" advisories of the zbus family
+    (M0's Linux GUI graph, not the M1 diff); exit criterion E1 cannot pass until it is settled;
+  - M1-S3 to M1-S7: raw C1 and bidi controls in the text-mode token lines, unescaped echoes of
+    user-supplied values, output amplification, blocking inputs and UNC paths, and a test-only
+    no-panic guarantee.
 - Findings of the §19 round are numbered S19-1 to S19-5: S19-1 is medium, the others are low. None
   is critical or high, so none is blocking. None is a tripwire bypass, so the §18.1 classes do not
   apply. §19.9.4 settled them:
@@ -89,6 +104,8 @@ The guarantees these protections serve:
   - The `deny` job in `ci.yml` is identical to the §18.7 block. It has been green in every GitHub run so far: on the pre-§19 commit `c326afd` (run 38635672228, 2026-10-14), then on `646b6f7` (run 38968085878) and `6ed43c8` (run 38969165969), both 2026-10-16 (read with `gh run view` on 2026-10-16).
 
   Re-run on 2026-10-15 on the §19 tree (direct `winit` dependency, both renderers by default): the same command gave `advisories ok, bans ok, licenses ok, sources ok`. Re-run on 2026-10-16, after rows 19-8 to 19-11: same result.
+
+  Re-run on 2026-10-18 on the M1 tree (`9f86ae0`, `make security`): `advisories FAILED, bans ok, licenses ok, sources ok`. The bans, licence and source checks pass with the M1 crates, so M1 adds no banned crate. The advisory failure is M1-S2: RUSTSEC-2026-0370 (`zvariant` 5.15.0), RUSTSEC-2026-0371 (`zbus_names` 4.3.4) and RUSTSEC-2026-0372 (`zvariant_derive` 5.15.0), all `unmaintained` (merged into zbus 6), reached through `accesskit_unix` 0.21.1 from eframe. The same three versions are in the `cc827b0` lock file, so the advisories are newer than the last green `deny` job (2026-10-16), not caused by M1. No advisory names an M1 crate.
 - **Rationale**: Architecture goal G4 and §9.3: an offline product with no telemetry, enforced by tooling rather than by promise. Resolves F3, F9 and R2-10.
 - **Limitations**:
   - The list matches crate names, so a network-capable crate that is not named gets through. Examples: `nix` or `rustix` with their socket features, bindings to C networking libraries such as `zmq`, or `dns-lookup`.
@@ -158,6 +175,12 @@ The guarantees these protections serve:
   - `cargo test -p xtask --test layering -- --ignored live_workspace` reports 0 violations on the live workspace (both dates).
   - Keep the name filter in that command. Without it, `-- --ignored` and `--include-ignored` also run the two §18.1 record tests, which fail by design (R3-7).
   - 17 edge cases were run through the real `scan_text` in a scratch crate: escaped quotes, byte, char, raw and C strings, nested comments, raw lifetimes, BOM plus shebang, `#!` with an attribute on the next line, `include!(concat!(env!("OUT_DIR"), …))`, and `cfg_attr(…, path = …)`. Each one gave the expected result.
+
+  Verified on 2026-10-18 on the M1 tree (`9f86ae0`, Windows):
+  - `cargo test --locked -p xtask --test layering -- --ignored live_workspace` reports 0 violations. The walk now covers the three M1 library crates and the new `va` sources.
+  - `git diff cc827b0..9f86ae0` touches neither `xtask/`, `scripts/`, `.cargo/` nor `.github/`. The allow-lists are unchanged.
+  - The M1 code has no network API, no `std::process` and no file write. The only file read is `File::open` in `apps/va/src/input.rs:L51`. The only environment reads are `VA_LANG`, `LC_ALL`, `LC_MESSAGES` and `LANG` (`apps/va/src/commands/mod.rs:L39-L41`).
+  - `arch/m68k/src/locales.rs:L10-L19` embeds the four `.ftl` files with `include_str!("../locales/…")`. S8 covers `include!` and `#[path]` only, so these `..` paths are not checked. They embed data, not code (m1 §6.1).
 - **Rationale**: Architecture §9.3 and §9.4, F1 and R2-1, R2-4 and R2-12. This is a tripwire under §18.1, not a sandbox.
 - **Limitations**:
   - The Not-blocking bypasses are listed under "Accepted limitations".
@@ -181,6 +204,7 @@ The guarantees these protections serve:
   - Rule R8 is enforced by the `[lints]` check and by step 0 (entries below).
   - In M0 the workspace has 5 unsafe blocks, all in the allow-listed files. The §19 change adds none, and `UNSAFE_ALLOWLIST`, `NET_ALLOWLIST` and `INCLUDE_ALLOWLIST` are unchanged (`xtask/src/layering.rs` has no diff; 2026-10-15). The three clippy configurations of the GUI (all features, glow only, wgpu only) pass with `-D warnings` (2026-10-15).
   - `platform.rs` allows `unsafe_code` on `gl_string` only, so the compiler still rejects unsafe code anywhere else in that file. The two process files allow it for the whole file.
+  - M1 (checked 2026-10-18 on `cc827b0..9f86ae0`): the diff adds no `unsafe` token, no `unsafe_code` attribute and no allow-list entry (E8). The live S6 scan reports 0 violations. The allocation-free lexer claim (m1 §3.4) is reviewed by eye only, because a counting allocator would need `unsafe` (m1 §12.4, M7).
 - **Rationale**: Architecture §9.4. Memory safety by default, with every exception visible and reviewed (F1, F2).
 - **Limitations**:
   - The scan bypasses under "Accepted limitations" hide `#![allow(unsafe_code)]` and `unsafe` from S6. The compiler lint stays the primary guard.
@@ -390,7 +414,7 @@ The guarantees these protections serve:
 - **Location**: `Cargo.toml:L31-L43`, `Cargo.lock`, `rust-toolchain.toml:L3-L6`, `xtask/src/ci.rs:L39-L84` (`--locked` on the three clippy runs and on test), `.github/workflows/ci.yml:L92` (`--locked` release build), `.github/workflows/ci.yml:L65` and `L67` (`cargo install --locked`, `cargo deny --locked`), `Makefile:L58`, `.cargo/config.toml:L5-L6` (the `xtask` alias, without `--locked`), `.cargo/deny.toml:L23-L27` (advisories), `.cargo/deny.toml:L108-L116` (sources), `scripts/check_project_docs.py:L95-L100` (dependency tables), `scripts/check_project_docs.py:L114-L118` (reverse-check message), `scripts/check_project_docs.py:L356-L466` (rule R6 in both directions: `dependency_tables`, `inherits_from_workspace`, `undeclared_workspace_dependencies`, `check_member_dependencies`), `scripts/check_project_docs.py:L686-L688` (check 3b call), `scripts/check_project_docs.py:L597-L606` (`[patch]`/`[replace]`). Tests in `xtask/tests/docs.rs:L782-L840` (row 19-10) and `xtask/tests/docs.rs:L1056-L1140` (QA additions).
 - **Language**: TOML, Rust 1.99.0, Python 3
 - **Description**:
-  - Every external dependency is declared once in `[workspace.dependencies]`, today with an exact `=` pin. The `[deps]` check (check 3b) makes every member dependency use `workspace = true`.
+  - Every external dependency is declared once in `[workspace.dependencies]`, today with an exact `=` pin. The `[deps]` check (check 3b) makes every member dependency use `workspace = true`. M1 (checked 2026-10-18): `fluent-bundle = "=0.16.0"` and `unic-langid = "=0.9.6"` are exact pins (`Cargo.toml:L37`, `L42`). The three internal crates are path entries (`L43-L45`). Every M1 member declares them with `workspace = true`.
   - Reverse half of check 3b (S19-3, rows 19-9(b), 19-10 and 19-11):
     - Every key of the root `[workspace.dependencies]`, path entries included, must be declared with `workspace = true` by at least one member, in any dependency table. That covers `dependencies`, `dev-dependencies`, `build-dependencies`, their legacy underscore spellings and their `target.<cfg>` variants. When the root manifest has `[package]`, the root package's own tables count too.
     - Keys compare exactly. Each undeclared key is reported once, in sorted order, as `[deps] Cargo.toml: workspace dependency '<name>' is not declared by any member (rule R6: remove the pin or declare it with workspace = true)`.
@@ -419,7 +443,7 @@ The guarantees these protections serve:
   - Nobody reviews the transitive versions one by one: there is no `cargo vet` or `cargo crev`.
   - The local `make test` and `make build`, `cargo xtask bench` and the `xtask` alias omit `--locked`.
   - A malicious version already present when the lock file is written is not detected.
-  - Advisories are only as fresh as the last database fetch.
+  - Advisories are only as fresh as the last database fetch. A fresh fetch can fail a tree that nothing changed. That happened on 2026-10-18: `unmaintained = "all"` reports three zbus-family crates of M0's Linux GUI graph, so `make security` exits 1 and the next CI `deny` job will fail (M1-S2, open).
 - **Failure mode**: Fail-closed in CI through the `deny` job (lock mismatch, yanked crate, advisory) and the `docs` job (patch table, member dependency without `workspace = true`, undeclared pin). The `check` job is fail-open on a stale lock (R3-9). Fail-open locally without `--locked`.
 
 ### Licence policy
@@ -429,6 +453,7 @@ The guarantees these protections serve:
   - Allow-list of licences: Apache-2.0, MIT, BSL-1.0, ISC, Unicode-3.0 and Zlib. OFL-1.1 and Ubuntu-font-1.0 are allowed for `epaint_default_fonts` only. The confidence threshold is 0.93.
   - The project is licensed `MIT OR Apache-2.0`. `[licenses.private] ignore = false`, so cargo-deny checks the workspace crates too.
   - §19 adds no package: `winit` 0.30.13 (Apache-2.0) was already in the graph through eframe, and the shipped binary's extra glow crates were already in the all-features graph that cargo-deny checks. `licenses ok` on 2026-10-15.
+  - M1 adds 11 packages to `Cargo.lock` (dependency entry below). Their licences are allowed: `Apache-2.0 OR MIT` for the Fluent and `unic-langid` crates, `MIT OR Apache-2.0` for `displaydoc`, `Unicode-3.0` for `tinystr`, `zerovec` and `zerofrom`. `self_cell` 1.3.0 (`Apache-2.0 OR GPL-2.0-only`) and `memchr` 2.8.3 (`Unlicense OR MIT`) were already in the graph and are now also linked into `va`. cargo-deny takes the allowed side of each `OR` (Apache-2.0, MIT). The GPL side is never chosen. `licenses ok` on 2026-10-18 (`make security`).
   - Verified on 2026-10-14:
     - the sha256 of `LICENSE-APACHE` matches §17.1 (`62c7a1e3…3636a`);
     - `LICENSE-MIT` equals the §17.1 block;
@@ -609,6 +634,161 @@ The guarantees these protections serve:
   - `CARGO_TARGET_TMPDIR` lies inside the target folder, so whoever controls that folder controls them. That is the developer.
 - **Failure mode**: Fail-closed: a pre-existing path makes the test fail rather than reuse it.
 
+### Source input limits: 16 MiB per input, 64 KiB per lexed line (m1 §3.2, §5.2, §7.2)
+- **Location**:
+  - limits: `crates/va-core/src/source.rs:L12-L18` (`MAX_SOURCE_BYTES`, `MAX_LINE_BYTES`);
+  - size check: `source.rs:L132-L151` (`check_size`, `SourceText::from_bytes`, `from_string`);
+  - bounded read: `apps/va/src/input.rs:L20-L22` (`READ_LIMIT`), `input.rs:L40-L81` (`read`), `input.rs:L94-L99` (`read_limited`);
+  - line limit: `arch/m68k/src/syntax/lexer.rs:L42-L45`.
+
+  Tests: `crates/va-core/tests/source.rs` (`limits_have_the_specified_values`, `size_limit_accepts_exactly_the_maximum`, `size_limit_rejects_one_byte_over`, `size_limit_counts_the_bom`, `size_is_checked_before_utf8`), `apps/va/tests/lex.rs` (`input_limit_is_16_mib`), `arch/m68k/tests/syntax/robustness.rs` (`a_line_over_the_limit_is_one_invalid_token`).
+- **Language**: Rust 1.99.0
+- **Description**:
+  - `va lex` reads its file, or stdin for `-`, through `Read::take(MAX_SOURCE_BYTES + 1)`. An endless or oversized input is never read past 16 MiB + 1 byte.
+  - `SourceText::from_bytes` checks the size before decoding. More than 16,777,216 bytes is `SourceError::TooLarge`, so `va` exits 3 with `input-too-large` before printing anything. A BOM counts toward the limit (m1 §12.2).
+  - A line longer than 64 KiB is never lexed: `lex_line` returns one `Invalid(lex-line-too-long)` token over the whole line.
+  - Because of the limit, every byte offset fits in a `u32`. Span arithmetic saturates anyway (`TextRange::shifted`), and line numbers and columns convert with `try_from` and saturate at `u32::MAX`.
+
+  Verified on 2026-10-18 with the release `va` (Windows x64, `--locked`, and WSL):
+  - exactly 16 MiB (`;` repeated), and a BOM plus 16 MiB − 3 bytes: accepted (one `lex-line-too-long` token, exit 1);
+  - 16 MiB + 1 byte, and a BOM plus 16 MiB − 2 bytes: exit 3, `input-too-large`, nothing on stdout but the `va.error/1` line in JSON mode;
+  - `/dev/zero` and `/dev/urandom` (WSL): exit 3, `input-too-large`;
+  - a 65,543-byte line: one invalid token;
+  - peak working set during the largest run below: about 33 MB (`tasklist`).
+- **Rationale**: m1 §7.2 and §10 F8. An input cannot exhaust memory, and the lexer's work per line is bounded.
+- **Limitations**:
+  - The limit bounds the input, not the output (M1-S5). A 16 MiB input of `^a` pairs in operand fields gave 516 MB on stdout and 1.47 GB of diagnostics on stderr in 72 s in text mode, and 3.77 GB of JSON in 376 s. 16 MiB of empty lines gave 783 MB of JSON, and 16 MiB of `1,` operands 1.2 GB of JSON. m1 §10 F8 says about 20×; the measured worst case is about 225× (JSON).
+  - A read that never ends before 16 MiB (a FIFO with no writer, `CON`, `/dev/tty`, a stalled network share) blocks forever: there is no timeout (M1-S6). Verified in WSL with a FIFO: killed by `timeout 5` (exit 124).
+  - The 64 KiB line limit lives in the m68k lexer. Another `SyntaxProvider` must apply `MAX_LINE_BYTES` itself, since `crates/va-core` only defines the constant.
+- **Failure mode**: Fail-closed: an oversized input is refused with exit 3, and an oversized line is one invalid token, never a partial lex.
+
+### Strict UTF-8 decoding and BOM handling of source input (m1 §3.2, §7.2)
+- **Location**: `crates/va-core/src/source.rs:L141-L166` (`from_bytes`, `without_bom`), `apps/va/src/input.rs:L66-L79` (error mapping). Tests: `crates/va-core/tests/source.rs` (`not_utf8_reports_the_first_invalid_input_byte`, `from_bytes_strips_exactly_one_bom`, `a_bom_after_the_start_is_kept`, `nul_bytes_are_valid_utf8`), `apps/va/tests/lex.rs` (`non_utf8_input_exits_3`, `bom_is_stripped_before_lexing`, `crlf_and_cr_give_the_same_tokens_as_lf`).
+- **Language**: Rust 1.99.0
+- **Description**:
+  - Bytes are decoded with `String::from_utf8`, never lossily. Invalid UTF-8 is `SourceError::NotUtf8` with the offset of the first invalid byte, and `va` exits 3 with `input-not-utf8`.
+  - Exactly one leading BOM is stripped. Offsets are relative to the text after it.
+  - Lines end at LF, CRLF or a lone CR, the same way in `lines` and `LineIndex`, so a CR can never hide text from one consumer and show it to another.
+
+  Verified on 2026-10-18 with the release `va`:
+  - a Latin-1 `é` byte: offset 11. A UTF-16 file: offset 0. An overlong encoding (`C0 AF`) and a UTF-16 surrogate encoded in UTF-8 (`ED A0 80`): offset 8. All exit 3;
+  - invalid stdin (`FF`): exit 3, `standard input is not valid UTF-8`;
+  - a BOM-only file: one empty line, exit 0. A second BOM is text (an invalid label, exit 1);
+  - BOM, then `  dc.b 1` CRLF `  nop` CR: three lines at offsets 0, 10 and 16, the last one empty, so offsets start after the BOM.
+- **Rationale**: Rust strings must be valid UTF-8. Lossy decoding would change bytes and offsets silently, and overlong forms are a classic filter bypass.
+- **Limitations**:
+  - Valid UTF-8 still carries control characters (NUL, ESC, DEL), C1 controls (U+0080 to U+009F) and bidi controls (U+202A to U+202E, U+2066 to U+2069). The lexer handles them as invalid or comment text. The terminal writers do not neutralize them (M1-S1, M1-S3).
+  - Windows-1252 sources are refused rather than converted (m1 §7.2, an M4 editor feature).
+- **Failure mode**: Fail-closed: anything that is not UTF-8 is refused with exit 3 and the byte offset.
+
+### Lexer robustness: total, panic-free and linear on any line (m1 §3.4, §5.6, §9.1)
+- **Location**: `arch/m68k/src/syntax/lexer.rs:L31-L66` (`lex_line`), `arch/m68k/src/syntax/literals.rs` (scanners), `arch/m68k/src/syntax/spacing.rs` (§5.7 rules and quick fix), `crates/va-core/src/syntax.rs:L188-L213` (`check_line_tokens`), `syntax.rs:L215-L263` (`text_arg`, `token_diagnostics`), `crates/va-core/src/source.rs:L23-L82` (saturating offsets, `TextRange`). Tests: `arch/m68k/tests/syntax/main.rs:L65-L77` (every test lexes through `check_line_tokens`), `tests/syntax/coverage.rs` (`all_short_ascii_strings_are_covered`, `random_lines_are_covered`, `lexing_is_stateless`, `returned_state_is_always_initial`), `tests/syntax/robustness.rs` (`pathological_lines_are_linear`, `carriage_return_and_line_feed_inside_a_line`, `nul_inside_a_line`, `four_byte_chars_in_comments_strings_and_elsewhere`), `crates/va-core/tests/source.rs` (`a_mismatched_text_never_panics`).
+- **Language**: Rust 1.99.0
+- **Description**:
+  - Contract (m1 §3.4): for any `&str`, `lex_line` appends tokens that cover the line exactly, contiguous and on char boundaries, never panics and runs in O(len). `check_line_tokens` checks the cover. The suite runs it on every lexed line, so every test also checks the property.
+  - Implementation: one forward pass over the bytes with bounded look-backs. Scanners stop only at ASCII bytes or consume whole non-ASCII chars. Slicing uses `get`, `TextRange::slice` returns `None` instead of panicking, and offsets saturate. A `\r` or `\n` inside a line is an invalid token. Diagnostics truncate the source text to 32 chars plus `…`.
+  - The test suite: every ASCII string of length ≤ 3 over 24 interesting chars; 100,000 pseudo-random lines; 40 pathological 64 KiB lines in debug under 30 s (the CI guard against quadratic time); NUL, CR, LF and 4-byte chars.
+  - Verified on 2026-10-18:
+    - `cargo test --locked -p va-core -p va-arch-m68k -p va-workspace` passes on Windows (syntax suite 54 tests, QA's uncommitted additions included, in 1.45 s debug).
+    - A scratch fuzz harness outside the repository, built in release with `overflow-checks` and `debug-assertions`, ran 3,000,000 random lines. The alphabet: ASCII, NUL, ESC, DEL, CR, LF, `é`, U+202E, U+009B, an emoji, U+FEFF, U+2028 and keyword fragments; one line in 1000 is up to about 28 KB. Each line went through `lex_line`, `check_line_tokens` and `line_diagnostics` with a line start near `u32::MAX`, and 10,714,135 diagnostics were rendered in English and French. It also ran 200,000 random `describe` queries and every spelling with eight suffixes. No panic and no invariant failure, in 6.7 s.
+    - 300 random source files through the release `va`, in text, JSON and `--lang fr`: exit 0 or 1, never 101.
+    - 16 pathological 64 KiB lines through `va --json lex` (release): at most 0.16 s each.
+    - The JSON mode lexes twice (§12.7), from the same in-memory text, so the two passes cannot disagree because of a file change.
+- **Rationale**: The lexer is the first code that sees untrusted text (course files, files from classmates). A panic would be a denial of service of the CLI and, from M4, of the editor's highlighter. Quadratic time would be one too.
+- **Limitations**:
+  - The property is tested, not proven (M1-S7). No fuzzer runs in CI. The workspace denies neither `clippy::indexing_slicing` nor `clippy::arithmetic_side_effects`, and the lexer indexes slices directly (`bytes[at]`), guarded by explicit bounds checks that review must keep.
+  - The release profile has no `overflow-checks`. An arithmetic bug would wrap silently in a release build instead of panicking.
+  - Panics are not caught. A lexer bug ends `va` with exit 101 (fail-closed; m0 §5).
+  - The CI guard is coarse: it allows 30 s in debug, while the whole syntax suite, that test included, ran in 1.45 s. A mildly superlinear regression would pass it.
+  - Allocation-freedom (m1 §3.4) is not measured (m1 §12.4, M7).
+  - Linear time is a lexer property. `va lex` computes each diagnostic's column by counting chars from the line start (`apps/va/src/commands/lex.rs:L111-L122`), which is O(diagnostics × line length) per line. The 64 KiB line limit bounds it: a 64 KiB line with 32,000 diagnostics took 0.085 s in text mode and 0.087 s in JSON mode (release, 2026-10-18), and the time grows linearly with the number of such lines.
+- **Failure mode**: Fail-closed: a broken invariant fails the tests, and a panic exits 101 without output past the failing line.
+
+### `va` output encoding: JSON through serde_json, text-mode token texts JSON-quoted (partial)
+- **Location**: `apps/va/src/commands/lex.rs:L297-L300` (`write_value`), `lex.rs:L302-L404` (`write_json`), `lex.rs:L175-L191` (`write_token_lines`), `apps/va/src/commands/isa.rs:L253-L260` (`write_line`), `apps/va/src/report.rs:L165-L206` (`va.error/1`). Tests: `apps/va/tests/lex.rs` (`json_tokens_match_every_golden_fixture`), `apps/va/tests/isa.rs` (`move_json_has_the_documented_keys_in_order`).
+- **Language**: Rust 1.99.0 (serde_json 1.0.151)
+- **Description**:
+  - Every string in `va.lex/1`, `va.isa/1`, `va.isa.list/1` and `va.error/1` (file name, token text, message, help, fix replacement, query) goes through `serde_json`. The hand-written parts of the streamed `va.lex/1` line carry only fixed keys and integers. A source file therefore cannot break the JSON structure or inject keys.
+  - In text mode, each token text on stdout is printed as a JSON string. A C0 control (ESC, CR, LF, BEL, NUL) shows as `\u001b`, `\r`, `\n` and so on, and cannot end the line or drive the terminal.
+
+  Verified on 2026-10-18: a source line holding `ESC ] 0 ; … BEL ESC [ 2 J` printed `\u001b]0;…\u0007\u001b[2J` in the token line on stdout (byte dump).
+- **Rationale**: The JSON documents are the machine interface (M5 tooling, scripts). Their structure must not depend on the input.
+- **Limitations**:
+  - M1-S1 (medium, open): the text-mode **diagnostics** on stderr are not escaped. The `$text` argument (up to 32 chars of source) inside the Fluent message, and the `  fix:` line, which prints the **whole** source line with the fix applied, are written raw (`lex.rs:L193-L228`). Verified on 2026-10-18 by byte dump:
+    - an unterminated string sent `ESC ] 0 ; PWNED-TITLE BEL ESC [ 2 J` raw to stderr (terminal title change and screen clear);
+    - a dangling comma followed by `; ESC ] 52 ; c ; <base64> BEL` sent that OSC 52 clipboard write raw, through the `fix:` line;
+    - U+202E (right-to-left override) and U+009B (C1 CSI) reached stderr raw.
+
+    So a crafted `.asm` file can retitle the terminal, clear it, forge or erase earlier output lines, and, on terminals that honour OSC 52 writes, replace the clipboard. The file name prefix of each diagnostic is raw too.
+  - M1-S3 (low, open): `serde_json` escapes only C0 controls, `"` and `\`. DEL, C1 controls and bidi controls stay raw in the text-mode token lines on stdout (U+202E and U+009B verified). That is valid JSON, but a terminal shows it as is.
+  - JSON consumers receive those characters verbatim and must not print them to a terminal unescaped.
+- **Failure mode**: Fail-closed for the JSON structure. Fail-open for terminal control sequences in text-mode diagnostics (M1-S1).
+
+### Fluent localizer: embedded resources only, arguments inserted verbatim, no isolation marks (m1 §6.2)
+- **Location**: `crates/va-workspace/src/i18n/localizer.rs:L103-L196` (`new`, `for_architecture`, `message`, `render`, `lookup`), `localizer.rs:L207-L229` (`build_bundle`, `set_use_isolating(false)` at `L210`), `localizer.rs:L264-L302` (`fluent_args`, `fluent_value`, `format_pattern`), `arch/m68k/src/locales.rs:L10-L29` (`include_str!` resources), `apps/va/src/commands/mod.rs:L53-L54` (`locale-invalid`). Tests: `crates/va-workspace/tests/i18n_localizer.rs` (`text_arguments_are_verbatim_and_the_last_repeat_wins`, `missing_argument_gives_best_effort_text`, `no_isolation_marks`, `render_without_attributes_or_message`, `parse_errors_name_the_language_resource_and_line`, `duplicate_ids_are_rejected_within_one_language`), `arch/m68k/tests/locales.rs` (parse and completeness, m1 §6.3).
+- **Language**: Rust 1.99.0 (fluent-bundle 0.16.0)
+- **Description**:
+  - The only Fluent sources are the four `.ftl` files compiled into `va-arch-m68k` with `include_str!`. No `.ftl` file is read at run time. A broken resource is a build defect: `va` exits 3 with `locale-invalid`, and `tests/locales.rs` parses every resource first.
+  - Source text reaches Fluent only as the value of `$text`, a `FluentValue::String`. Fluent inserts a value as is and never parses it as Fluent syntax. Verified on 2026-10-18: an unterminated string `'{ $cause } { -x } {"A"}` rendered those characters literally in English and French. The `$cause` selector only ever gets one of three fixed ids from code (`spacing.rs:L39-L45`).
+  - A missing message renders as its code and a missing variable as `{$name}`. A resolver error never panics and never fails the command.
+- **Rationale**: Architecture §5. Translations are data, and user text must never become a template.
+- **Limitations**:
+  - `set_use_isolating(false)` is a decision (m1 §6.2: no U+2068/U+2069 in terminals or egui). Bidi controls in `$text` are therefore not isolated and can reorder the rest of the message line (M1-S1).
+  - The localizer does not escape. Each sink must: the CLI terminal writers today (M1-S1), the M4 GUI later.
+- **Failure mode**: Fail-safe: missing text degrades to ids, and resource defects fail the build tests or exit 3.
+
+### Language selection from the environment: `VA_LANG` and the locale variables (m1 §6.2, §7.1)
+- **Location**: `crates/va-workspace/src/i18n/lang.rs:L38-L42` (`Lang::parse`), `lang.rs:L73-L121` (`resolve_lang`, `auto_lang`), `apps/va/src/commands/mod.rs:L38-L46` (the `var_os` closure and the warning), `apps/va/src/cli.rs` (`--lang`, a clap possible-values parser). Tests: `crates/va-workspace/tests/i18n_lang.rs` (10 tests, e.g. `parse_accepts_only_exact_lowercase_codes`, `flag_wins_and_reads_no_variable`, `invalid_va_lang_is_returned_and_auto_applies`), `apps/va/tests/isa.rs` (`va_lang_selects_the_language_and_bad_values_are_reported`).
+- **Language**: Rust 1.99.0
+- **Description**:
+  - `--lang` takes exactly `en` or `fr` (any other value, `auto` included, exits 2). With the flag, no variable is read.
+  - `VA_LANG` selects only on an exact `en`, `fr` or `auto`. Any other value, empty, mixed case or non-Unicode (decoded lossily) included, is ignored with a warning, and `auto` applies.
+  - `auto` reads the first non-empty of `LC_ALL`, `LC_MESSAGES` and `LANG`. A value starting with `fr` gives French, anything else English.
+  - The values only choose one of two compiled-in resource lists. No path, file name or command is built from them.
+
+  Verified on 2026-10-18: `VA_LANG=f<FF>r` (WSL) warned with U+FFFD and fell back to `auto`.
+- **Rationale**: m1 §6.2. A bad value degrades to a safe default and never selects resources from outside the binary.
+- **Limitations**:
+  - M1-S4 (low, open): the warning prints the value raw (`mod.rs:L42-L46`). `VA_LANG=$'x\e[2J\ry'` sent ESC and CR to stderr (byte dump, 2026-10-18). The GUI escapes the same kind of echo with `escape_debug` since m0 §19.9 S19-2 (`apps/visual-assembler/src/cli.rs:L342-L345`), so the two binaries differ. Whoever sets the environment controls the process, so this is not a trust boundary.
+  - The Windows UI language is not read before M4 (m1 §6.2).
+- **Failure mode**: Fail-safe: an invalid value degrades to `auto`, then to English.
+
+### `va lex` file access: one read-only path from the command line (m1 §7.2)
+- **Location**: `apps/va/src/input.rs:L40-L99`, `apps/va/src/cli.rs` (`Lex { file: OsString }`), `apps/va/src/report.rs:L50-L95` (codes and exit codes). Tests: `apps/va/tests/lex.rs` (`unreadable_paths_exit_3`, `closed_stdout_pipe_is_io_error`, `closed_stderr_pipe_with_diagnostics_is_io_error`, `missing_or_extra_file_argument_is_a_usage_error`).
+- **Language**: Rust 1.99.0
+- **Description**:
+  - `va` opens at most one file, read-only, with `File::open`: the `FILE` argument, taken as an `OsString` (non-UTF-8 names work), or stdin for `-`. It never writes, creates or deletes a file.
+  - No path is derived from file content. `INCLUDE` and `INCBIN` operands are lexed as `String` tokens and never opened (M2/M7 decide include handling).
+  - A missing file, a directory, a permission error or a failed read is `read-failed` (exit 3). The reason is the English `io::ErrorKind` plus the OS error number, never a localized OS message (§12.7). The stdout-failure message still prints the OS text, which Windows localizes (seen 2026-10-18: `Le canal de communication a été fermé. (os error 109)`). That is a wording issue, not a leak. A directory says `it is a directory` on both systems.
+  - A stdout failure (closed pipe, full disk) and a stderr failure while text-mode diagnostics are written exit 3.
+
+  Verified on 2026-10-18:
+  - Windows: a directory, a missing file (`entity not found (os error 2)`) and `NUL` (empty, exit 0).
+  - WSL: `/tmp`, a symlink to a folder, a dangling symlink, a mode-000 file (`permission denied (os error 13)`), `/dev/null`, a FIFO with a writer, a non-UTF-8 file name (U+FFFD in the JSON `file` field), `/dev/full` as stdout (exit 3), and `/dev/full` as stderr with a diagnostic (exit 3).
+- **Rationale**: A local tool that reads exactly what the user names, with no surprising side effect.
+- **Limitations**:
+  - Symlinks are followed, like any reader.
+  - M1-S6 (low, open): a path is opened as given. On Windows, a UNC path (`\\host\share\f.asm`) makes the OS connect to that host over SMB and can send the user's NTLM credentials. Only the user can type such a path in M1, but scripts that pass untrusted names inherit this. Device and pipe paths (`CON`, `\\.\pipe\…`) are read too, and reads have no timeout (input-limits entry). The `SourceProvider` sandbox planned for M7 (architecture §9.5) is **not implemented**.
+  - M1-S4 (low, open): the file name is echoed raw in `cannot read '<name>'` and as the prefix of every text-mode diagnostic (`input.rs:L41-L47`, `lex.rs:L207-L213`). The JSON `file` field is escaped. With fd 1 already closed (`>&-`), Rust's stdout discards output silently and `va` exits 0 (WSL, 2026-10-18). That is standard-library behaviour, distinct from the closed-pipe case.
+- **Failure mode**: Fail-closed: every access failure exits 3 with a stable code.
+
+### M1 dependencies: `fluent-bundle` 0.16.0, `unic-langid` 0.9.6 and their transitive packages (m1 §8)
+- **Location**: `Cargo.toml:L37`, `L42-L45`, `crates/va-workspace/Cargo.toml:L11-L14`, `arch/m68k/Cargo.toml:L12-L16` (`fluent-bundle` as a dev-dependency only), `apps/va/Cargo.toml:L17-L25`, `Cargo.lock`.
+- **Language**: TOML, Rust 1.99.0
+- **Description**:
+  - Two external crates with exact pins: `fluent-bundle = "=0.16.0"` and `unic-langid = "=0.9.6"`. `va-workspace` uses both. `va-arch-m68k` uses `fluent-bundle` only in its tests.
+  - `Cargo.lock` gains 11 packages, all from crates.io with checksums: `fluent-bundle` 0.16.0, `fluent-langneg` 0.13.1, `fluent-syntax` 0.12.0, `intl-memoizer` 0.5.3, `intl_pluralrules` 7.0.2, `unic-langid` 0.9.6, `unic-langid-impl` 0.9.6, `tinystr` 0.8.4, `displaydoc` 0.2.7 (proc macro), `zerovec` 0.11.8 and `zerofrom` 0.1.8.
+  - `self_cell` 1.3.0, `type-map` 0.5.1, `smallvec` 1.16.3, `rustc-hash` 2.1.3, `memchr` 2.8.3 and `thiserror` 2.0.21 were already in the GUI graph. They are now also linked into the headless `va`.
+  - `zerovec` and `zerofrom` are lock-only: `cargo tree --target all -i zerovec -e all` finds no path, and the release `va` build folder holds no `zerovec` or `zerofrom` artifact (checked 2026-10-18). m1 §8 says they come "through tinystr's default features", which is not what the resolver does today.
+  - The normal closure of `va` on Windows is now clap, serde and serde_json with their helpers, plus the Fluent stack above (`cargo tree --locked -p va -e normal`, 2026-10-18). It holds no network-capable crate and no GUI crate (layering R4).
+  - Licences: licence entry above. cargo-deny on 2026-10-18: `bans ok, licenses ok, sources ok`, and no advisory against any M1 crate (`self_cell` 1.3.0 is past RUSTSEC-2023-0070, fixed in 1.0.2).
+- **Rationale**: m1 §6.2 and §8. Fluent supplies plurals, selectors and typed arguments, which std does not.
+- **Limitations**:
+  - `self_cell`, `tinystr`, `smallvec` and `type-map` contain `unsafe` code that nobody here audited. Only RustSec `unsound` advisories cover it (unsafe-policy entry).
+  - `displaydoc` is a proc macro that runs at build time (accepted build-time risk).
+  - The `va` CLI is no longer a minimal binary: a Fluent parser for embedded, trusted resources now ships in it.
+- **Failure mode**: Fail-closed through cargo-deny (licences, bans, sources, advisories) and the lock file.
+
 ### Secret-file patterns in `.gitignore`
 - **Location**: `.gitignore:L1-L7`
 - **Language**: gitignore patterns
@@ -672,12 +852,19 @@ The guarantees these protections serve:
 | S19-3 (low), as found on 2026-10-15: cargo-deny 0.20.2 `[bans.workspace-dependencies] unused = "deny"` is graph-based. A probe on 2026-10-15 used a copy of `HEAD` with the §19 root `Cargo.toml` (winit pinned, no member declaring it): `cargo deny check bans` gave `bans ok`. Adding `wgpu-types = "=24.0.0"`, a version not in the graph, gave `error[unused-workspace-dependency]`. | Rule R6 ("only crates used by a member") was not enforced for crates already in the graph. The root `Cargo.toml` comment (L28), DEPENDANCE.md line 8, CLAUDE.md and the §19.8 row 19-1 acceptance wording overstated it. An unused pin compiles nothing, so the security impact is small. | `check_project_docs.py` checked members against the workspace, not the reverse | **Fixed** by rows 19-9(b), 19-10 and 19-11 (m0 §19.9 S19-3), verified 2026-10-16. The reverse half of check 3b in `scripts/check_project_docs.py` (`L387-L466`) reports `[deps] Cargo.toml: workspace dependency '<name>' is not declared by any member (rule R6: remove the pin or declare it with workspace = true)`. Fixtures in `xtask/tests/docs.rs`: `unused_workspace_dependency_is_reported`, `workspace_dependency_used_only_in_a_target_table_counts`, `unused_path_workspace_dependency_is_reported`, plus three QA cases (supply-chain entry). cargo-deny `unused` stays graph-based and is documented as such. Root `Cargo.toml` L28 now reads `# Exact pins, each declared by at least one member (rule R6, enforced by check_project_docs.py check 3b).` The DEPENDANCE.md (`L7-L10`) and CLAUDE.md (`L53-L56`) wording was corrected by the WP7 row: both name check 3b and say that cargo-deny's `unused` rule only proves the pinned version is in the graph (checked 2026-10-16). |
 | S19-4 (low), as found on 2026-10-15: `pin_windows_wgpu_backend` and `exclude_wgpu_gl_backend` counted `WGPU_BACKEND` as set when `var_os` found it, while wgpu-types 30.0.1 reads it with `std::env::var(..).ok()` and parses an empty string to an empty backend set | An empty value (for example exported by a shell profile) dropped the DX12 pin and gave wgpu no backend: forced wgpu, or the fallback, exited 3. A non-Unicode value brought the GL backend back after a glow failure, so the `EGL_BAD_ACCESS` panic (exit 101) returned under WSLg. | Mirrored the §17.13 pin check, which predates §19 | **Fixed** by row 19-8(b) (m0 §19.9 S19-4), verified 2026-10-16. `wgpu_backend_env_is_effective` (`lib.rs:L326-L338`) is true exactly when the value is valid Unicode and `Backends::from_comma_list` of it is not empty. The DX12 pin and the GL exclusion step aside only for an effective value, so an empty or non-Unicode value no longer drops the pin or brings back the `EGL_BAD_ACCESS` panic. Tests in `tests/renderer_backend.rs`: `wgpu_backend_env_is_effective_only_for_a_non_empty_backend_set`, the env-dependent `dx12_pin_applies_to_every_wgpu_attempt` and `wgpu_gl_backend_is_left_out_after_a_glow_failure`, and `attempt_options_follow_every_kind_of_wgpu_backend_value` (child processes, ten values). Accepted residue: on Linux, an empty or unrecognized `WGPU_BACKEND` still leaves wgpu with no backend (exit 3). That is wgpu's own reading. |
 | S19-5 (low): the in-process retry, meaning event-loop reuse, the GL-backend exclusion and the borrowed recorder, is exercised only by the `#[ignore]`d tests of `tests/fallback.rs` (10, 8 of them compiled on Windows x64) and by the `continue-on-error` CI smoke step. Until row 19-9(a), that step injected glow on `windows-11-arm` too, where `auto` never reaches it. | A dependency bump or refactor that makes the fallback panic, hang or exit 3 passes every required check | GUI windows cannot open on the headless runners, except the informational Windows smoke steps (architecture §9.1: never evidence) | Accepted limitation (m0 §19.9 S19-5), with three compensating controls (fallback entry). (1) The second smoke step injects the first renderer of the runner's order: glow on x64, wgpu on `windows-11-arm`, so ARM64 now exercises wgpu to glow (row 19-9 a). (2) Binding QA rule, procedural: run `cargo test -p visual-assembler --test fallback -- --ignored --test-threads=1` on Windows and WSLg X11 whenever `Cargo.lock` changes eframe, egui, egui-wgpu, egui_glow, wgpu, glutin or winit, and before each milestone closes. (3) Headless classification and options tests. *Rejected:* the in-step assertion. Revisit with branch protection (§17.17 item 3): that condition is now met, since the `check (…)` jobs are required on `main` (read 2026-10-16), and the revisit is open (Architect). The smoke steps are still `continue-on-error`, so they cannot gate. First CI observation, run 38969165969 (`6ed43c8`, 2026-10-16): x64, genuine glow failure to wgpu, exit 0; ARM64, injected wgpu failure to glow, which genuinely failed, exit 3 with the §19.4 messages, and the job stayed green (fallback entry). |
-| Untrusted inputs (S-records, project files, settings, `INCLUDE` paths). On Windows, a UNC path (`\\host\share\…`) opened through `std::fs` starts an SMB connection and can leak the user's NTLM hash. | Parser crashes, path traversal, network access and credential leak through file paths | No parser and no file opening exist in M0 | Planned for M7, **not implemented** (architecture §9.5): the `SourceProvider` sandbox must also reject UNC and device paths (`\\?\`, `\\.\`). |
+| M1-S1 (medium, M1 round, 2026-10-18): `va lex` text mode writes source-derived text to stderr unescaped. That covers the Fluent `$text` argument in each diagnostic message (32 chars of source; `crates/va-core/src/syntax.rs:L254-L256`, rendered without isolation marks, `localizer.rs:L210`) and the `  fix:` line, which is the whole source line with the fix applied, up to 64 KiB (`apps/va/src/commands/lex.rs:L129-L137`, `L207-L226`). Verified by byte dump: `ESC]0;…BEL` (title), `ESC[2J` (clear screen), an OSC 52 clipboard write (`ESC]52;c;<base64>BEL`) behind a `;` on a line whose operands end with `,`, U+202E and U+009B, all raw on stderr. | A crafted source file (a course file, a classmate's file) can retitle or clear the terminal, forge or erase earlier output lines (for example a fake "no errors"), and, on terminals that honour OSC 52 writes, replace the clipboard with a command the student may paste. The same class as S19-2, but here the input crosses a trust boundary. | Not specified: m1 §7.3 defines the text layout and §5.2 accepts control characters in strings and comments | Open, medium (Developer, WP-F scope; Architect if the fix moves into `va-core`). Fix: one helper in `apps/va` that replaces every char in U+0000–U+001F (tab included), U+007F, U+0080–U+009F, U+200E, U+200F, U+2028, U+2029, U+202A–U+202E and U+2066–U+2069 with its `char::escape_debug` form (for example `\u{1b}`), leaving accented letters and other printable text unchanged. Apply it to the message, `help`, `note`, the fix line and the file prefix in `write_diagnostic_text`, and to the `va isa` and `report.rs` echoes (M1-S4). JSON mode stays as is. Regression test in `apps/va/tests/lex.rs`: lines with ESC, BEL, U+009B and U+202E in an unterminated string, in an invalid operand run, and after `;` on a dangling-comma line. stderr must hold none of the bytes `1B`, `07`, `C2 9B` or `E2 80 AE`. |
+| M1-S2 (medium, gate; not caused by M1): `make security` exits 1. cargo-deny 0.20.2 reports `advisories FAILED` for RUSTSEC-2026-0370 (`zvariant` 5.15.0), RUSTSEC-2026-0371 (`zbus_names` 4.3.4) and RUSTSEC-2026-0372 (`zvariant_derive` 5.15.0). All three are `unmaintained` (merged into zbus 6). They reach the Linux GUI through `accesskit_unix` 0.21.1 and eframe 0.36.2 (verified 2026-10-18, same versions at `cc827b0`). | Exit criterion E1 fails, and the required CI `deny` job will fail on the next push (E2). `zvariant` decodes D-Bus messages from the session bus (AT-SPI), so a future bug in the 5.x line may not get a fix. No vulnerability advisory exists. The CLI `va` does not contain these crates. | `.cargo/deny.toml:L19-L27`: an advisory is fixed by a bump, or by an ignore with Security's approval and a SECURITY.md entry. No bump exists: the locally cached index lists `accesskit_unix` up to 0.24.0, all on zbus `^5` (2026-10-18). | Open (Architect: `.cargo/deny.toml` is normative). Security approves exactly these three ids as `[advisories] ignore` entries, each with a `reason` naming the merge into zbus 6 and the accesskit path. Conditions: keep `unmaintained = "all"`; drop the ignores as soon as eframe or accesskit allows zbus 6; never extend them to a vulnerability or `unsound` advisory. When the ignores land, record them here as accepted risks. |
+| M1-S3 (low): text-mode token lines on stdout quote each token with `serde_json`, which escapes only C0 controls, `"` and `\` (`lex.rs:L175-L191`). DEL, C1 controls (U+009B is CSI, which some terminals honour) and bidi controls stay raw (verified 2026-10-18). | Same effects as M1-S1, limited to terminals that act on C1 or bidi controls | serde_json follows RFC 8259 | Open, low: escape those chars with the M1-S1 helper after JSON quoting. The text layout of m1 §7.3 stays valid, because the output remains a JSON string. |
+| M1-S4 (low): echoes of user-supplied values are unescaped on stderr: the `VA_LANG` warning (`apps/va/src/commands/mod.rs:L42-L46`), the file name in `cannot read '<name>'` and in each diagnostic prefix (`apps/va/src/input.rs:L41-L47`), and the query in `unknown mnemonic '<q>'` and `does not accept the size suffix '.<s>'` (`apps/va/src/commands/isa.rs:L120-L149`). Verified 2026-10-18: ESC and CR reached stderr raw. | Misleading console output. File names from an untrusted archive reach it through `find -exec va lex` or scripts. | Not a trust boundary for values the user types. The GUI already escapes the same class (S19-2), so the two binaries differ. | Open, low: `escape_debug` (as S19-2) or the M1-S1 helper on these echoes. `va.error/1` keeps the raw text, which serde escapes. |
+| M1-S5 (low): output amplification. The 16 MiB input limit does not bound the output. Measured on 2026-10-18 (release, Windows): `^a` pairs in operand fields gave 516 MB on stdout plus 1.47 GB on stderr in 72 s (text), and 3.77 GB of JSON in 376 s. Empty lines gave 783 MB of JSON, and `1,` operands 1.2 GB of JSON. Memory stayed at about 33 MB. | A local denial of service by disk or terminal flooding. m1 §10 F8 says about 20×; the worst case measured is about 225× (JSON). | Output is streamed by design (§7.3), so memory is bounded | Open, low (Architect, M2): optionally cap the diagnostics per file (for example 1000, then one `too many errors` note, as compilers do), and correct F8. |
+| M1-S6 (low): `va lex` opens the path as given, with no timeout. A FIFO with no writer, `CON`, `/dev/tty` or a stalled share blocks forever (WSL FIFO verified). On Windows, a UNC path starts an SMB connection and can send the user's NTLM credentials. | Hang, or a credential leak when a script passes an attacker-chosen path. In M1 no path comes from file content. | Local tool. The M7 `SourceProvider` sandbox owns path policy. | Open, low: document it in the `va` README; the M7 sandbox (next row) must reject UNC and device paths for every path the tools open, the CLI argument included. |
+| M1-S7 (low, hardening): the lexer's no-panic and linear-time contract (m1 §3.4) rests on tests only. CI runs no fuzzer. The workspace denies neither `clippy::indexing_slicing` nor `clippy::arithmetic_side_effects`. The release profile has no overflow checks. The CI timing guard (40 lines under 30 s in debug) catches only gross quadratic behaviour. | A future lexer edit could add a panic (exit 101) or a slow path that the suite misses. The 2026-10-18 fuzz run (3,000,000 lines, overflow checks on) found none. | Spec choice: no fuzz or criterion tooling before M7 (m1 §5.6) | Open, low (Architect, M7): add a long-running fuzz or property target (ignored test, or `cargo fuzz` in xtask) over `lex_line` + `line_diagnostics` + `Localizer::render`, and consider `#![deny(clippy::indexing_slicing)]` in `arch/m68k/src/syntax/`. |
+| Untrusted inputs (S-records, project files, settings, `INCLUDE` paths). On Windows, a UNC path (`\\host\share\…`) opened through `std::fs` starts an SMB connection and can leak the user's NTLM hash. | Parser crashes, path traversal, network access and credential leak through file paths | M1 (2026-10-18): untrusted source text is now lexed. The lexer side is covered by the input-limit, UTF-8 and lexer-robustness entries. `va lex` opens only the path on its command line, and `INCLUDE`/`INCBIN` operands are never opened (file-access entry, M1-S6). No other parser and no other file opening exist. | Planned for M7, **not implemented** (architecture §9.5): the `SourceProvider` sandbox must also reject UNC and device paths (`\\?\`, `\\.\`). |
 | Release signing, SBOM, signed commits | Users cannot verify where binaries come from | Nothing is released in M0 | M8 packaging |
 
 ## Secrets and configuration
 
-M0 uses no secrets. The CI workflow references no repository secret. Its `GITHUB_TOKEN` is read-only
+M0 and M1 use no secrets. The CI workflow references no repository secret. Its `GITHUB_TOKEN` is read-only
 and never persisted in the checkout (`persist-credentials: false`). The workflow never calls `gh`. The
 `gh` CLI on the developer machine keeps its credentials in the OS keyring, outside the repository.
 
@@ -686,6 +873,7 @@ Environment variables read by the project are configuration, never credentials:
 - `CARGO` and `CARGO_TARGET_DIR` (xtask);
 - `WGPU_BACKEND`, `WGPU_ADAPTER_NAME`, `WGPU_POWER_PREF`, `WAYLAND_DISPLAY` and `DISPLAY` (bench; their values are recorded in the gitignored reports);
 - `VA_RENDERER`, `VA_TEST_FAIL_RENDERER` and `VA_WAYLAND` (GUI renderer selection, §19.1 and §19.3; read once at startup by `select`, also recorded in bench reports). `VA_TEST_FAIL_RENDERER` is a test hook: it only makes renderer initialization fail on purpose. Leave it unset outside tests (S19-1);
+- `VA_LANG`, then `LC_ALL`, `LC_MESSAGES` and `LANG` (M1: language of `va lex` and `va isa`, read only when `--lang` is absent, never by `va info`; m1 §6.2, §12.7). They only choose between the two embedded languages;
 - `RUSTFLAGS`, `CARGO_ENCODED_RUSTFLAGS`, `CARGO_BUILD_RUSTFLAGS` and `CARGO_TARGET_*_RUSTFLAGS` are read only to refuse them (`cargo xtask ci` step 0). They must stay **unset**, which rules out an empty value too (§18.3): any of them replaces the `+crt-static` flags of `.cargo/config.toml`.
 
 There is nothing to rotate. When a secret is first needed (M8 signing), it must come from GitHub
