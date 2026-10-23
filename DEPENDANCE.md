@@ -71,7 +71,7 @@ in the manifests. An eframe bump moves them all.
   `.cargo/deny.toml` allows these two licences for this crate only. Shipped binaries must carry the
   font licence notices (M8 packaging).
 - **Attribution licences in the graph.** cargo-deny allows them: Apache-2.0-only crates (winit, glutin,
-  accesskit_winit), BSL-1.0 (clipboard-win 5.4.1, error-code 3.4.0), ISC (libloading 0.8.9),
+  accesskit_winit), BSL-1.0 (clipboard-win 5.4.3, error-code 3.4.0), ISC (libloading 0.8.9),
   Unicode-3.0 (unicode-ident 1.0.27) and Zlib (foldhash 0.2.0, zlib-rs 0.6.8). All are permissive. Binary
   distribution (M8) must ship the licence texts.
 - **LGPL-3.0 CI action.** `Swatinem/rust-cache` runs only on GitHub's runners as a build tool. It is
