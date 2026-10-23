@@ -4,12 +4,15 @@
 VisualAssembler is a native, offline Rust IDE for students learning assembly; V1 is the Motorola 68000
 end to end (edit, assemble, run, debug). GUI `visual-assembler` (egui/eframe), headless CLI `va`,
 task runner `cargo xtask`. CPU-agnostic crates in `crates/`, one crate per CPU in `arch/`.
-Current milestone: **M0 foundations**, in its closing stretch: workspace, tooling, CI, measured empty
-window; every library crate is still a skeleton. Specs: `docs/specs/architecture.md`, then
-`docs/specs/m0-foundations.md`, with precedence **§19 > §18 > §17 > body (§0–§16)**. §18.8 indexes
-the body passages that §17/§18/§19 supersede. §19 is the user's renderer decision: it replaces the
-decision rule of §12.3/§12.4/§17.13 and outcome W, and §19.8 lists its fix wave. §19.9 ratifies the
-landed implementation (same precedence as §19) and adds fix-wave rows 19-8…19-11.
+Current milestone: **M1 core contracts, 68000 ISA tables, lexer, `va lex`/`va isa`**: done (audited,
+QA green, measured), pending push and CI. M0 (workspace, tooling, CI, measured window) is done. Still
+skeletons: `va-editor`, `va-lang`, `va-debug`, `va-ui`; the GUI is the M0 window.
+Specs: `docs/specs/architecture.md`, then the milestone specs.
+- `docs/specs/m1-core-isa-lexer.md`: **§12 (ratified implementation, fix-now rows R12-1…R12-4, QA
+  round 1 in §12.8) wins over the body**.
+- `docs/specs/m0-foundations.md`: precedence **§19 > §18 > §17 > body (§0–§16)**. §18.8 indexes the
+  body passages that §17/§18/§19 supersede. §19 is the user's renderer decision (it replaces the
+  rule of §12.3/§12.4/§17.13 and outcome W); §19.9 ratifies its implementation, rows 19-8…19-11.
 
 ## Stack and versions
 - Rust **1.99.0** pinned (`rust-toolchain.toml`, with rustfmt and clippy), edition 2024, resolver 3,
@@ -18,6 +21,8 @@ landed implementation (same precedence as §19) and adds fix-wave rows 19-8…19
   Both compiled into the shipped binary (`default = ["renderer-glow", "renderer-wgpu"]`), glow first
   (m0 §19). winit 0.30.13 is a direct, Linux-only dependency (X11 hook under WSL).
 - CLI and tooling: clap 4.6.7, serde 1.0.229, serde_json 1.0.151, anyhow 1.0.104 (xtask only).
+- Localization (M1): fluent-bundle 0.16.0 and unic-langid 0.9.6 in `va-workspace`; fluent-bundle is
+  also a dev-dependency of `va-arch-m68k` (locale tests).
 - Tools: GNU make 4.4.1 (Git Bash on Windows), Python 3.11+ (`tomllib`), cargo-deny 0.20.2, git,
   GitHub Actions. `gh` lives at `C:/Program Files/GitHub CLI/gh.exe` (not on `PATH` in agent shells).
 - Licence: `MIT OR Apache-2.0`; every crate is `publish = false`.
@@ -35,17 +40,20 @@ Everything goes through the Makefile (`make -s help`); logic lives in `cargo xta
 | `make format` | `cargo fmt --all` |
 | `make docs` | regenerate `AGENCEMENT.md` + `scripts/check_project_docs.py` (must exit 0) |
 | `make security` | cargo-deny, explicit `--locked --manifest-path … --config .cargo/deny.toml` form (Windows only locally) |
-| `make ci` | `cargo xtask ci`: step 0 build config, fmt, clippy ×3 (all features, glow only, wgpu only), layering + source scan, tests |
+| `make ci` | `cargo xtask ci`, 9 steps: step 0 build config, fmt, clippy ×4 (all features, glow only, wgpu only, `va --no-default-features`), layering + source scan, tests (workspace, then `va --no-default-features`; m1 §12.7 R12-4) |
 | `make bench SCENARIO=… RENDERER=… RUNS=…` | `cargo xtask bench` on the shipped binary, `RENDERER=auto\|glow\|wgpu\|all` (default `auto`; needs a display) |
+| `make bench-lexer` | release lexer bench on 100,000 lines, one `va.bench.lexer/1` line; budget median ≤ 50 ms (measured 7.157 ms, `docs/perf/2026-10-23-m1-lexer.md`) |
 | `make clean` | `cargo clean` |
 
 WSL: `wsl.exe -d Ubuntu -e bash -lc 'cd "/mnt/c/Users/sapin/Documents/Code Info/VisualAssembler" && export CARGO_TARGET_DIR=$HOME/.cache/visualassembler/target && <cmd>' 2>&1 | tr -d '\0'`.
 Live layering check alone: `cargo test -p xtask --test layering -- --ignored live_workspace --nocapture`.
 
 ## Conventions
-- **English only** in the repository: code, comments, docs, file names, commit messages. UI strings go
-  through Fluent from M4 (the two English literals of `apps/visual-assembler/src/spike.rs` are a
-  documented M0 exception).
+- **English only** in the repository: code, comments, docs, file names, commit messages. French
+  user-facing text lives only in `fr/*.ftl` Fluent files (ids in English kebab-case), written in our
+  own words, never copied from the Motorola manuals. Diagnostics and ISA docs go through Fluent since
+  M1, UI strings from M4 (the two English literals of `apps/visual-assembler/src/spike.rs` are a
+  documented M0 exception). `va`'s own CLI messages stay English.
 - **Tests live in each crate's `tests/`**, mirroring `src/` (`src/bench/report.rs` → `tests/bench_report.rs`).
   Never an inline `#[cfg(test)]` module in a production file. Every test file starts with a `//!` line
   and `#![allow(clippy::unwrap_used)]`; every crate root starts with `//!`. Test temp folders:
@@ -69,15 +77,21 @@ Live layering check alone: `cargo test -p xtask --test layering -- --ignored liv
   nothing catches. Deliberate obfuscation (renamed macros, raw identifiers, out-of-tree target paths,
   crate aliasing, config `include`, …) is a `SECURITY.md` limitation, never reopened.
 - **CLI contract** (`va`): exit codes 0 / 1 problems found / 2 usage / 3 I/O / 101 panic; errors on
-  stderr prefixed `error: `; global `--json` prints one document with `"schema": "va.<cmd>/<major>"`.
-  The GUI's codes differ (m0 §17.10, §19.4): 1 runtime I/O, 2 usage, 3 window or renderer, 4 bench
-  watchdog.
+  stderr prefixed `error: `; global `--json` prints one document with `"schema": "va.<cmd>/<major>"`,
+  and a failure prints `va.error/1` on stdout too. M1 commands: `va info`, `va lex <FILE|->`
+  (`va.lex/1`; exit 1 on any error diagnostic, blocking or not), `va isa <MNEMONIC[.SIZE]>` /
+  `va isa --list` (`va.isa/1`, `va.isa.list/1`; unknown spelling or size exits 1). Global
+  `--lang en|fr` (`auto` is a usage error) > `VA_LANG` (`en|fr|auto`, invalid = warning) >
+  `LC_ALL`/`LC_MESSAGES`/`LANG`. Input: UTF-8 only, ≤ 16 MiB per input, ≤ 64 KiB per line (longer =
+  one `lex-line-too-long` token); non-UTF-8, too large or unreadable input exits 3. The GUI's codes
+  differ (m0 §17.10, §19.4): 1 runtime I/O, 2 usage, 3 window or renderer, 4 bench watchdog.
 - **Commits**: `<type>(<scope>): <what changed since the previous step>`, one per completed step,
   **never co-signed by an AI tool** (no `Co-Authored-By`, no "Generated with", no robot emoji). The
   `commit-msg` hook and the CI `docs` job enforce it. Never change git config.
 - **Docs**: a README in every folder (role, contents, entry points, how to test), parent cascade up
   to the root, `make docs` exit 0 before closing a task. Every command written in a README has been run.
-  Dot-folders are exempt (`check_project_docs.py` skips them): `.cargo/` has no README, while
+  Dot-folders and folders without a file of their own are exempt (`check_project_docs.py` skips
+  them): `.cargo/`, `arch/m68k/fixtures/` and `arch/m68k/locales/` have no README, while
   `.github/workflows/` has one. Behaviour that is decided but not implemented is marked as such.
 
 ## Architecture decisions
@@ -106,6 +120,21 @@ Live layering check alone: `cargo test -p xtask --test layering -- --ignored liv
 - `.cargo/config.toml` must equal `CANONICAL_CARGO_CONFIG` in `xtask/src/ci.rs` (m0 §18.4).
 - CPU traits use dynamic dispatch (`dyn Architecture`), diagnostics are kebab-case codes rendered by
   Fluent (architecture §3, §5). 68000 emulation will use the `m68k` crate behind `Emulator` (M3).
+- `va-core` contracts are frozen since M1 (m1 §3): add items, never remove or rename a public one
+  without the Architect. `va-core` has no dependency and no prose (no `Display` on its errors).
+- 68000 ISA tables are hand-written static Rust data checked by tests (m1 §4.2), not a parsed data
+  file or `build.rs`. Fixtures live in `arch/<cpu>/fixtures/<area>/` (depth 4), LF-only.
+- **Strict A68k dialect, user decision of 2026-10-17** (m1 §5.7): the operand field ends at the first
+  unquoted space, the rest is a comment (`dc.b 1, 2, 3` = one byte, as in a68k). Operand-like text
+  there becomes a `SuspectComment` with the **non-blocking** error `lex-operands-in-comment` and,
+  for rules R1/R2, a quick fix; real comments stay `Comment`. `lab::` is accepted (§12.1 R12-2). A
+  permissive EASy68K/vasm dialect is a later per-project profile (architecture §10.3).
+- Localizer: `fluent_bundle::concurrent` bundles, isolation marks off, fallback to English per
+  pattern (m1 §6.2, §12.2). `auto` reads only `LC_ALL`, `LC_MESSAGES`, `LANG` until M4.
+- `.cargo/deny.toml` ignores exactly RUSTSEC-2026-0370/0371/0372 (zvariant, zbus_names,
+  zvariant_derive "unmaintained", Linux AT-SPI path of eframe 0.36.2; `va` does not contain them).
+  Accepted risk (m1 §12.8 F-2): revisit at the next eframe/egui bump, at the latest in M8; never
+  extend the list to vulnerability or unsound advisories.
 - Licence `MIT OR Apache-2.0`, `publish = false` (architecture §9.7).
 
 ## Known pitfalls
@@ -144,6 +173,15 @@ Live layering check alone: `cargo test -p xtask --test layering -- --ignored liv
   reports are named `…-nogit.json`.
 - `make docs` regenerates `AGENCEMENT.md`; a new file or folder appears there as `<!-- annotate -->`.
   Replace it with a one-line note (no `#` inside it) before closing the task.
+- **Any new `va` text output that carries outside text** (source text, file names, arguments,
+  environment values) must go through `report::terminal_safe`, or `report::terminal_safe_json` for a
+  JSON string printed on a text line (Security M1-S1/S3/S4/S8/S9). `--json` documents stay raw.
+- **Cycle numbers live only in the timing tables** (`arch/m68k/src/isa/timing.rs`, `table_*.rs`);
+  the `.ftl` docs never repeat a count the tables give (m1 §12.1 R12-3).
+- **Timing values and `VALID_OPWORDS = 45_816` are provisional** until the M3 cross-check against the
+  `m68k` crate and SingleStepTests (m1 §12.3); never cite them as verified.
+- `va lex` reads have no timeout and a Windows UNC path triggers SMB (Security M1-S6, open until the
+  M7 path sandbox): tests and scripts pass local files only.
 
 ## Sensitive areas
 - `C:\68000` — **read-only**, never modify; never hardcode its path; never redistribute `a68k.exe` or

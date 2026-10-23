@@ -13,20 +13,27 @@ VisualAssembler/
 │       ├── ci.yml                      # CI: fmt, docs, deny, check on 4 native runners, two Windows GUI smoke steps; SHA pins
 │       └── README.md                   # Jobs, SHA-pin rule, the two informational GUI smoke steps, branch protection, gh
 ├── apps/                               # Shipped binaries (leaves: nothing depends on them)
-│   ├── va/                             # Headless CLI `va` (package va)
-│   │   ├── src/                        # CLI sources: grammar, exit codes, subcommands
+│   ├── va/                             # Headless CLI `va` (package va): info, lex, isa; global --json and --lang
+│   │   ├── src/                        # CLI sources: grammar, CPU registry, input, reporting, subcommands
 │   │   │   ├── commands/               # One module per subcommand
 │   │   │   │   ├── info.rs             # `va info [--json]`: InfoReport, human text, va.info/1 line
-│   │   │   │   ├── mod.rs              # Subcommand dispatcher and CommandError (exit 3 on stdout failure)
-│   │   │   │   └── README.md           # Subcommand modules and the `va info` output
-│   │   │   ├── cli.rs                  # clap grammar: Cli (global --json, bin_name va) and Command
-│   │   │   ├── main.rs                 # Binary root: parse, dispatch, map outcomes to exit codes 0/2/3
-│   │   │   └── README.md               # CLI sources and the exit-code table
+│   │   │   │   ├── isa.rs              # `va isa MNEMONIC[.SIZE]` and `--list`: va.isa/1, va.isa.list/1, suggestions
+│   │   │   │   ├── lex.rs              # `va lex FILE|-`: tokens and GNU-style diagnostics, or the streamed va.lex/1 document
+│   │   │   │   ├── mod.rs              # Subcommand dispatcher and Session (language, default CPU, localizer)
+│   │   │   │   └── README.md           # Subcommand modules and sample outputs of info, lex and isa
+│   │   │   ├── arch_registry.rs        # CPUs compiled in: M68K with feature arch-m68k (default), none otherwise
+│   │   │   ├── cli.rs                  # clap grammar: Cli (global --json and --lang en|fr, bin_name va) and Command (Info, Lex, Isa)
+│   │   │   ├── input.rs                # Reads the lex input (file or stdin) with a 16 MiB cap; read-failed, input-too-large, input-not-utf8
+│   │   │   ├── main.rs                 # Binary root: parse, dispatch, map outcomes to exit codes 0/1/2/3; escaped usage errors
+│   │   │   ├── README.md               # CLI sources and the exit-code table
+│   │   │   └── report.rs               # Exit codes, ErrorCode, va.error/1 printer, english_io, terminal_safe and terminal_safe_json
 │   │   ├── tests/                      # End-to-end tests of the va binary
-│   │   │   ├── binary.rs               # Spawns va: help, version, usage errors, info human/JSON, I/O errors
+│   │   │   ├── binary.rs               # Spawns va: help, version, usage errors, info human/JSON, no-architecture build, I/O errors
+│   │   │   ├── isa.rs                  # va isa end to end: forms, aliases, list, lookup failures, languages, safe echoes
+│   │   │   ├── lex.rs                  # va lex end to end: golden fixtures, stdin, terminators, BOM, limits, languages, pipes, escaping
 │   │   │   └── README.md               # What the va tests cover and how to run them
-│   │   ├── Cargo.toml                  # Package va: clap, serde, serde_json (workspace = true)
-│   │   └── README.md                   # CLI role, conventions (exit codes, --json, errors), usage
+│   │   ├── Cargo.toml                  # Package va: clap, serde, serde_json, va-core, va-workspace, optional va-arch-m68k (feature arch-m68k)
+│   │   └── README.md                   # CLI role, commands, conventions, input limits, terminal escaping, local-files-only rule, usage
 │   ├── visual-assembler/               # GUI binary + library (package visual-assembler)
 │   │   ├── src/                        # GUI sources: thin main over a testable library
 │   │   │   ├── bench/                  # In-process bench instrumentation (--bench startup|idle)
@@ -57,22 +64,106 @@ VisualAssembler/
 │   │   └── README.md                   # GUI role, command line, environment, exit codes, renderer policy, console notes
 │   └── README.md                       # The two apps and what they may depend on
 ├── arch/                               # One crate per CPU (va-arch-<cpu>)
-│   ├── m68k/                           # Package va-arch-m68k: Motorola 68000 support (skeleton in M0)
-│   │   ├── src/                        # va-arch-m68k sources
-│   │   │   ├── lib.rs                  # Crate doc only (M0 skeleton; code in M1)
-│   │   │   └── README.md               # Planned internal layout (isa, syntax, asm, disasm, emu, io)
-│   │   ├── Cargo.toml                  # Package template; no dependency in M0
-│   │   └── README.md                   # 68000 crate role, planned deps, a68k/d68k policy
+│   ├── m68k/                           # Package va-arch-m68k: 68000 ISA tables, A68k lexer, registers, EN/FR docs (M1)
+│   │   ├── fixtures/                   # Golden files of the 68000 crate, one folder per area
+│   │   │   └── lex/                    # Lexer golden pairs: source .asm and expected .tokens (LF-only)
+│   │   │       ├── basic.asm           # Small complete program with every common field
+│   │   │       ├── basic.tokens        # Expected tokens of basic.asm
+│   │   │       ├── comments.asm        # Comment forms and every row of the operand-spacing table (m1 section 5.7)
+│   │   │       ├── comments.tokens     # Expected tokens of comments.asm, suspect comments included
+│   │   │       ├── errors.asm          # One line per lexer error code, then a 65,542-byte line
+│   │   │       ├── errors.tokens       # Expected tokens of errors.asm (about 67 KB)
+│   │   │       ├── labels.asm          # Column-1, indented and local labels, colon runs, label errors
+│   │   │       ├── labels.tokens       # Expected tokens of labels.asm
+│   │   │       ├── literals.asm        # Numbers in every base, strings, registers, operators, include paths
+│   │   │       ├── literals.tokens     # Expected tokens of literals.asm
+│   │   │       ├── macros.asm          # Macro definitions, parameters and calls
+│   │   │       ├── macros.tokens       # Expected tokens of macros.asm
+│   │   │       └── README.md           # Fixture list, token line format, bless command
+│   │   ├── locales/                    # Fluent resources of the 68000, one folder per language
+│   │   │   ├── en/                     # English resources, also the fallback language
+│   │   │   │   ├── diagnostics.ftl     # The 11 lexer diagnostic messages, English
+│   │   │   │   ├── isa.ftl             # Instruction docs, English: 74 entries, 16 conditions, 8 outcomes, 4 units
+│   │   │   │   └── README.md           # Id scheme and editing rules (own words, no cycle numbers, parity with fr)
+│   │   │   └── fr/                     # French resources: the only place for French user-facing text
+│   │   │       ├── diagnostics.ftl     # The 11 lexer diagnostic messages, French
+│   │   │       ├── isa.ftl             # Instruction docs, French: same ids and attributes as en
+│   │   │       └── README.md           # French text rules: own words, typography, parity with en
+│   │   ├── src/                        # va-arch-m68k sources: isa, syntax, architecture glue
+│   │   │   ├── isa/                    # 68000 instruction tables, encodings, cycle counts, CPU-agnostic view
+│   │   │   │   ├── conditions.rs       # The 16 condition codes of Bcc, DBcc and Scc with their flag tests
+│   │   │   │   ├── encoding.rs         # Opword encodings and Form::matches over a 16-bit word
+│   │   │   │   ├── mod.rs              # Catalogue: INSTRUCTIONS (74), SPELLINGS (126), spelling_info, instruction_of
+│   │   │   │   ├── model.rs            # Frozen data model: Size, SizeSet, Operand, Flags, Form, Instruction
+│   │   │   │   ├── modes.rs            # Mode (12 EA modes) and ModeSet with the Motorola categories
+│   │   │   │   ├── README.md           # File map, provisional cycle values until M3, factual sources and legal rule
+│   │   │   │   ├── table_arith.rs      # Arithmetic entries: ADD, SUB, CMP families, MUL, DIV, NEG, CLR, EXT, TST, BCD, CHK
+│   │   │   │   ├── table_flow.rs       # Program-flow entries: branches, DBcc, jumps, returns, traps, NOP, RESET, STOP
+│   │   │   │   ├── table_logic.rs      # Logic entries: AND, OR, EOR, NOT, shifts, rotates, bit operations, TAS, Scc
+│   │   │   │   ├── table_move.rs       # Data-movement entries: MOVE family, EXG, SWAP, LEA, PEA, LINK, UNLK
+│   │   │   │   ├── timing.rs           # Timing rows, EA times, MOVE matrices and cycles(); values provisional until M3
+│   │   │   │   └── view.rs             # M68kIsa: the va_core InstructionSet view (describe, spellings, ea_timing)
+│   │   │   ├── syntax/                 # A68k-dialect line lexer shared by the highlighter and the assembler
+│   │   │   │   ├── codes.rs            # The 11 lexer diagnostic codes and DIAG_CODES
+│   │   │   │   ├── keywords.rs         # 49 directives with operand policy, 21 registers, 4 size suffixes, keyword list
+│   │   │   │   ├── lexer.rs            # One-pass field lexer: label, operation, operands or path, trailing comment
+│   │   │   │   ├── literals.rs         # Character classes and scanners: identifiers, numbers, strings, backslashes
+│   │   │   │   ├── mod.rs              # lex_line and M68kSyntax (SyntaxProvider, line_diagnostics)
+│   │   │   │   ├── README.md           # Strict A68k rule, operand-spacing error and fix, labels, codes, contract
+│   │   │   │   └── spacing.rs          # Operand-like text after a space: rules R1-R3, cause argument, quick fix
+│   │   │   ├── arch.rs                 # M68k and the M68K instance: the va_core Architecture of the 68000
+│   │   │   ├── lib.rs                  # Crate doc, public isa and syntax modules, re-exports M68k and M68K
+│   │   │   ├── locales.rs              # include_str of the en and fr .ftl resources
+│   │   │   ├── README.md               # Module map of the 68000 crate and the planned M2/M3 layout
+│   │   │   └── registers.rs            # Register file in panel order with stable RegIds and the SR fields
+│   │   ├── tests/                      # Integration tests mirroring src, plus the ignored lexer bench
+│   │   │   ├── isa/                    # Test target isa: table consistency (exit criterion E4)
+│   │   │   │   ├── encoding.rs         # Opword uniqueness over 65,536 words, golden opwords, pinned VALID_OPWORDS
+│   │   │   │   ├── forms.rs            # Sizes, operand counts, addressing categories, privilege, flag spot checks
+│   │   │   │   ├── main.rs             # Test root: module list and form helpers
+│   │   │   │   ├── README.md           # What the isa target checks; provisional values
+│   │   │   │   ├── spellings.rs        # Spelling list, family expansion, aliases, resolution, conditions
+│   │   │   │   ├── timing.rs           # Row partitions, cycle sanity, EA times, MOVE matrices, cycles() spot checks
+│   │   │   │   └── view.rs             # M68kIsa through InstructionSet; timing rows agree with cycles()
+│   │   │   ├── syntax/                 # Test target syntax: lexer rules and properties (exit criterion E3)
+│   │   │   │   ├── coverage.rs         # Coverage, determinism and statelessness properties on generated lines
+│   │   │   │   ├── fields.rs           # Field and token rules and every row of the operand-spacing table
+│   │   │   │   ├── fixtures.rs         # Golden comparison with fixtures/lex, VA_BLESS=1 rewrites
+│   │   │   │   ├── kinds.rs            # Every TokenKind and every lexer code is produced
+│   │   │   │   ├── main.rs             # Test root: module list, shared helpers, token-kind short names
+│   │   │   │   ├── README.md           # What the syntax target checks and how to bless fixtures
+│   │   │   │   └── robustness.rs       # 64 KiB pathological lines in linear time, line limit, stray CR/LF/NUL
+│   │   │   ├── arch.rs                 # M68K through Architecture: id, keywords, spellings, codes, registers, SR fields
+│   │   │   ├── locales.rs              # EN/FR resources parse, are complete and identical in ids, no orphan, style rules
+│   │   │   ├── README.md               # Test targets of the 68000 crate and the bench command
+│   │   │   └── syntax_bench.rs         # Ignored lexer throughput bench, va.bench.lexer/1 line (make bench-lexer)
+│   │   ├── Cargo.toml                  # Depends on va-core; dev-dependency fluent-bundle
+│   │   └── README.md                   # 68000 crate role, M1 content, planned deps, a68k/d68k policy
 │   └── README.md                       # How to add a CPU (architecture section 10.1)
 ├── bench/                              # Bench inputs and outputs (results/ and generated/ are gitignored)
 │   └── README.md                       # Report naming and how to produce one
-├── crates/                             # CPU-agnostic library crates (skeletons in M0)
-│   ├── va-core/                        # Package va-core: CPU-agnostic traits and types (M1)
-│   │   ├── src/                        # va-core sources
-│   │   │   ├── lib.rs                  # Crate doc only (M0 skeleton)
-│   │   │   └── README.md               # Projected module layout
+├── crates/                             # CPU-agnostic library crates (va-core and the va-workspace i18n implemented; others skeletons)
+│   ├── va-core/                        # Package va-core: frozen CPU-agnostic contracts (M1)
+│   │   ├── src/                        # va-core sources, one module per contract
+│   │   │   ├── arch.rs                 # Architecture trait: id, syntax, instruction_set, registers, codes, locales
+│   │   │   ├── diag.rs                 # DiagCode, Severity, DiagArg, Diagnostic (blocking flag), Related, Suggestion
+│   │   │   ├── image.rs                # ProgramImage of segments and SourceMap (M2 produces, M3 loads)
+│   │   │   ├── isa.rs                  # InstructionSet trait and its id-only view types (forms, flags, cycles)
+│   │   │   ├── lib.rs                  # Crate doc (no I/O, no dependency, no prose) and module list
+│   │   │   ├── README.md               # Module map of the contracts
+│   │   │   ├── regs.rs                 # RegId, RegisterGroup, FlagField, RegisterSpec
+│   │   │   ├── source.rs               # SourceText (16 MiB, UTF-8, BOM), TextRange, lines, LineIndex, 64 KiB line limit
+│   │   │   └── syntax.rs               # TokenKind, Token, LineState, SyntaxProvider contract, check_line_tokens, token_diagnostics
+│   │   ├── tests/                      # va-core tests, one file per module
+│   │   │   ├── diag.rs                 # DiagCode validation, Severity ids, Diagnostic builder and blocking rule
+│   │   │   ├── image.rs                # ProgramImage overlap and overflow, byte_at, SourceMap lookups
+│   │   │   ├── isa.rs                  # FlagEffect and Bound ids, Cycles defaults, InstructionSet as a trait object
+│   │   │   ├── README.md               # What each va-core test file covers
+│   │   │   ├── regs.rs                 # Register descriptions and RegId order through a fake Architecture
+│   │   │   ├── source.rs               # Size and UTF-8 checks, BOM, line terminators, position and offset round trips
+│   │   │   └── syntax.rs               # TokenKind ids, check_line_tokens errors, token_diagnostics
 │   │   ├── Cargo.toml                  # Package template; no dependency
-│   │   └── README.md                   # Role and allowed dependencies (none)
+│   │   └── README.md                   # Role, frozen M1 contracts, allowed dependencies (none)
 │   ├── va-debug/                       # Package va-debug: debug session worker (M3)
 │   │   ├── src/                        # va-debug sources
 │   │   │   ├── lib.rs                  # Crate doc only (M0 skeleton)
@@ -97,20 +188,31 @@ VisualAssembler/
 │   │   │   └── README.md               # Projected module layout
 │   │   ├── Cargo.toml                  # Package template; no dependency
 │   │   └── README.md                   # Role and allowed dependencies (all crates, egui only)
-│   ├── va-workspace/                   # Package va-workspace: project, settings, session, i18n (M4)
+│   ├── va-workspace/                   # Package va-workspace: i18n in M1; project, settings, session in M4
 │   │   ├── src/                        # va-workspace sources
-│   │   │   ├── lib.rs                  # Crate doc only (M0 skeleton)
-│   │   │   └── README.md               # Projected module layout
-│   │   ├── Cargo.toml                  # Package template; no dependency
-│   │   └── README.md                   # Role and allowed dependencies (va-core)
+│   │   │   ├── i18n/                   # Language selection and the Fluent localizer
+│   │   │   │   ├── lang.rs             # Lang, LangSource, LangChoice, resolve_lang (--lang, VA_LANG, locale)
+│   │   │   │   ├── localizer.rs        # Localizer: concurrent Fluent bundles, English fallback, render and message
+│   │   │   │   ├── mod.rs              # Module doc and re-exports
+│   │   │   │   └── README.md           # Selection precedence, fallback and rendering rules
+│   │   │   ├── lib.rs                  # Crate doc and the i18n module (M1)
+│   │   │   └── README.md               # Module map and the M4 layout
+│   │   ├── tests/                      # va-workspace tests, one file per module
+│   │   │   ├── i18n_lang.rs            # Lang codes and resolve_lang precedence with a fake environment
+│   │   │   ├── i18n_localizer.rs       # Fallback, missing ids, arguments, plurals, isolation marks, errors
+│   │   │   └── README.md               # What the va-workspace tests cover
+│   │   ├── Cargo.toml                  # Depends on va-core, fluent-bundle, unic-langid
+│   │   └── README.md                   # Role, M1 i18n content, dependencies
 │   └── README.md                       # Crate map, layering rules R1-R8 and their enforcement
 ├── docs/                               # Specifications and measurement reports
 │   ├── perf/                           # Measurement reports (every performance claim cites one)
+│   │   ├── 2026-10-23-m1-lexer.md      # M1 lexer bench (E7): median 7.157 ms per 100,000 lines, budget 50 ms
 │   │   ├── M0-backend.md               # M0 renderer measurements and gates; section 11: user decision, shipped-binary runs N1-N6
-│   │   └── README.md                   # Report naming and reproduction
+│   │   └── README.md                   # Report list, naming and reproduction
 │   ├── specs/                          # Normative specifications (Architect role)
 │   │   ├── architecture.md             # Durable architecture: crate map, rules R1-R8, policies, support tiers, renderer policy
 │   │   ├── m0-foundations.md           # M0 file-level spec; precedence section 19 > 18 > 17 > body
+│   │   ├── m1-core-isa-lexer.md        # M1 file-level spec; section 12 ratifications win over the body
 │   │   └── README.md                   # How to read the specs (precedence, superseded index)
 │   └── README.md                       # Documentation index
 ├── scripts/                            # Documentation tooling and git hooks
@@ -129,7 +231,7 @@ VisualAssembler/
 │   │   │   ├── runner.rs               # Builds the shipped binary once; runs, deadlines, output caps, run-line validation
 │   │   │   ├── stats.rs                # summarize: median, nearest-rank p95, min, max
 │   │   │   └── timestamp.rs            # UTC timestamps without a date crate
-│   │   ├── ci.rs                       # cargo xtask ci: step list, step 0 build-config checks, Windows exe parking
+│   │   ├── ci.rs                       # cargo xtask ci: 9-step list, step 0 build-config checks, Windows exe parking
 │   │   ├── docs.rs                     # cargo xtask docs: runs the two Python scripts
 │   │   ├── exec.rs                     # Spawns commands with an argument vector, never a shell
 │   │   ├── hooks.rs                    # cargo xtask hooks [--force]: safe commit-msg install
@@ -143,27 +245,27 @@ VisualAssembler/
 │   │   ├── bench_runner.rs             # Runner arguments, deadlines, caps; fake sh GUIs on Unix
 │   │   ├── bench_stats.rs              # summarize on fixed inputs
 │   │   ├── bench_timestamp.rs          # utc_compact and utc_iso, leap days, year 2100
-│   │   ├── ci.rs                       # Step order, check_build_env, canonical cargo config, step 0 stop, ci.yml smoke step
+│   │   ├── ci.rs                       # Step order incl. the va no-CPU steps, check_build_env, canonical cargo config, ci.yml checks
 │   │   ├── docs.rs                     # cargo xtask docs, gen_agencement.py, manifest and annotation checks in temp repos
 │   │   ├── hooks.rs                    # hooks install safety and commit-msg behaviour under several locales
 │   │   ├── layering.rs                 # Layering and source-scan rules, one regression test per bypass
 │   │   └── README.md                   # Test list and rules (temp folders, ignored tests)
 │   ├── Cargo.toml                      # Package xtask: anyhow, clap, serde, serde_json
-│   └── README.md                       # Commands, ci steps, hooks safety, tripwire threat model
+│   └── README.md                       # Commands, the 9 ci steps, hooks safety, tripwire threat model
 ├── .claudeignore                       # Paths kept out of agents' context
 ├── .gitattributes                      # LF line endings everywhere; binary asset types
 ├── .gitignore                          # Paths kept out of the repository
 ├── AGENCEMENT.md                       # This annotated tree
-├── Cargo.toml                          # Virtual workspace: members, exact pins, workspace lints, profiles
+├── Cargo.toml                          # Virtual workspace: members, exact pins (fluent-bundle, unic-langid since M1), lints, profiles
 ├── CLAUDE.md                           # Working memory for agents: stack, commands, conventions, pitfalls
 ├── DEPENDANCE.md                       # Dependency addition log with versions and licences
 ├── IMPORT.md                           # Where each dependency is used and where it runs
 ├── LICENSE-APACHE                      # Apache License 2.0 text
 ├── LICENSE-MIT                         # MIT licence text
-├── Makefile                            # Every project command; thin wrapper over cargo and cargo xtask
-├── README.md                           # Project overview, status, platform matrix, build and test, renderer selection
+├── Makefile                            # Every project command; thin wrapper over cargo and cargo xtask; bench-lexer since M1
+├── README.md                           # Project overview, M1 status, platform matrix, build and test, va CLI, renderer selection
 ├── rust-toolchain.toml                 # Pins Rust 1.99.0 with rustfmt and clippy
 └── SECURITY.md                         # Protections in place and their limitations (Security agent)
 ```
 
-_159 entries · 0 to annotate._
+_261 entries · 0 to annotate._

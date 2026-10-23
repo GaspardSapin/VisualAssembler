@@ -1,22 +1,25 @@
 # crates/va-workspace/src
 
 ## Purpose
-Sources of `va-workspace`. In M0 the crate holds only its documentation comment; code arrives in M4.
+Sources of `va-workspace`. In M1 the crate holds the `i18n` module only; the other modules of
+architecture §6 arrive in M4.
 
 ## Contents
 | Entry | Type | Purpose |
 |-------|------|---------|
-| `lib.rs` | library root | Crate-level `//!` doc: responsibility, allowed internal dependencies (`va-core`), and the M0 skeleton note |
+| `lib.rs` | library root | Crate doc (responsibility, allowed internal dependency `va-core`) and `pub mod i18n` |
+| `i18n/` | folder | Language selection and the Fluent localizer. See its README. |
 
 ## Entry points
-- `lib.rs`. Projected layout at about six months (m0-foundations.md §2.2): `src/{project,settings,keybindings,session,backup,i18n,watch}/`.
+- `i18n/mod.rs`. Projected layout (m1 §2.2): `project/`, `settings/`, `keybindings/`, `session/`,
+  `backup/` and `watch/` in M4, with the architecture-independent UI strings in Fluent files.
 
 ## Dependencies
-- Internal: none yet. Allowed: `va-core`.
-- External: none in M0.
+- Internal: `va-core`.
+- External: `fluent-bundle`, `unic-langid` (used by `i18n/`).
 
 ## Tests / usage
 ```bash
 cargo test -p va-workspace
 ```
-Tests will live in `crates/va-workspace/tests/`, never in `src/` (architecture §8).
+Tests live in `crates/va-workspace/tests/`, never in `src/` (architecture §8).

@@ -19,9 +19,17 @@ What "yes" rests on (2026-10-16; details in `docs/perf/M0-backend.md`, §11 for 
   `cargo xtask ci --no-fmt` (clippy, layering, every headless test) and the release build on
   `windows-latest`, `windows-11-arm`, `ubuntu-latest` and `ubuntu-24.04-arm`. The cells marked
   "yes (CI)" rest on that run. Its informational Windows GUI smoke steps ran the earlier wgpu-only
-  build on WARP; they are not a support claim. The §19 tree has not run in CI yet.
+  build on WARP; they are not a support claim.
+- **CI after §19**: run 38969165969 (2026-10-16, commit `6ed43c8`) passed all 7 jobs on the four
+  runners with the §19 tree (`SECURITY.md`, `.github/workflows/README.md`). The "pre-§19" mentions
+  below date from before that run was recorded.
+- **M1** (2026-10-17 to 2026-10-23; `va lex`, `va isa`, the Fluent localizer): the M1 test targets
+  pass on Windows 11 x64 (re-run on 2026-10-23 for this file); Security built a release `va` on
+  Windows 11 x64 and in WSL Ubuntu 26.04 x64 and ran crafted inputs through it (`SECURITY.md`);
+  Performance ran the lexer bench on both (`docs/perf/2026-10-23-m1-lexer.md`). **The M1 commits have not run in CI yet**, so
+  no M1 cell says "yes (CI)" and ARM64 is `unverified` for M1 code.
 - **ARM64**: `visual-assembler` and `va` cross-built for `aarch64-unknown-linux-gnu` from WSL, again
-  on 2026-10-16 with the §19 tree (compiled only).
+  on 2026-10-16 with the §19 tree (compiled only). No cross-build of the M1 tree is recorded.
 - macOS and Apple Silicon are a non-goal: never built, never claimed. No NVIDIA or Intel GPU was
   tested. No crate here uses GPU compute (ROCm/CUDA: n/a).
 
@@ -50,7 +58,8 @@ What "yes" rests on (2026-10-16; details in `docs/perf/M0-backend.md`, §11 for 
 ### clap
 - **License**: MIT OR Apache-2.0
 - **Used for**: command-line grammars, `--help`/`--version`, usage errors (exit 2).
-- **Used in**: `apps/va/src/cli.rs`, `apps/va/src/main.rs`, `apps/visual-assembler/src/cli.rs`,
+- **Used in**: `apps/va/src/cli.rs`, `apps/va/src/main.rs`, `apps/va/src/commands/mod.rs`,
+  `apps/va/src/report.rs`, `apps/visual-assembler/src/cli.rs`,
   `apps/visual-assembler/src/lib.rs`, `xtask/src/main.rs`, `xtask/src/bench/mod.rs`, `xtask/src/ci.rs`,
   `xtask/src/docs.rs`, `xtask/src/hooks.rs`
 - **Hardware**: x86-64 yes · ARM64 yes (CI, pre-§19; cross-built for Linux) · Apple Silicon
@@ -61,8 +70,10 @@ What "yes" rests on (2026-10-16; details in `docs/perf/M0-backend.md`, §11 for 
 
 ### serde
 - **License**: MIT OR Apache-2.0
-- **Used for**: `Serialize` derives of every JSON document (`va.info/1`, `va.bench.run/2`, `va.bench.report/2`).
-- **Used in**: `apps/va/src/commands/info.rs`, `apps/visual-assembler/src/bench/report.rs`,
+- **Used for**: `Serialize` derives of every JSON document (`va.info/1`, `va.lex/1`, `va.isa/1`,
+  `va.isa.list/1`, `va.error/1`, `va.bench.run/2`, `va.bench.report/2`).
+- **Used in**: `apps/va/src/commands/{info,lex,isa}.rs`, `apps/va/src/report.rs`,
+  `apps/visual-assembler/src/bench/report.rs`,
   `xtask/src/bench/mod.rs`, `xtask/src/bench/report.rs`, `xtask/src/bench/stats.rs`
 - **Hardware**: x86-64 yes · ARM64 yes (CI, pre-§19) · Apple Silicon unverified · Intel Mac
   unverified · GPU n/a
@@ -73,8 +84,10 @@ What "yes" rests on (2026-10-16; details in `docs/perf/M0-backend.md`, §11 for 
 - **License**: MIT OR Apache-2.0
 - **Used for**: writing the JSON lines and reports; parsing `cargo metadata`, cargo's build messages
   and the GUI's bench lines in xtask.
-- **Used in**: `apps/va/src/commands/info.rs`, `apps/visual-assembler/src/bench/report.rs`,
-  `xtask/src/bench/report.rs`, `xtask/src/bench/runner.rs`, `xtask/src/layering.rs`, `xtask/src/locate.rs`
+- **Used in**: `apps/va/src/commands/{info,lex,isa}.rs`, `apps/va/src/report.rs` (JSON documents
+  and the token-text JSON strings of `va lex`), `apps/visual-assembler/src/bench/report.rs`,
+  `xtask/src/bench/report.rs`, `xtask/src/bench/runner.rs`, `xtask/src/layering.rs`, `xtask/src/locate.rs`;
+  tests `apps/va/tests/{binary,lex,isa}.rs`
 - **Hardware**: x86-64 yes · ARM64 yes (CI, pre-§19) · Apple Silicon unverified · Intel Mac
   unverified · GPU n/a
 - **OS**: Windows yes · Linux yes · macOS unverified
@@ -127,6 +140,36 @@ What "yes" rests on (2026-10-16; details in `docs/perf/M0-backend.md`, §11 for 
   `[target.'cfg(target_os = "linux")'.dependencies]`. It is the version eframe pulls, so the builder
   type is eframe's. Under WSL the X11 path needs `DISPLAY`; without it the launch exits 3 (no
   fallback).
+
+### fluent-bundle
+- **License**: Apache-2.0 OR MIT
+- **Used for**: parsing the embedded `.ftl` resources and formatting messages, attributes, plurals
+  and selectors for diagnostics and instruction documentation, with English fallback
+  (`fluent_bundle::concurrent::FluentBundle`, isolation marks off; m1 §6.2).
+- **Used in**: `crates/va-workspace/src/i18n/localizer.rs` (the `Localizer`, reached through
+  `crates/va-workspace/src/i18n/mod.rs` and used by `apps/va/src/commands/`); dev-dependency of
+  `va-arch-m68k`: `arch/m68k/tests/locales.rs` (`FluentResource::try_new` parse and formatting
+  checks of every resource)
+- **Hardware**: x86-64 yes (Windows 11 x64; Ubuntu 26.04 x64 under WSL) · ARM64 unverified (CI has
+  not run the M1 tree) · Apple Silicon unverified · Intel Mac unverified · GPU n/a
+- **OS**: Windows yes · Linux yes (WSL Ubuntu 26.04 only; native desktops unverified) · macOS
+  unverified
+- **Notes**: pure Rust, no I/O: resources are `&'static str` compiled in with `include_str!`. Pulls
+  fluent-syntax, fluent-langneg, intl-memoizer, intl_pluralrules, type-map, self_cell (Apache-2.0
+  chosen), and the helpers listed in `DEPENDANCE.md`. Arguments are inserted verbatim; `va`
+  escapes terminal controls itself (`apps/va/src/report.rs`).
+
+### unic-langid
+- **License**: MIT OR Apache-2.0
+- **Used for**: the `LanguageIdentifier` values (`en`, `fr`) that `FluentBundle::new` requires.
+- **Used in**: `crates/va-workspace/src/i18n/localizer.rs`
+- **Hardware**: x86-64 yes (Windows 11 x64; Ubuntu 26.04 x64 under WSL) · ARM64 unverified (CI has
+  not run the M1 tree) · Apple Silicon unverified · Intel Mac unverified · GPU n/a
+- **OS**: Windows yes · Linux yes (WSL Ubuntu 26.04 only) · macOS unverified
+- **Notes**: default features; pulls unic-langid-impl and tinystr (Unicode-3.0). zerovec and zerofrom
+  (Unicode-3.0) appear in `Cargo.lock` through tinystr's default features but are never compiled.
+  The language is chosen by `va-workspace` (`resolve_lang`), not by this crate: it never reads the
+  OS locale.
 
 ### egui_kittest
 - **License**: MIT OR Apache-2.0
@@ -230,5 +273,7 @@ they decide GPU, window-system and accessibility support.
 | winit | Apache-2.0 | yes (through eframe) | limited (direct X11 hook yes under WSLg) | compiled only (Linux) | unverified | n/a |
 | egui_kittest | MIT OR Apache-2.0 | yes | yes | yes (CI) | unverified | n/a |
 | anyhow | MIT OR Apache-2.0 | yes | yes | yes (CI) | unverified | n/a |
+| fluent-bundle | Apache-2.0 OR MIT | yes | yes (WSL) | unverified (M1 not in CI yet) | unverified | n/a |
+| unic-langid | MIT OR Apache-2.0 | yes | yes (WSL) | unverified (M1 not in CI yet) | unverified | n/a |
 | wgpu | MIT OR Apache-2.0 | yes (DX12) | limited (WSLg X11 only) | compiled only (Linux), unverified (Windows) | unverified | AMD iGPU yes, NVIDIA unverified |
 | glow | MIT OR Apache-2.0 OR Zlib | yes | yes (WSLg) | compiled only (Linux), unverified (Windows) | unverified | AMD iGPU yes, llvmpipe yes |

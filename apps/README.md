@@ -8,15 +8,16 @@ logic; it goes to `crates/` or `arch/`.
 ## Contents
 | Entry | Type | Purpose |
 |-------|------|---------|
-| `visual-assembler/` | folder | GUI binary + library: eframe window, renderer selection with one automatic fallback, bench instrumentation. The only package allowed to use GUI crates. See its README. |
-| `va/` | folder | Headless CLI `va` (`info` in M0). Never depends on a GUI crate. See its README. |
+| `visual-assembler/` | folder | GUI binary + library: eframe window, renderer selection with one automatic fallback, bench instrumentation. The only package allowed to use GUI crates. Unchanged in M1. See its README. |
+| `va/` | folder | Headless CLI `va`: `info`, `lex` and `isa` in M1, with a global `--json` and `--lang en\|fr`. Never depends on a GUI crate. See its README. |
 
 ## Entry points
 - `visual-assembler/src/lib.rs` (`run`) and `va/src/main.rs`.
 
 ## Dependencies
-- Internal (allowed, none wired in M0): `visual-assembler` may use every `crates/*` and `arch/*`
-  package; `va` may use them all except `va-ui` (architecture §2, m0-foundations.md §17.2).
+- Internal (allowed): `visual-assembler` may use every `crates/*` and `arch/*` package (none wired
+  yet); `va` may use them all except `va-ui` (architecture §2, m0-foundations.md §17.2). In M1, `va`
+  uses `va-core`, `va-workspace` and, through its default feature `arch-m68k`, `va-arch-m68k`.
 - External: see `DEPENDANCE.md`.
 
 ## Tests / usage

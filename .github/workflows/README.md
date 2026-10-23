@@ -15,7 +15,7 @@ The check list itself lives in `cargo xtask ci`, so the workflow never duplicate
 | `fmt` | `ubuntu-latest` | `cargo fmt --all -- --check` |
 | `docs` | `ubuntu-latest` | `python3 scripts/check_project_docs.py .` with `fetch-depth: 50`, so the AI co-author check sees the last 50 commits |
 | `deny` | `ubuntu-latest` | Builds cargo-deny 0.20.2 from crates.io (`--locked`) in the runner's temp folder, outside the checkout, with no cache. Then runs `cargo deny --locked --manifest-path Cargo.toml --config .cargo/deny.toml check`. |
-| `check (<os>)` | `windows-latest`, `windows-11-arm`, `ubuntu-latest`, `ubuntu-24.04-arm` | `cargo xtask ci --no-fmt`, then `cargo build --release --locked -p visual-assembler -p va`, then (Windows only) the two GUI smoke steps |
+| `check (<os>)` | `windows-latest`, `windows-11-arm`, `ubuntu-latest`, `ubuntu-24.04-arm` | Step `clippy, layering, tests`: `cargo xtask ci --no-fmt`, the 8 non-fmt steps listed in `xtask/README.md` (since M1 they include clippy and the tests of `va` without any CPU, m1 §12.7). Then `cargo build --release --locked -p visual-assembler -p va`, then (Windows only) the two GUI smoke steps |
 
 ## Entry points
 - `ci.yml`. Rules for editing it:
@@ -29,7 +29,7 @@ The check list itself lives in `cargo xtask ci`, so the workflow never duplicate
   - Keep `permissions: contents: read`, `persist-credentials: false`, and no `${{ … }}` inside `run:`
     scripts.
   - The rust cache is saved by `main` runs only, and the `deny` job never uses it.
-  - Linux runners install no apt package in M0. If a dependency ever needs system libraries, add one
+  - Linux runners install no apt package (M0, M1). If a dependency ever needs system libraries, add one
     `apt-get install --no-install-recommends` step and document it in the spec.
 - The two **GUI smoke** steps are informational: `continue-on-error`, a 3-minute timeout, and
   `bash`, because PowerShell does not wait for GUI-subsystem executables. Hosted runners have no GPU,
@@ -50,8 +50,11 @@ The check list itself lives in `cargo xtask ci`, so the workflow never duplicate
   `Swatinem/rust-cache` v2.9.2, each pinned by SHA in `ci.yml`.
 
 ## Tests / usage
-The workflow has run once: run 38635672228 (2026-10-14, commit `c326afd`, before the §19 renderer
-work) passed all 7 jobs. The §19 changes, the fallback smoke step included, have not run in CI yet.
+Recorded runs (read with `gh run view` on 2026-10-16; `SECURITY.md`, `docs/perf/M0-backend.md`):
+run 38635672228 (2026-10-14, `c326afd`, before the §19 renderer work) passed all 7 jobs; run
+38968085878 (`646b6f7`) failed only `check (windows-11-arm)` on a dead-code warning; run 38969165969
+(2026-10-16, `6ed43c8`) passed all 7 jobs, the §19 smoke steps included. The last pushed commit is
+`cc827b0` (`origin/main`); the M1 commits after it have not run in CI yet (pending push).
 Branch protection on `main` requires `fmt`, `docs`, `deny` and the four `check (…)` jobs. It does not
 include administrators (`enforce_admins` is off), so the owner's direct pushes are not gated.
 

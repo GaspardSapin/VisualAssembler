@@ -23,8 +23,8 @@ built binaries as child processes, never through a shell.
 
 Usage errors exit 2 (clap). Any other error prints `error: <context chain>` on stderr and exits 1.
 
-**`cargo xtask ci` steps**, in order, stopping at the first failure. `==> <step>` is printed on stderr
-before each one:
+**`cargo xtask ci` steps**, in order, stopping at the first failure: 9 steps, 8 with `--no-fmt`.
+`==> <step>` is printed on stderr before each one:
 
 0. Build configuration (rule R8). Fails when `RUSTFLAGS`, `CARGO_ENCODED_RUSTFLAGS`,
    `CARGO_BUILD_RUSTFLAGS` or any `CARGO_TARGET_*_RUSTFLAGS` is **set, even empty**. Also fails when
@@ -36,8 +36,13 @@ before each one:
 3. `cargo clippy -p visual-assembler --all-targets --no-default-features --features renderer-glow --locked -- -D warnings`,
    then step 3b, the same run with `--features renderer-wgpu` only (m0 §19.6). Together they keep both
    single-renderer builds compiling; neither is shipped.
+   Step 3c: `cargo clippy -p va --all-targets --no-default-features --locked -- -D warnings`, `va`
+   built without any CPU (m1-core-isa-lexer.md §12.7, R12-4).
 4. Layering and source checks, in process (`src/layering.rs`).
-5. `cargo test --workspace --all-features --locked`.
+5. `cargo test --workspace --all-features --locked`, then step 5b,
+   `cargo test -p va --no-default-features --locked`, which runs the `no-architecture` test
+   (R12-4). Steps 3c and 5b keep the CPU-less build of `va` compiling and tested; they build `va`
+   only, never xtask.
 
 On Windows, before step 5, the running `xtask.exe` is renamed to `xtask.exe.old` so cargo can relink
 it (§17.11 D09). A second `cargo xtask ci` started from the same target folder while one is still

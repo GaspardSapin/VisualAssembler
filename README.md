@@ -5,22 +5,33 @@ Motorola 68000 end to end: edit, assemble, run and debug, in a light window that
 idle at about 0 % CPU. Everything is also reachable from a terminal (the `va` CLI, `make`,
 `cargo xtask`). CPU support sits behind traits, so later CPUs are new `arch/<cpu>` crates.
 
-## Status: milestone M0 (foundations)
+## Status: milestone M1 (core contracts, 68000 ISA tables, lexer)
 
-M0 builds the workspace, the tooling, the CI and a measurable empty window. **There is no editor,
-assembler or emulator yet.**
+M1 is implemented, audited and measured, pending its push and first CI run. It adds the frozen
+CPU-agnostic contracts, the complete 68000 instruction tables, the A68k-dialect lexer, English and
+French instruction documentation, and two CLI commands, `va lex` and `va isa`. **There is no
+editor, assembler or emulator yet**: the window is still the M0 one.
 
-| Piece | State at the end of M0 |
+| Piece | State at the end of M1 |
 |-------|------------------------|
-| `visual-assembler` (GUI) | Opens one window with a static text, in egui's reactive mode. Measures its own startup and idle cost (`--bench startup\|idle`). |
-| `va` (CLI) | One subcommand, `info` (`--json` supported) |
-| `cargo xtask` | `bench`, `ci`, `docs`, `hooks` |
-| `crates/*`, `arch/m68k` | Skeletons: a manifest and a documented, empty `lib.rs`. First code in M1. |
-| CI (`.github/workflows/ci.yml`) | 4 native runners. The first run (2026-10-14, commit `c326afd`, before the renderer work below) passed all 7 jobs. The renderer work has not run in CI yet. |
+| `va` (CLI) | `info`, `lex`, `isa`; global `--json` and `--lang en\|fr`. See [The `va` command line](#the-va-command-line). |
+| `arch/m68k` | 68000 instruction tables (126 spellings, 74 entries, forms, flags, opword encodings, cycle counts), the A68k-dialect line lexer, the register file, EN/FR docs in Fluent. Cycle counts are provisional until the M3 cross-check (`arch/m68k/src/isa/README.md`). |
+| `crates/va-core` | Frozen contracts: sources and lines, diagnostics, the lexer contract, the instruction view, registers, program image and source map, `Architecture` |
+| `crates/va-workspace` | Language selection and the Fluent localizer (`i18n`); the rest arrives in M4 |
+| Other `crates/*` | Skeletons (`va-editor`, `va-lang`, `va-debug`, `va-ui`) |
+| `visual-assembler` (GUI) | Unchanged since M0: one window with a static text, in egui's reactive mode. Measures its own startup and idle cost (`--bench startup\|idle`). |
+| `cargo xtask` | `bench`, `ci` (9 steps, now also clippy and tests of `va` built without any CPU), `docs`, `hooks` |
+| CI (`.github/workflows/ci.yml`) | 4 native runners. Run 38969165969 (2026-10-16, commit `6ed43c8`, the M0 renderer work) passed all 7 jobs. The M1 commits have not run in CI yet. |
 | Renderer | Both renderers ship. `auto` starts glow and falls back to wgpu if OpenGL fails to initialize (wgpu first on Windows ARM64); `--renderer` and `VA_RENDERER` force one. See [Renderer selection](#renderer-selection). |
 
-Specifications: `docs/specs/architecture.md` (durable) and `docs/specs/m0-foundations.md` (M0).
-Measurements: `docs/perf/M0-backend.md`.
+Roadmap: M0 foundations (done) · **M1 core contracts, ISA tables, lexer (done, pending push and CI)**
+· M2 assembler and disassembler · M3 headless emulation and debugging · M4 editing and GUI shell ·
+M5 language services · M6 debugging UI · M7 performance and hardening · M8 distribution. A milestone
+gets its spec in `docs/specs/` when it starts.
+
+Specifications: `docs/specs/architecture.md` (durable), `docs/specs/m0-foundations.md` (M0) and
+`docs/specs/m1-core-isa-lexer.md` (M1). Measurements: `docs/perf/M0-backend.md` and
+`docs/perf/2026-10-23-m1-lexer.md`.
 
 ## Platform support
 
@@ -43,9 +54,14 @@ shipped binary, 2026-10-16):
 | Windows 11 x64, reference machine | `make test`, `make lint`, `make docs` and `make security` pass. The shipped binary passed every automated bench run on mains power: `auto` (which runs glow), forced glow and forced wgpu on DX12, with 0 idle frames in 18 of 18 idle runs. With an injected glow failure, 40 of 40 runs fell back to wgpu on DX12. The ignored display tests of the fallback pass (8 tests). The **human visual check (G2) and the cold-start run are still pending.** |
 | Ubuntu 26.04 x64 under WSLg, **X11** (the WSL default) | `make test`, `make lint` and `make docs` pass. The shipped binary passed every bench run with `auto` (glow), glow and wgpu, on X11 even though `WAYLAND_DISPLAY` was set, with 0 compositor crashes in 223 X11 launches. A genuine OpenGL failure (Mesa version override) fell back to wgpu on Vulkan. The ignored display tests pass (9 tests). G2 is pending. Rendering is software only (llvmpipe/lavapipe). |
 | Ubuntu 26.04 x64 under WSLg, **Wayland** (`VA_WAYLAND=1`) | glow passes the reliability and idle gates (28 launches, G2 pending). **wgpu crashed the WSLg compositor** (weston 9.0.0, WSLg 1.0.73.2) in 3 of 5 launches in round 1, which closes every WSLg window, so wgpu is never run on Wayland. |
-| Windows 11 ARM64, Ubuntu ARM64 (CI runners) | **Never checked by a human.** The first CI run passed the headless tests and the release build there, before the renderer work. The informational GUI smoke on `windows-11-arm` ran the earlier wgpu-only build on WARP; it is not evidence. The `auto` order tries wgpu first on Windows ARM64, because DX12 is native there and OpenGL needs an optional compatibility pack. |
+| Windows 11 ARM64, Ubuntu ARM64 (CI runners) | **Never checked by a human.** CI run 38969165969 (2026-10-16, `6ed43c8`, with the renderer work) passed the headless tests and the release build there. The informational GUI smokes on `windows-11-arm` run on WARP; they are not evidence. The `auto` order tries wgpu first on Windows ARM64, because DX12 is native there and OpenGL needs an optional compatibility pack. |
 | `aarch64-unknown-linux-gnu` | Cross-built from WSL (exit criterion E3), again on 2026-10-16 with the renderer work; never executed |
 | Native Linux desktops, macOS | Not measured. macOS is a non-goal: it may compile, but is never tested or claimed. |
+
+M1 adds no platform-specific code. Its `va` commands ran on Windows 11 x64 and in WSL Ubuntu 26.04
+x64: Security built a release `va` on both and ran crafted inputs through it (`SECURITY.md`), and
+Performance measured the lexer on both (`docs/perf/2026-10-23-m1-lexer.md`). The M1 code has not run
+on the CI runners yet, ARM64 included.
 
 ## Performance status
 
@@ -80,6 +96,11 @@ Sessions on the same build differed by about 25 %, and p50 drifted up by about 1
   by default.
 - The RAM target (< 500 MB with a 5,000-line project) cannot be measured before M4.
 - The true cold start (right after a reboot) is pending a human.
+
+**Lexer throughput (M1, exit criterion E7, passed)**, from `docs/perf/2026-10-23-m1-lexer.md`:
+`make bench-lexer` lexes 100,000 generated lines (3.3 MB) in a median of **7.157 ms** (463.2 MB/s)
+on the reference machine, on mains in "Best performance", against a budget of ≤ 50 ms; 7.104 ms in
+WSL. The bench covers line splitting and lexing only, not `va lex`'s file I/O and JSON output.
 
 ## Build, run and test
 
@@ -126,7 +147,7 @@ rustup target add aarch64-unknown-linux-gnu
 cargo build --release --locked --target aarch64-unknown-linux-gnu -p visual-assembler -p va
 ```
 
-Quick CLI check: `cargo run -p va -- info --json`.
+Quick CLI check: `cargo run -p va -- info --json` (see [The `va` command line](#the-va-command-line)).
 
 ### Make targets
 
@@ -146,10 +167,63 @@ Quick CLI check: `cargo run -p va -- info --json`.
 | `build` | `cargo build --release -p visual-assembler -p va` |
 | `clean` | `cargo clean` |
 | `bench` | `cargo xtask bench $(SCENARIO) --renderer $(RENDERER)` (defaults `all` and `auto`), e.g. `make bench SCENARIO=startup RUNS=3`. It measures the shipped binary. |
-| `ci` | `cargo xtask ci`: build-configuration check, fmt, clippy (all features, then glow only, then wgpu only), layering and source checks, tests |
+| `bench-lexer` | `cargo test -p va-arch-m68k --release --test syntax_bench -- --ignored --nocapture`: lexer throughput on 100,000 generated lines, one `va.bench.lexer/1` JSON line. Measure on mains power. |
+| `ci` | `cargo xtask ci`, 9 steps: build-configuration check, fmt, clippy (all features, glow only, wgpu only, then `va` without any CPU), layering and source checks, tests (workspace, then `va` without any CPU) |
 
 Never set `RUSTFLAGS` (not even empty): it silently replaces the static-CRT flags of
 `.cargo/config.toml`, and `make ci` refuses to run with it.
+
+## The `va` command line
+
+```text
+va [--json] [--lang en|fr] info | lex <FILE|-> | isa <MNEMONIC[.SIZE]> | isa --list
+```
+
+```bash
+cargo run -p va -- lex arch/m68k/fixtures/lex/basic.asm   # tokens on stdout, diagnostics on stderr
+cargo run -p va -- --json lex arch/m68k/fixtures/lex/errors.asm   # one va.lex/1 document, exit 1
+cargo run -p va -- isa move.l                              # forms, modes, flags, cycles of MOVE.L
+cargo run -p va -- --lang fr isa move.l                    # the same in French
+cargo run -p va -- isa --list                              # the 126 spellings with a summary
+```
+
+- **`va lex`** lexes a 68000 source in the A68k dialect (a68k 2.71.F3w): one token per line on
+  stdout, GNU-style diagnostics (`<file>:<line>:<column>: error[<code>]: …`) on stderr. Exit 0 when
+  clean, 1 with any error diagnostic.
+- **`va isa`** shows an instruction's summary, details, forms, addressing modes, flag effects and cycle
+  counts. An unknown spelling exits 1 with suggestions (`va isa MOV` suggests `MOVE, MOVEA, MOVEM`).
+- **Language**: `--lang en|fr`, else `VA_LANG` (`en`, `fr` or `auto`), else `LC_ALL`, `LC_MESSAGES`,
+  `LANG`. An invalid `VA_LANG` is ignored with a warning. Only diagnostics and instruction docs are
+  translated; CLI messages stay English. The Windows display language is read from M4 on, not yet.
+- **`--json`** prints one document (`va.lex/1`, `va.isa/1`, `va.isa.list/1`, `va.info/1`), or
+  `va.error/1` on failure.
+- **Input**: UTF-8 only, at most 16 MiB per file and 64 KiB per line. Invalid UTF-8, a larger file or
+  an unreadable path exits 3. Pass local files only: reads have no timeout (a FIFO or `CON` blocks),
+  and on Windows a UNC path connects to the remote host (`apps/va/README.md`).
+- **Terminal safety**: text output escapes control, C1 and bidi characters coming from the source or
+  the arguments; `--json` output keeps them as they are.
+
+**Strict A68k operand spacing (user decision, 2026-10-17).** As in a68k, the operand field ends at
+the first space, and the rest of the line is a comment. `dc.b 1, 2, 3` assembles one byte, and
+`move.l d0, d1` is an a68k error. VisualAssembler keeps exactly that meaning, but when the ignored
+text looks like more operands, it reports the error `lex-operands-in-comment` with a fix. The error
+is non-blocking: it never changes the bytes produced. A real comment, after `;` or after free text,
+stays a plain comment.
+
+```text
+$ printf ' dc.b 1, 2, 3\n' | va lex -
+1:2 directive "dc"
+1:4 size-suffix ".b"
+1:7 number "1"
+1:8 punctuation ","
+1:10 suspect-comment "2, 3" lex-operands-in-comment
+-:1:10: error[lex-operands-in-comment]: a68k will ignore “2, 3”: the operands end at the first space.
+  help: Remove the spaces after the commas.
+  fix:  dc.b 1,2,3
+```
+
+A permissive dialect (spaces after commas, EASy68K/vasm style) is planned as a per-project profile
+after M1; it is not implemented. Details: `arch/m68k/src/syntax/README.md` and `apps/va/README.md`.
 
 ## Renderer selection
 
@@ -301,8 +375,9 @@ On Windows x64 this prints the two warnings, then a bench line with `"renderer":
 | `.cargo/` | `config.toml` (xtask alias, static CRT, aarch64 linker) and `deny.toml` (cargo-deny policy) |
 
 Every folder has a README, except the dot-folder `.cargo/`, whose two files are described in the table
-above. `scripts/check_project_docs.py` skips folders whose name starts with a dot (see
-`scripts/README.md`). Pilot files at the root: `CLAUDE.md` (working rules for contributors and
+above, and the folders that hold only sub-folders (`arch/m68k/fixtures/`, `arch/m68k/locales/`),
+which their parent README describes. `scripts/check_project_docs.py` skips folders whose name starts
+with a dot and folders without a file of their own (see `scripts/README.md`). Pilot files at the root: `CLAUDE.md` (working rules for contributors and
 agents), `AGENCEMENT.md` (annotated tree), `DEPENDANCE.md` and `IMPORT.md` (dependencies, licences,
 platform support), `SECURITY.md` (protections actually in place and their limits).
 

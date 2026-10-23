@@ -9,7 +9,7 @@ the `xtask` library so tests can call it directly.
 |-------|------|---------|
 | `main.rs` | binary root | clap dispatch (`bin_name = "cargo xtask"`), switches to the workspace root, prints `error: {e:#}` and exits 1 on any error (`docs` forwards the check script's code) |
 | `lib.rs` | library root | Declares the modules below |
-| `ci.rs` | module | `cargo xtask ci`: the step list, step 0 (`check_build_env`, `check_cargo_config`, `CANONICAL_CARGO_CONFIG`), and parking the running `xtask.exe` on Windows |
+| `ci.rs` | module | `cargo xtask ci`: the 9-step list (with the two `va --no-default-features` steps of m1 §12.7), step 0 (`check_build_env`, `check_cargo_config`, `CANONICAL_CARGO_CONFIG`), and parking the running `xtask.exe` on Windows |
 | `docs.rs` | module | `cargo xtask docs [--check]`: runs `scripts/gen_agencement.py` (skipped with `--check`) then `scripts/check_project_docs.py`; picks the Python interpreter |
 | `hooks.rs` | module | `cargo xtask hooks [--force]`: safe install of `scripts/git-hooks/commit-msg` |
 | `layering.rs` | module | `check_layering` (crate map, GUI-crate families) and `scan_sources` (rules S1, S3–S9), plus `UNSAFE_ALLOWLIST`, `NET_ALLOWLIST` and `INCLUDE_ALLOWLIST` |
