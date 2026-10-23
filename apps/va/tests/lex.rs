@@ -975,7 +975,7 @@ fn echoed_file_names_are_terminal_safe() {
     );
 }
 
-/// QA round 2 (m1 §7.3, Security M1-S3): a text-mode token line is
+/// QA rounds 2 and 3 (m1 §7.3, Security M1-S3, M1-S9 adds U+061C): a text-mode token line is
 /// `<line>:<column> <kind> <text as a JSON string>[ <code>]`, and M1-S3's acceptance says the
 /// escaping keeps "the output a JSON string". So the quoted part must decode, with a JSON
 /// reader, to the token's text, for DEL, C1, bidi and separator characters too (JSON writes them
@@ -984,7 +984,7 @@ fn echoed_file_names_are_terminal_safe() {
 fn qa_text_mode_token_texts_stay_json_strings() {
     let source = concat!(
         "\tdc.b 1\u{7f}\n",
-        "; c1 \u{85}\u{9b}2J bidi \u{202e}\u{2066}x\u{2069} \u{200e}\u{200f} sep \u{2028}\u{2029}\n",
+        "; c1 \u{85}\u{9b}2J alm \u{61c} bidi \u{202e}\u{2066}x\u{2069} \u{200e}\u{200f} sep \u{2028}\u{2029}\n",
         "\tdc.b '\u{202e}a', 1, \u{9b}31m\n",
         "\tdc.b '\u{1b}]0;x\u{7}\t'\n",
     );
@@ -994,6 +994,7 @@ fn qa_text_mode_token_texts_stay_json_strings() {
             '\u{0}'..='\u{9}'
                 | '\u{b}'..='\u{1f}'
                 | '\u{7f}'..='\u{9f}'
+                | '\u{61c}'
                 | '\u{200e}'
                 | '\u{200f}'
                 | '\u{2028}'
