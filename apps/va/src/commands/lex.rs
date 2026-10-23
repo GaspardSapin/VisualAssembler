@@ -4,10 +4,11 @@
 //! - **Text**: stdout gets one line per non-whitespace token, `<line>:<column> <kind> <text as a
 //!   JSON string>`, plus ` <code>` for `invalid` and `suspect-comment` tokens. stderr gets the
 //!   diagnostics, GNU style: `<file>:<line>:<column>: error[<code>]: <message>`, then
-//!   `  help: …`, `  note: …` and `  fix: <the line with the fix applied>` when present. Every
-//!   piece of outside text on these lines (token text after JSON quoting, file name, message,
-//!   help, note, fixed line) goes through `report::terminal_safe`, so control, C1 and bidi
-//!   characters of the source never reach the terminal raw (Security M1-S1, M1-S3).
+//!   `  help: …`, `  note: …` and `  fix: <the line with the fix applied>` when present. Control,
+//!   C1, bidi and separator characters of the source never reach the terminal raw (Security
+//!   M1-S1, M1-S3): the token text keeps a valid JSON string with `\uXXXX` escapes
+//!   (`report::terminal_safe_json`), and the file name, message, help, note and fixed line use
+//!   the `\u{…}` form of `report::terminal_safe`.
 //! - **JSON** ([`LEX_SCHEMA`]): one line, written incrementally and never held whole. The lines
 //!   and their tokens (whitespace included) are streamed in a first pass; the diagnostics come
 //!   from a second, identical lexing pass, so memory stays bounded by one line whatever the
@@ -28,7 +29,7 @@ use va_workspace::i18n::{Localizer, RenderedDiagnostic};
 
 use crate::commands::Session;
 use crate::input::{self, Input};
-use crate::report::{CommandError, Outcome, terminal_safe};
+use crate::report::{CommandError, Outcome, terminal_safe, terminal_safe_json};
 
 /// Schema identifier of the JSON document printed by `va lex --json`.
 pub const LEX_SCHEMA: &str = "va.lex/1";
@@ -173,9 +174,10 @@ fn write_text(session: &Session, input: &Input) -> Result<u64, CommandError> {
 
 /// Writes `<line>:<column> <kind> <text>[ <code>]` for every non-whitespace token of `line`.
 ///
-/// The text is quoted by serde_json, which escapes C0 controls but keeps DEL, C1 and bidi
-/// characters, then passed through `terminal_safe` (M1-S3). `quoted` is a buffer reused from
-/// token to token.
+/// The text is quoted by serde_json, which escapes C0 controls but keeps DEL, C1, bidi and
+/// separator characters raw, then passed through `terminal_safe_json`, which writes those as
+/// `\uXXXX` (M1-S3): the field stays a valid JSON string decoding to the `--json` token text
+/// (m1 §7.3). `quoted` is a buffer reused from token to token.
 fn write_token_lines(
     out: &mut impl Write,
     quoted: &mut Vec<u8>,
@@ -189,7 +191,7 @@ fn write_token_lines(
             quoted.clear();
             serde_json::to_writer(&mut *quoted, text)?;
             // serde_json writes valid UTF-8, so the lossy decoding always borrows.
-            out.write_all(terminal_safe(&String::from_utf8_lossy(quoted)).as_bytes())?;
+            out.write_all(terminal_safe_json(&String::from_utf8_lossy(quoted)).as_bytes())?;
             if let Some(code) = token_code(token.kind) {
                 write!(out, " {}", code.0)?;
             }

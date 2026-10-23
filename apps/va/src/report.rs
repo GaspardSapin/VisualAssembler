@@ -293,3 +293,26 @@ pub fn terminal_safe(text: &str) -> Cow<'_, str> {
     }
     Cow::Owned(safe)
 }
+
+/// Returns `quoted`, a JSON string literal (from serde_json), with every character of
+/// [`is_unsafe_for_terminal`] written as the JSON escape `\uXXXX` (4 lowercase hex digits, e.g.
+/// `\u009b`, `\u202e`, `\u007f`). Borrows `quoted` when nothing needs rewriting.
+///
+/// serde_json already escapes C0 controls but leaves DEL, C1, the bidi and separator characters
+/// raw; after this pass the literal is terminal-safe and still a valid JSON string that decodes
+/// to the same text (every character of the set is in the BMP and none is a surrogate). Used for
+/// the token lines of `va lex` (m1 §7.3 `<text as a JSON string>`, Security M1-S3).
+pub fn terminal_safe_json(quoted: &str) -> Cow<'_, str> {
+    if !quoted.chars().any(is_unsafe_for_terminal) {
+        return Cow::Borrowed(quoted);
+    }
+    let mut safe = String::with_capacity(quoted.len() + 16);
+    for c in quoted.chars() {
+        if is_unsafe_for_terminal(c) {
+            safe.push_str(&format!("\\u{:04x}", u32::from(c)));
+        } else {
+            safe.push(c);
+        }
+    }
+    Cow::Owned(safe)
+}

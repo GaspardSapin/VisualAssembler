@@ -900,10 +900,12 @@ fn text_mode_never_writes_terminal_controls_raw() {
     assert_terminal_safe(&output.stderr, "stderr");
     let stdout = text(&output.stdout);
     let stderr = text(&output.stderr);
-    // The characters are shown, in their escape_debug form, after JSON quoting on stdout.
-    assert!(stdout.contains(r#"string "'a\u{202e}b'""#), "{stdout}");
+    // On stdout the token text stays a JSON string (m1 §7.3): `\uXXXX` escapes, never the
+    // Rust-style `\u{…}` form, which is not valid JSON.
+    assert!(stdout.contains(r#"string "'a\u202eb'""#), "{stdout}");
     assert!(stdout.contains(r"\u001b]52;c;aGk=\u0007"), "{stdout}");
-    assert!(stdout.contains(r"\u{9b}"), "{stdout}");
+    assert!(stdout.contains(r"\u009b"), "{stdout}");
+    assert!(!stdout.contains(r"\u{"), "{stdout}");
     // On stderr, in messages and fixed lines; tabs of the fixed line are escaped too.
     assert!(stderr.contains(r"\u{1b}[2J"), "{stderr}");
     assert!(stderr.contains(r"\u{202e}"), "{stderr}");
@@ -968,4 +970,62 @@ fn echoed_file_names_are_terminal_safe() {
         document["message"].as_str().unwrap().contains(missing),
         "{document}"
     );
+}
+
+/// QA round 2 (m1 §7.3, Security M1-S3): a text-mode token line is
+/// `<line>:<column> <kind> <text as a JSON string>[ <code>]`, and M1-S3's acceptance says the
+/// escaping keeps "the output a JSON string". So the quoted part must decode, with a JSON
+/// reader, to the token's text, for DEL, C1, bidi and separator characters too (JSON writes them
+/// `\u007f`, `\u009b`, `\u202e`, ...), while none of them reaches the terminal raw.
+#[test]
+fn qa_text_mode_token_texts_stay_json_strings() {
+    let source = concat!(
+        "\tdc.b 1\u{7f}\n",
+        "; c1 \u{85}\u{9b}2J bidi \u{202e}\u{2066}x\u{2069} \u{200e}\u{200f} sep \u{2028}\u{2029}\n",
+        "\tdc.b '\u{202e}a', 1, \u{9b}31m\n",
+        "\tdc.b '\u{1b}]0;x\u{7}\t'\n",
+    );
+    let unsafe_char = |c: char| {
+        matches!(
+            c,
+            '\u{0}'..='\u{9}'
+                | '\u{b}'..='\u{1f}'
+                | '\u{7f}'..='\u{9f}'
+                | '\u{200e}'
+                | '\u{200f}'
+                | '\u{2028}'
+                | '\u{2029}'
+                | '\u{202a}'..='\u{202e}'
+                | '\u{2066}'..='\u{2069}'
+        )
+    };
+    let text_output = run_va_with_stdin(&["lex", "-"], source.as_bytes().to_vec());
+    assert_eq!(text_output.status.code(), Some(EXIT_PROBLEMS));
+    let stdout = text(&text_output.stdout);
+    assert!(!stdout.chars().any(unsafe_char), "raw control: {stdout:?}");
+
+    let json_output = run_va_with_stdin(&["--json", "lex", "-"], source.as_bytes().to_vec());
+    let (_, document) = json_line(&json_output.stdout);
+    let expected: Vec<&str> = document["lines"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|line| line["tokens"].as_array().unwrap())
+        .filter(|token| token["kind"] != "whitespace")
+        .map(|token| token["text"].as_str().unwrap())
+        .collect();
+
+    let mut decoded = Vec::new();
+    for line in stdout.lines() {
+        let mut fields = line.splitn(3, ' ');
+        let (_, _, rest) = (fields.next(), fields.next(), fields.next().unwrap());
+        let mut stream = serde_json::Deserializer::from_str(rest).into_iter::<String>();
+        match stream.next() {
+            Some(Ok(value)) => decoded.push(value),
+            other => panic!("token text is not a JSON string: {line:?} ({other:?})"),
+        }
+        let tail = &rest[stream.byte_offset()..];
+        assert!(tail.is_empty() || tail.starts_with(" lex-"), "{line:?}");
+    }
+    assert_eq!(decoded, expected);
 }
