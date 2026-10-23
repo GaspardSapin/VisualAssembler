@@ -322,6 +322,13 @@ fn flag_spot_checks() {
             assert_eq!(flag_string(form), "- - - - -", "{name}");
         }
     }
+    // ASL sets V when the top bit changes; ASR copies the top bit, so V is always 0 (§12.8 N-4).
+    for form in forms_of("ASL") {
+        assert_eq!(flag_string(form), "* * * * *");
+    }
+    for form in forms_of("ASR") {
+        assert_eq!(flag_string(form), "* * * 0 *");
+    }
     // ADDQ and SUBQ to an address register leave the flags alone.
     assert_eq!(
         flag_string(form_of("ADDQ", "#<1..8>,An", None)),

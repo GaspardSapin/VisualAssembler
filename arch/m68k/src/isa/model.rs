@@ -370,7 +370,7 @@ use FlagEffect::{Unaffected as UNA, Undefined as UND};
 
 /// `- - - - -`: no flag changes.
 pub(super) const UNAFFECTED: Flags = flags(UNA, UNA, UNA, UNA, UNA);
-/// `* * * * *`: arithmetic (ADD, SUB, NEG, arithmetic shifts).
+/// `* * * * *`: arithmetic (ADD, SUB, NEG, ASL).
 pub(super) const ARITH: Flags = flags(RES, RES, RES, RES, RES);
 /// `- * * * *`: comparisons.
 pub(super) const COMPARE: Flags = flags(UNA, RES, RES, RES, RES);
@@ -388,7 +388,7 @@ pub(super) const DIVIDE: Flags = flags(UNA, RES, RES, RES, CLR);
 pub(super) const BIT: Flags = flags(UNA, UNA, RES, UNA, UNA);
 /// `- ! U U U`: CHK.
 pub(super) const CHECK: Flags = flags(UNA, SPC, UND, UND, UND);
-/// `* * * 0 *`: logical shifts and rotations through X.
+/// `* * * 0 *`: ASR, logical shifts, and rotations through X.
 pub(super) const SHIFT: Flags = flags(RES, RES, RES, CLR, RES);
 /// `- * * 0 *`: rotations without X.
 pub(super) const ROTATE: Flags = flags(UNA, RES, RES, CLR, RES);

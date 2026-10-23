@@ -234,8 +234,9 @@ pub(super) const AND: &[Form] = &and_or(0xC000);
 pub(super) const ANDI: &[Form] = &immediate_logic(0x0200, ANDI_ROWS);
 /// ASL: arithmetic shift left (V reports a sign change).
 pub(super) const ASL: &[Form] = &shift(0b00, true, ARITH);
-/// ASR: arithmetic shift right.
-pub(super) const ASR: &[Form] = &shift(0b00, false, ARITH);
+/// ASR: arithmetic shift right. The top bit is copied into itself, so it never changes and V
+/// is always cleared (m1 §12.8 N-4).
+pub(super) const ASR: &[Form] = &shift(0b00, false, SHIFT);
 
 /// BCHG: test a bit and invert it (register times depend on the bit number: worst case).
 pub(super) const BCHG: &[Form] = &bit_op(
