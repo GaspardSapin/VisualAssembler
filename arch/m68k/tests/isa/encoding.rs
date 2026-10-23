@@ -259,3 +259,137 @@ fn mode_fields_round_trip() {
         assert_eq!(Mode::from_fields(7, register), None);
     }
 }
+
+// QA (m1 §12.5 item 2): plausibility of `VALID_OPWORDS`, broken down per opword line and per
+// table entry. The expected numbers are derived independently of the tables, from the 68000
+// encoding rules and the `<ea>` category sizes (all 61, data 53, memory 45, control 28,
+// alterable 58, data alterable 50, memory alterable 42, control alterable 26). Examples: ORI is
+// 3 sizes x 50 + to CCR + to SR = 152; BTST is #,<ea> (data except #imm, 52) + 8 x Dn,<ea>
+// (data, 53; a68k 2.71.F3w assembles `btst d0,#5` to 013C 0005) = 476; MOVE is .B 53 x 50,
+// .W and .L 61 x 50 each, to CCR 53, to SR 53, from SR 50, USP 16 = 8,922; each shift or rotate
+// is 3 sizes x 2 count kinds x 8 x 8 + memory 42 = 426. The binding check is M3's (m1 §12.3).
+
+/// Valid opwords per top nibble (line 0 to line F).
+const VALID_PER_LINE: [usize; 16] = [
+    2_988, 2_650, 3_538, 3_538, 1_958, 3_584, 4_096, 2_048, 3_256, 3_768, 0, 3_768, 3_448, 3_768,
+    3_408, 0,
+];
+
+/// Valid opwords per table entry, keyed by doc id (families count every condition code).
+const VALID_PER_ENTRY: [(&str, usize); 74] = [
+    ("isa-m68k-abcd", 128),
+    ("isa-m68k-add", 2_408),
+    ("isa-m68k-adda", 976),
+    ("isa-m68k-addi", 150),
+    ("isa-m68k-addq", 1_328),
+    ("isa-m68k-addx", 384),
+    ("isa-m68k-and", 2_280),
+    ("isa-m68k-andi", 152),
+    ("isa-m68k-asl", 426),
+    ("isa-m68k-asr", 426),
+    ("isa-m68k-bcc", 3_584),
+    ("isa-m68k-bchg", 450),
+    ("isa-m68k-bclr", 450),
+    ("isa-m68k-bra", 256),
+    ("isa-m68k-bset", 450),
+    ("isa-m68k-bsr", 256),
+    ("isa-m68k-btst", 476),
+    ("isa-m68k-chk", 424),
+    ("isa-m68k-clr", 150),
+    ("isa-m68k-cmp", 1_400),
+    ("isa-m68k-cmpa", 976),
+    ("isa-m68k-cmpi", 150),
+    ("isa-m68k-cmpm", 192),
+    ("isa-m68k-dbcc", 128),
+    ("isa-m68k-divs", 424),
+    ("isa-m68k-divu", 424),
+    ("isa-m68k-eor", 1_200),
+    ("isa-m68k-eori", 152),
+    ("isa-m68k-exg", 192),
+    ("isa-m68k-ext", 16),
+    ("isa-m68k-illegal", 1),
+    ("isa-m68k-jmp", 28),
+    ("isa-m68k-jsr", 28),
+    ("isa-m68k-lea", 224),
+    ("isa-m68k-link", 8),
+    ("isa-m68k-lsl", 426),
+    ("isa-m68k-lsr", 426),
+    ("isa-m68k-move", 8_922),
+    ("isa-m68k-movea", 976),
+    ("isa-m68k-movem", 140),
+    ("isa-m68k-movep", 256),
+    ("isa-m68k-moveq", 2_048),
+    ("isa-m68k-muls", 424),
+    ("isa-m68k-mulu", 424),
+    ("isa-m68k-nbcd", 50),
+    ("isa-m68k-neg", 150),
+    ("isa-m68k-negx", 150),
+    ("isa-m68k-nop", 1),
+    ("isa-m68k-not", 150),
+    ("isa-m68k-or", 2_280),
+    ("isa-m68k-ori", 152),
+    ("isa-m68k-pea", 28),
+    ("isa-m68k-reset", 1),
+    ("isa-m68k-rol", 426),
+    ("isa-m68k-ror", 426),
+    ("isa-m68k-roxl", 426),
+    ("isa-m68k-roxr", 426),
+    ("isa-m68k-rte", 1),
+    ("isa-m68k-rtr", 1),
+    ("isa-m68k-rts", 1),
+    ("isa-m68k-sbcd", 128),
+    ("isa-m68k-scc", 800),
+    ("isa-m68k-stop", 1),
+    ("isa-m68k-sub", 2_408),
+    ("isa-m68k-suba", 976),
+    ("isa-m68k-subi", 150),
+    ("isa-m68k-subq", 1_328),
+    ("isa-m68k-subx", 384),
+    ("isa-m68k-swap", 8),
+    ("isa-m68k-tas", 50),
+    ("isa-m68k-trap", 16),
+    ("isa-m68k-trapv", 1),
+    ("isa-m68k-tst", 150),
+    ("isa-m68k-unlk", 8),
+];
+
+#[test]
+fn valid_opwords_per_line_and_per_entry_match_an_independent_count() {
+    assert_eq!(VALID_PER_LINE.iter().sum::<usize>(), VALID_OPWORDS);
+    assert_eq!(
+        VALID_PER_ENTRY
+            .iter()
+            .map(|&(_, count)| count)
+            .sum::<usize>(),
+        VALID_OPWORDS
+    );
+    let candidates = candidates();
+    let mut per_line = [0_usize; 16];
+    let mut per_entry: std::collections::BTreeMap<&str, usize> = std::collections::BTreeMap::new();
+    for opword in 0..=u16::MAX {
+        let found = matching(&candidates, opword);
+        if let Some((entry, _, _, _)) = found.first() {
+            per_line[usize::from(opword >> 12)] += 1;
+            *per_entry.entry(entry.doc_id).or_default() += 1;
+        }
+    }
+    for (line, (&actual, &expected)) in per_line.iter().zip(&VALID_PER_LINE).enumerate() {
+        assert_eq!(actual, expected, "line {line:X}");
+    }
+    let expected: std::collections::BTreeMap<&str, usize> = VALID_PER_ENTRY.into_iter().collect();
+    assert_eq!(
+        expected.len(),
+        INSTRUCTIONS.len(),
+        "one row per table entry"
+    );
+    let mismatches: Vec<String> = INSTRUCTIONS
+        .iter()
+        .filter_map(|entry| {
+            let actual = per_entry.get(entry.doc_id).copied().unwrap_or(0);
+            let wanted = expected.get(entry.doc_id).copied();
+            (wanted != Some(actual))
+                .then(|| format!("{}: table {actual}, expected {wanted:?}", entry.doc_id))
+        })
+        .collect();
+    assert!(mismatches.is_empty(), "{mismatches:#?}");
+}
