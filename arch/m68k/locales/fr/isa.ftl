@@ -504,9 +504,9 @@ isa-m68k-stop = Charge le registre d’état et attend une interruption (privil�
         valeur dans le registre d’état, puis n’exécute plus rien jusqu’à l’un de ces quatre
         événements : une réinitialisation, une interruption de niveau supérieur au nouveau masque,
         une interruption de niveau 7 même si le masque vaut 7 (le niveau 7 n’est jamais masqué), ou
-        une exception de trace si la nouvelle valeur met T à 1. Elle permet d’attendre un événement
-        sans boucle d’attente active. Elle est privilégiée : en mode utilisateur, elle déclenche une
-        exception de violation de privilège.
+        une exception de trace si le mode trace était déjà actif (T à 1) au début de STOP. Elle
+        permet d’attendre un événement sans boucle d’attente active. Elle est privilégiée : en mode
+        utilisateur, elle déclenche une exception de violation de privilège.
 
 isa-m68k-sub = Soustrait la source de la destination.
     .details = Syntaxe : SUB.B/W/L <ea>,Dn ou SUB.B/W/L Dn,<ea> ; la destination devient

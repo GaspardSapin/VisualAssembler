@@ -473,9 +473,9 @@ isa-m68k-stop = Loads the status register and waits for an interrupt (privileged
     .details = Syntax: STOP #<data>, with a 16-bit immediate value. The CPU copies the value into
         the status register, then executes nothing more until one of four events: a reset, an
         interrupt whose level is above the new mask, a level-7 interrupt even when the mask is 7
-        (level 7 can never be masked), or a trace exception when the new value sets T. It lets a
-        system wait for an event without a busy loop. It is privileged: in user mode it raises a
-        privilege violation exception.
+        (level 7 can never be masked), or a trace exception if tracing was already on (T set) when
+        STOP began. It lets a system wait for an event without a busy loop. It is privileged: in
+        user mode it raises a privilege violation exception.
 
 isa-m68k-sub = Subtracts the source from the destination.
     .details = Syntax: SUB.B/W/L <ea>,Dn or SUB.B/W/L Dn,<ea>; the destination becomes
