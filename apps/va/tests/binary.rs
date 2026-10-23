@@ -500,3 +500,52 @@ fn commands_without_architecture_exit_3() {
         assert_eq!(document["code"], "no-architecture", "args: {json_args:?}");
     }
 }
+
+/// Security M1-S8: clap's usage errors quote the offending argument; they are written through
+/// `terminal_safe`, without colour, so no ESC, BEL, CR, C1 CSI or bidi override reaches the
+/// terminal, even with colour forced. clap's plain rendering already drops a whole ESC-introduced
+/// sequence (`a<ESC>[2Jb` is quoted as `'ab'`); CR, U+202E and U+009B are kept by clap and shown
+/// in their escape_debug form.
+#[test]
+fn usage_errors_never_write_terminal_controls_raw() {
+    const UNSAFE: [&[u8]; 5] = [b"\x1b", b"\x07", b"\r", b"\xc2\x9b", b"\xe2\x80\xae"];
+    for (argument, shown) in [
+        ("a\u{1b}[2Jb", "'ab'"),
+        ("a\rb", r"'a\rb'"),
+        ("a\u{202e}b", r"'a\u{202e}b'"),
+        ("a\u{9b}b", r"'a\u{9b}b'"),
+    ] {
+        for force_colour in [true, false] {
+            let mut command = Command::new(env!("CARGO_BIN_EXE_va"));
+            command.arg(argument).stdin(Stdio::null());
+            if force_colour {
+                command.env_remove("NO_COLOR").env("CLICOLOR_FORCE", "1");
+            } else {
+                command.env("NO_COLOR", "1").env_remove("CLICOLOR_FORCE");
+            }
+            let output = command.output().unwrap();
+            let what = format!("{argument:?}, colour forced: {force_colour}");
+            assert_eq!(output.status.code(), Some(EXIT_USAGE), "{what}");
+            assert_eq!(text(&output.stdout), "", "{what}");
+            for unsafe_bytes in UNSAFE {
+                assert!(
+                    !output
+                        .stderr
+                        .windows(unsafe_bytes.len())
+                        .any(|window| window == unsafe_bytes),
+                    "{what}: stderr holds {unsafe_bytes:02x?}: {:?}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
+            }
+            let stderr = text(&output.stderr);
+            assert!(
+                stderr.starts_with(&format!("error: unrecognized subcommand {shown}\n")),
+                "{what}: {stderr:?}"
+            );
+            assert!(
+                stderr.contains("Usage: va [OPTIONS] <COMMAND>"),
+                "{what}: {stderr:?}"
+            );
+        }
+    }
+}

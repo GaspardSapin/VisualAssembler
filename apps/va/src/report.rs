@@ -248,14 +248,15 @@ pub fn english_io(error: &io::Error) -> String {
 }
 
 /// Tells whether [`terminal_safe`] rewrites `c`: the C0 controls U+0000–U+001F (tab included),
-/// DEL U+007F, the C1 controls U+0080–U+009F, the marks U+200E/U+200F, the separators
-/// U+2028/U+2029, and the bidirectional embeddings, overrides and isolates U+202A–U+202E and
-/// U+2066–U+2069 (Security M1-S1).
+/// DEL U+007F, the C1 controls U+0080–U+009F, the bidirectional marks U+061C (Arabic letter
+/// mark) and U+200E/U+200F, the separators U+2028/U+2029, and the bidirectional embeddings,
+/// overrides and isolates U+202A–U+202E and U+2066–U+2069 (Security M1-S1, M1-S9).
 fn is_unsafe_for_terminal(c: char) -> bool {
     matches!(
         c,
         '\u{0}'..='\u{1F}'
             | '\u{7F}'..='\u{9F}'
+            | '\u{61C}'
             | '\u{200E}'
             | '\u{200F}'
             | '\u{2028}'

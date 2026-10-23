@@ -38,10 +38,16 @@ fn main() -> ExitCode {
 /// code to use.
 ///
 /// `--help` and `--version` are printed on stdout with exit code 0; every other outcome is a usage
-/// error printed on stderr with exit code [`EXIT_USAGE`] (clap's `Error::exit_code`). If the
-/// message cannot be written, that failure is reported on stderr and the exit code is [`EXIT_IO`].
+/// error printed on stderr with exit code [`EXIT_USAGE`] (clap's `Error::exit_code`), through
+/// [`print_usage_error`]. If the message cannot be written, that failure is reported on stderr and
+/// the exit code is [`EXIT_IO`].
 fn print_parse_outcome(error: &clap::Error) -> ExitCode {
-    match error.print().and_then(|()| io::stdout().flush()) {
+    let printed = if error.use_stderr() {
+        print_usage_error(error)
+    } else {
+        error.print().and_then(|()| io::stdout().flush())
+    };
+    match printed {
         // clap only produces 0 or 2; a value outside u8 would be a clap bug and is treated as a
         // usage error rather than a success.
         Ok(()) => ExitCode::from(u8::try_from(error.exit_code()).unwrap_or(EXIT_USAGE)),
@@ -53,4 +59,20 @@ fn print_parse_outcome(error: &clap::Error) -> ExitCode {
             ExitCode::from(EXIT_IO)
         }
     }
+}
+
+/// Writes clap's usage error on stderr, each line passed through [`report::terminal_safe`]
+/// (Security M1-S8): the message quotes the offending arguments, which may hold ESC, CR, C1 or
+/// bidi characters. The text is rendered without colour. A line feed inside an argument still
+/// starts a new line (accepted limitation).
+fn print_usage_error(error: &clap::Error) -> io::Result<()> {
+    let text = error.render().to_string();
+    let safe = text
+        .split('\n')
+        .map(report::terminal_safe)
+        .collect::<Vec<_>>()
+        .join("\n");
+    let mut stderr = io::stderr().lock();
+    stderr.write_all(safe.as_bytes())?;
+    stderr.flush()
 }

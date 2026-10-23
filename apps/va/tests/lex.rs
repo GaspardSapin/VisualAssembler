@@ -34,9 +34,9 @@ const BROKEN_PIPE: &str = if cfg!(windows) {
     "broken pipe (os error 32)"
 };
 
-/// Byte sequences that must never reach a terminal raw (Security M1-S1): ESC, BEL, the C1 CSI
-/// U+009B and the right-to-left override U+202E, in UTF-8.
-const TERMINAL_UNSAFE: [&[u8]; 4] = [b"\x1b", b"\x07", b"\xc2\x9b", b"\xe2\x80\xae"];
+/// Byte sequences that must never reach a terminal raw (Security M1-S1, M1-S9): ESC, BEL, the C1
+/// CSI U+009B, the Arabic letter mark U+061C and the right-to-left override U+202E, in UTF-8.
+const TERMINAL_UNSAFE: [&[u8]; 5] = [b"\x1b", b"\x07", b"\xc2\x9b", b"\xd8\x9c", b"\xe2\x80\xae"];
 
 /// Asserts that `bytes` holds none of [`TERMINAL_UNSAFE`].
 fn assert_terminal_safe(bytes: &[u8], what: &str) {
@@ -890,6 +890,7 @@ const HOSTILE_SOURCE: &str = concat!(
     "\tdc.b \u{202e}x, \u{9b}2J\n",
     "\tdc.b 'a\u{202e}b', 1, \u{9b}31m\n",
     "\tdc.b \u{1b}[31m\n",
+    "\tdc.b \u{61c}y ; mark \u{61c}\n",
 );
 
 #[test]
@@ -905,11 +906,13 @@ fn text_mode_never_writes_terminal_controls_raw() {
     assert!(stdout.contains(r#"string "'a\u202eb'""#), "{stdout}");
     assert!(stdout.contains(r"\u001b]52;c;aGk=\u0007"), "{stdout}");
     assert!(stdout.contains(r"\u009b"), "{stdout}");
+    assert!(stdout.contains(r#"comment "; mark \u061c""#), "{stdout}");
     assert!(!stdout.contains(r"\u{"), "{stdout}");
     // On stderr, in messages and fixed lines; tabs of the fixed line are escaped too.
     assert!(stderr.contains(r"\u{1b}[2J"), "{stderr}");
     assert!(stderr.contains(r"\u{202e}"), "{stderr}");
     assert!(stderr.contains(r"\u{9b}"), "{stderr}");
+    assert!(stderr.contains(r"\u{61c}"), "{stderr}");
     assert!(stderr.contains(r"  fix: \tdc.b 1,2\u{1b}[2J"), "{stderr}");
     for line in stderr.lines() {
         assert!(!line.contains('\t') && !line.contains('\r'), "{line:?}");
