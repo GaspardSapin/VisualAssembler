@@ -14,8 +14,9 @@
 //!   `LocalLabel`, `String`, `#`, `(` or `-(`).
 //!
 //! It also builds the data of the non-blocking diagnostic: the `cause` argument and, for R1 and
-//! R2, the quick-fix [`Suggestion`] that removes the spaces touching `,`, `(`, `)` or an
-//! operator.
+//! R2, the quick-fix [`Suggestion`] that removes the spaces touching `,`, `#`, `(`, `)` or an
+//! operator, offered only when it changes the text. In the trailing text, a quote opens a
+//! string only when the line closes it, both for the `;` search and for the fix.
 
 use va_core::diag::{DiagArg, Diagnostic, Suggestion};
 use va_core::source::{FileId, SourceSpan, TextRange};
@@ -125,23 +126,40 @@ pub(crate) fn is_operand_list(bytes: &[u8], word: &[Token]) -> bool {
     false
 }
 
-/// Returns the offset of the first `;` outside quotes in `from..end`, or `end`. A doubled
-/// delimiter inside a literal closes and reopens it, which keeps the state right.
+/// Returns the offset of the delimiter that closes the quote at `at` (the next byte equal to
+/// `bytes[at]` before `end`), or `None` when the line never closes it.
+///
+/// In the trailing text, a quote opens a string only when it is closed later on the line
+/// (m1 §12.8 N-7), so the apostrophe of free text (`don't`) does not hide a later `;` comment.
+/// Scans stay linear: a failed search for a delimiter proves that no later byte is that
+/// delimiter, so it is never repeated for the same text.
+fn closing_quote(bytes: &[u8], at: usize, end: usize) -> Option<usize> {
+    let quote = *bytes.get(at)?;
+    let after = at + 1;
+    bytes
+        .get(after..end)?
+        .iter()
+        .position(|&byte| byte == quote)
+        .map(|offset| after + offset)
+}
+
+/// Returns the offset of the first `;` outside quotes in `from..end`, or `end`. Only a closed
+/// quote counts (see [`closing_quote`]); a doubled delimiter closes a literal and reopens it,
+/// which keeps the state right.
 pub(crate) fn unquoted_semicolon(bytes: &[u8], from: usize, end: usize) -> usize {
-    let mut quote: Option<u8> = None;
-    for (at, &byte) in bytes.iter().enumerate().take(end).skip(from) {
-        match quote {
-            Some(delimiter) => {
-                if byte == delimiter {
-                    quote = None;
+    let end = end.min(bytes.len());
+    let mut at = from;
+    while at < end {
+        match bytes[at] {
+            b';' => return at,
+            b'\'' | b'"' => {
+                if let Some(closing) = closing_quote(bytes, at, end) {
+                    at = closing;
                 }
             }
-            None => match byte {
-                b';' => return at,
-                b'\'' | b'"' => quote = Some(byte),
-                _ => {}
-            },
+            _ => {}
         }
+        at += 1;
     }
     end
 }
@@ -173,24 +191,18 @@ fn joins(byte: Option<u8>) -> bool {
 /// Returns the quick-fix replacement of `line[from..to]` (from the whitespace that separates the
 /// operands from the text to the end of the suspect token): the same text with every unquoted
 /// whitespace run removed when the char just before or after it joins (see [`joins`]). The
-/// char before `from` (the last operand char) counts for the first run.
+/// char before `from` (the last operand char) counts for the first run. Quotes follow the same
+/// rule as [`unquoted_semicolon`]: only a quote closed before `to` protects its whitespace.
 pub(crate) fn fix_replacement(line: &str, from: usize, to: usize) -> String {
     let bytes = line.as_bytes();
     let to = to.min(bytes.len());
     let mut replacement = String::with_capacity(to.saturating_sub(from));
     let mut copied = from;
-    let mut quote: Option<u8> = None;
     let mut at = from;
     while at < to {
         let byte = bytes[at];
-        if let Some(delimiter) = quote {
-            if byte == delimiter {
-                quote = None;
-            }
-            at += 1;
-        } else if byte == b'\'' || byte == b'"' {
-            quote = Some(byte);
-            at += 1;
+        if byte == b'\'' || byte == b'"' {
+            at = closing_quote(bytes, at, to).unwrap_or(at) + 1;
         } else if is_ws(byte) {
             let run_end = skip_ws(bytes, at, to);
             let before = at
@@ -217,9 +229,10 @@ pub(crate) fn fix_replacement(line: &str, from: usize, to: usize) -> String {
 
 /// Completes the diagnostic of the `SuspectComment` token `tokens[index]` of `line` (whose file
 /// offset is `line_start`): appends the `cause` argument and, for R1 and R2, the quick-fix
-/// suggestion. The operands are the tokens between the previous whitespace and the whitespace
-/// just before the suspect token, as the lexer produces them; when the tokens do not have that
-/// shape, the cause is `operand-list` and there is no fix.
+/// suggestion when its replacement differs from the text it replaces (m1 §12.8 N-1). The
+/// operands are the tokens between the previous whitespace and the whitespace just before the
+/// suspect token, as the lexer produces them; when the tokens do not have that shape, the cause
+/// is `operand-list` and there is no fix.
 pub(crate) fn complete_diagnostic(
     diagnostic: &mut Diagnostic,
     file: FileId,
@@ -252,12 +265,16 @@ pub(crate) fn complete_diagnostic(
         .push(("cause", DiagArg::Str(cause.id().to_owned())));
     if let Some((_, separator_start)) = fixable {
         let range = TextRange::new(separator_start, token.range.end);
-        diagnostic.suggestion = Some(Suggestion {
-            span: SourceSpan {
-                file,
-                range: range.shifted(line_start),
-            },
-            replacement: fix_replacement(line, range.start as usize, range.end as usize),
-        });
+        let replacement = fix_replacement(line, range.start as usize, range.end as usize);
+        // A fix that would change nothing is not offered; the diagnostic stays (m1 §12.8 N-1).
+        if range.slice(line) != Some(replacement.as_str()) {
+            diagnostic.suggestion = Some(Suggestion {
+                span: SourceSpan {
+                    file,
+                    range: range.shifted(line_start),
+                },
+                replacement,
+            });
+        }
     }
 }

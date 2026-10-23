@@ -52,8 +52,142 @@ fn check_line(line: &str) {
                 line_start <= range.start && range.start <= range.end && range.end <= line_end,
                 "{line:?}: {suggestion:?}"
             );
+            let start = (range.start - line_start) as usize;
+            let end = (range.end - line_start) as usize;
+            check_fix_only_removes_whitespace(line, &line[start..end], &suggestion.replacement);
         }
     }
+}
+
+/// Asserts that a quick fix is not a no-op (m1 §12.8 N-1) and only removes whitespace from the
+/// text it replaces.
+fn check_fix_only_removes_whitespace(line: &str, original: &str, replacement: &str) {
+    assert_ne!(original, replacement, "{line:?}: no-op fix");
+    assert!(
+        replacement.len() < original.len(),
+        "{line:?}: {replacement:?}"
+    );
+    let kept =
+        |text: &str| -> String { text.chars().filter(|c| !matches!(c, ' ' | '\t')).collect() };
+    assert_eq!(
+        kept(original),
+        kept(replacement),
+        "{line:?}: {replacement:?}"
+    );
+}
+
+/// Statements whose operands hold no unquoted whitespace, into which the property tests insert
+/// whitespace (m1 §12.8 N-1).
+const SPACELESS: [&str; 13] = [
+    " dc.b 1,2,3",
+    " move.l 8(a0,d0.w),d1",
+    " lea 4(a0),a1",
+    " movem.l d0-d7/a0-a6,-(sp)",
+    " dc.l 1+2*3-4/5",
+    " move.l #1,d0",
+    " dc.b 'a b',2",
+    " dc.l (1<<2)>>1",
+    " dc.b (1+2)",
+    " move.l (a0)+,-(a1)",
+    " dc.w ~1&2!3|4",
+    " mymac \\1,lbl\\@",
+    "lab: dc.b 'it''s',\"x\",$1F",
+];
+
+/// Returns the offset where the operand field of the [`SPACELESS`] statement `line` starts: the
+/// end of the whitespace after its operation token.
+fn operand_start(line: &str) -> usize {
+    let tokens = lex(line);
+    let operation = tokens
+        .iter()
+        .position(|token| {
+            matches!(
+                token.kind,
+                TokenKind::Mnemonic | TokenKind::Directive | TokenKind::MacroName
+            )
+        })
+        .unwrap();
+    let separator = tokens[operation..]
+        .iter()
+        .find(|token| token.kind == TokenKind::Whitespace)
+        .unwrap();
+    separator.range.end as usize
+}
+
+/// Returns the quick fixes of `line`, each as (replaced text, replacement, line once applied).
+fn fixes(line: &str) -> Vec<(String, String, String)> {
+    diagnostics(line, 0)
+        .into_iter()
+        .filter_map(|diagnostic| diagnostic.suggestion)
+        .map(|suggestion| {
+            let start = suggestion.span.range.start as usize;
+            let end = suggestion.span.range.end as usize;
+            let applied = format!(
+                "{}{}{}",
+                &line[..start],
+                suggestion.replacement,
+                &line[end..]
+            );
+            (line[start..end].to_owned(), suggestion.replacement, applied)
+        })
+        .collect()
+}
+
+#[test]
+fn one_inserted_space_is_fixed_back_or_not_fixed_at_all() {
+    let mut fixed = 0;
+    let mut unfixed = 0;
+    for base in SPACELESS {
+        assert!(diagnostics(base, 0).is_empty(), "{base:?} must be clean");
+        let first = operand_start(base);
+        for at in first + 1..base.len() {
+            for space in [" ", "\t", "  "] {
+                let line = format!("{}{space}{}", &base[..at], &base[at..]);
+                check_line(&line);
+                let found = fixes(&line);
+                for (original, replacement, applied) in &found {
+                    check_fix_only_removes_whitespace(&line, original, replacement);
+                    assert_eq!(applied, base, "{line:?}");
+                }
+                if found.is_empty() {
+                    unfixed += 1;
+                } else {
+                    fixed += 1;
+                }
+            }
+        }
+    }
+    // Both outcomes occur, so the test exercises the fix and its suppression.
+    assert!(
+        fixed > 100 && unfixed > 100,
+        "fixed {fixed}, unfixed {unfixed}"
+    );
+}
+
+#[test]
+fn random_space_insertions_never_get_a_no_op_fix() {
+    let mut random = XorShift(0x5EED_5EED_0F0F);
+    let mut fixes_seen = 0;
+    for round in 0..5_000 {
+        let base = SPACELESS[round % SPACELESS.len()];
+        let first = operand_start(base);
+        let mut line = base.to_owned();
+        for _ in 0..=random.below(3) {
+            let span = u64::try_from(line.len() - first).unwrap();
+            let at = first + 1 + usize::try_from(random.below(span)).unwrap();
+            let at = (first + 1..=at.min(line.len()))
+                .rev()
+                .find(|&index| line.is_char_boundary(index))
+                .unwrap();
+            line.insert_str(at, if random.below(2) == 0 { " " } else { "\t" });
+        }
+        check_line(&line);
+        for (original, replacement, _) in fixes(&line) {
+            check_fix_only_removes_whitespace(&line, &original, &replacement);
+            fixes_seen += 1;
+        }
+    }
+    assert!(fixes_seen > 1_000, "only {fixes_seen} fixes");
 }
 
 /// Calls `visit` with every string of length `length` over [`INTERESTING`].
