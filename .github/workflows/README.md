@@ -50,11 +50,17 @@ The check list itself lives in `cargo xtask ci`, so the workflow never duplicate
   `Swatinem/rust-cache` v2.9.2, each pinned by SHA in `ci.yml`.
 
 ## Tests / usage
-Recorded runs (read with `gh run view` on 2026-10-16; `SECURITY.md`, `docs/perf/M0-backend.md`):
-run 38635672228 (2026-10-14, `c326afd`, before the §19 renderer work) passed all 7 jobs; run
-38968085878 (`646b6f7`) failed only `check (windows-11-arm)` on a dead-code warning; run 38969165969
-(2026-10-16, `6ed43c8`) passed all 7 jobs, the §19 smoke steps included. The last pushed commit is
-`cc827b0` (`origin/main`); the M1 commits after it have not run in CI yet (pending push).
+Recorded runs (read with `gh run view` on 2026-10-16 and 2026-10-23; `SECURITY.md`,
+`docs/perf/M0-backend.md`): run 38635672228 (2026-10-14, `c326afd`, before the §19 renderer work)
+passed all 7 jobs; run 38968085878 (`646b6f7`) failed only `check (windows-11-arm)` on a dead-code
+warning; run 38969165969 (2026-10-16, `6ed43c8`) passed all 7 jobs, the §19 smoke steps included.
+The M1 commits (`cc827b0..8994d44`) were pushed to `main`. Run 40023018227 on `8994d44` failed only
+`deny`, with `error[yanked]` on `clipboard-win` 5.4.1 (Windows only, through arboard 3.6.1,
+egui-winit and eframe 0.36.2), yanked upstream on 2026-10-23 for an out-of-bounds read in
+`raw::get_html`. Commit `5f45f9b` bumps it to 5.4.3 (`SECURITY.md`, M1-S10), and run 40027188396
+(2026-10-23, `5f45f9b`) passed all 7 jobs. Its `check (windows-11-arm)` job still shows the
+annotation "Process completed with exit code 3" from the informational GUI smoke steps, as the M0
+run 38970636341 on `cc827b0` did; `continue-on-error` keeps the job green.
 Branch protection on `main` requires `fmt`, `docs`, `deny` and the four `check (…)` jobs. It does not
 include administrators (`enforce_admins` is off), so the owner's direct pushes are not gated.
 

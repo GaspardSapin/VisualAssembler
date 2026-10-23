@@ -5,8 +5,8 @@ VisualAssembler is a native, offline Rust IDE for students learning assembly; V1
 end to end (edit, assemble, run, debug). GUI `visual-assembler` (egui/eframe), headless CLI `va`,
 task runner `cargo xtask`. CPU-agnostic crates in `crates/`, one crate per CPU in `arch/`.
 Current milestone: **M1 core contracts, 68000 ISA tables, lexer, `va lex`/`va isa`**: done (audited,
-QA green, measured), pending push and CI. M0 (workspace, tooling, CI, measured window) is done. Still
-skeletons: `va-editor`, `va-lang`, `va-debug`, `va-ui`; the GUI is the M0 window.
+QA green, measured, pushed, CI green in run 40027188396). M0 (workspace, tooling, CI, measured window)
+is done. Still skeletons: `va-editor`, `va-lang`, `va-debug`, `va-ui`; the GUI is the M0 window.
 Specs: `docs/specs/architecture.md`, then the milestone specs.
 - `docs/specs/m1-core-isa-lexer.md`: **§12 (ratified implementation, fix-now rows R12-1…R12-4, QA
   round 1 in §12.8) wins over the body**.

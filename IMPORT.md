@@ -26,8 +26,13 @@ What "yes" rests on (2026-10-16; details in `docs/perf/M0-backend.md`, §11 for 
 - **M1** (2026-10-17 to 2026-10-23; `va lex`, `va isa`, the Fluent localizer): the M1 test targets
   pass on Windows 11 x64 (re-run on 2026-10-23 for this file); Security built a release `va` on
   Windows 11 x64 and in WSL Ubuntu 26.04 x64 and ran crafted inputs through it (`SECURITY.md`);
-  Performance ran the lexer bench on both (`docs/perf/2026-10-23-m1-lexer.md`). **The M1 commits have not run in CI yet**, so
-  no M1 cell says "yes (CI)" and ARM64 is `unverified` for M1 code.
+  Performance ran the lexer bench on both (`docs/perf/2026-10-23-m1-lexer.md`).
+- **CI on M1**: run 40027188396 (2026-10-23, commit `5f45f9b`) passed all 7 jobs with the M1 tree:
+  `cargo xtask ci --no-fmt` (clippy, layering, every headless test) and the release build on the four
+  runners. The M1 cells marked "yes (CI)" rest on that run. The run before it, 40023018227 on
+  `8994d44`, failed only `deny`: `clipboard-win` 5.4.1 (Windows only, through arboard 3.6.1,
+  egui-winit and eframe 0.36.2) was yanked upstream on 2026-10-23 for an out-of-bounds read in
+  `raw::get_html`, and `5f45f9b` locks 5.4.3 (`SECURITY.md`, M1-S10).
 - **ARM64**: `visual-assembler` and `va` cross-built for `aarch64-unknown-linux-gnu` from WSL, again
   on 2026-10-16 with the §19 tree (compiled only). No cross-build of the M1 tree is recorded.
 - macOS and Apple Silicon are a non-goal: never built, never claimed. No NVIDIA or Intel GPU was
@@ -150,8 +155,8 @@ What "yes" rests on (2026-10-16; details in `docs/perf/M0-backend.md`, §11 for 
   `crates/va-workspace/src/i18n/mod.rs` and used by `apps/va/src/commands/`); dev-dependency of
   `va-arch-m68k`: `arch/m68k/tests/locales.rs` (`FluentResource::try_new` parse and formatting
   checks of every resource)
-- **Hardware**: x86-64 yes (Windows 11 x64; Ubuntu 26.04 x64 under WSL) · ARM64 unverified (CI has
-  not run the M1 tree) · Apple Silicon unverified · Intel Mac unverified · GPU n/a
+- **Hardware**: x86-64 yes (Windows 11 x64; Ubuntu 26.04 x64 under WSL) · ARM64 yes (CI, run
+  40027188396) · Apple Silicon unverified · Intel Mac unverified · GPU n/a
 - **OS**: Windows yes · Linux yes (WSL Ubuntu 26.04 only; native desktops unverified) · macOS
   unverified
 - **Notes**: pure Rust, no I/O: resources are `&'static str` compiled in with `include_str!`. Pulls
@@ -163,8 +168,8 @@ What "yes" rests on (2026-10-16; details in `docs/perf/M0-backend.md`, §11 for 
 - **License**: MIT OR Apache-2.0
 - **Used for**: the `LanguageIdentifier` values (`en`, `fr`) that `FluentBundle::new` requires.
 - **Used in**: `crates/va-workspace/src/i18n/localizer.rs`
-- **Hardware**: x86-64 yes (Windows 11 x64; Ubuntu 26.04 x64 under WSL) · ARM64 unverified (CI has
-  not run the M1 tree) · Apple Silicon unverified · Intel Mac unverified · GPU n/a
+- **Hardware**: x86-64 yes (Windows 11 x64; Ubuntu 26.04 x64 under WSL) · ARM64 yes (CI, run
+  40027188396) · Apple Silicon unverified · Intel Mac unverified · GPU n/a
 - **OS**: Windows yes · Linux yes (WSL Ubuntu 26.04 only) · macOS unverified
 - **Notes**: default features; pulls unic-langid-impl and tinystr (Unicode-3.0). zerovec and zerofrom
   (Unicode-3.0) appear in `Cargo.lock` through tinystr's default features but are never compiled.
@@ -273,7 +278,7 @@ they decide GPU, window-system and accessibility support.
 | winit | Apache-2.0 | yes (through eframe) | limited (direct X11 hook yes under WSLg) | compiled only (Linux) | unverified | n/a |
 | egui_kittest | MIT OR Apache-2.0 | yes | yes | yes (CI) | unverified | n/a |
 | anyhow | MIT OR Apache-2.0 | yes | yes | yes (CI) | unverified | n/a |
-| fluent-bundle | Apache-2.0 OR MIT | yes | yes (WSL) | unverified (M1 not in CI yet) | unverified | n/a |
-| unic-langid | MIT OR Apache-2.0 | yes | yes (WSL) | unverified (M1 not in CI yet) | unverified | n/a |
+| fluent-bundle | Apache-2.0 OR MIT | yes | yes (WSL) | yes (CI) | unverified | n/a |
+| unic-langid | MIT OR Apache-2.0 | yes | yes (WSL) | yes (CI) | unverified | n/a |
 | wgpu | MIT OR Apache-2.0 | yes (DX12) | limited (WSLg X11 only) | compiled only (Linux), unverified (Windows) | unverified | AMD iGPU yes, NVIDIA unverified |
 | glow | MIT OR Apache-2.0 OR Zlib | yes | yes (WSLg) | compiled only (Linux), unverified (Windows) | unverified | AMD iGPU yes, llvmpipe yes |

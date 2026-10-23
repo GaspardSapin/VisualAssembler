@@ -7,9 +7,9 @@ idle at about 0 % CPU. Everything is also reachable from a terminal (the `va` CL
 
 ## Status: milestone M1 (core contracts, 68000 ISA tables, lexer)
 
-M1 is implemented, audited and measured, pending its push and first CI run. It adds the frozen
-CPU-agnostic contracts, the complete 68000 instruction tables, the A68k-dialect lexer, English and
-French instruction documentation, and two CLI commands, `va lex` and `va isa`. **There is no
+M1 is done: implemented, audited, measured, pushed, and green in CI (run 40027188396). It adds the
+frozen CPU-agnostic contracts, the complete 68000 instruction tables, the A68k-dialect lexer, English
+and French instruction documentation, and two CLI commands, `va lex` and `va isa`. **There is no
 editor, assembler or emulator yet**: the window is still the M0 one.
 
 | Piece | State at the end of M1 |
@@ -21,10 +21,10 @@ editor, assembler or emulator yet**: the window is still the M0 one.
 | Other `crates/*` | Skeletons (`va-editor`, `va-lang`, `va-debug`, `va-ui`) |
 | `visual-assembler` (GUI) | Unchanged since M0: one window with a static text, in egui's reactive mode. Measures its own startup and idle cost (`--bench startup\|idle`). |
 | `cargo xtask` | `bench`, `ci` (9 steps, now also clippy and tests of `va` built without any CPU), `docs`, `hooks` |
-| CI (`.github/workflows/ci.yml`) | 4 native runners. Run 38969165969 (2026-10-16, commit `6ed43c8`, the M0 renderer work) passed all 7 jobs. The M1 commits have not run in CI yet. |
+| CI (`.github/workflows/ci.yml`) | 4 native runners. Run 40027188396 (2026-10-23, commit `5f45f9b`, the M1 tree) passed all 7 jobs. The run before it, 40023018227 on `8994d44`, failed only `deny`: `clipboard-win` 5.4.1 (Windows clipboard, pulled through eframe) had been yanked upstream for an out-of-bounds read, and `5f45f9b` bumps it to 5.4.3 (`SECURITY.md`, M1-S10). |
 | Renderer | Both renderers ship. `auto` starts glow and falls back to wgpu if OpenGL fails to initialize (wgpu first on Windows ARM64); `--renderer` and `VA_RENDERER` force one. See [Renderer selection](#renderer-selection). |
 
-Roadmap: M0 foundations (done) · **M1 core contracts, ISA tables, lexer (done, pending push and CI)**
+Roadmap: M0 foundations (done) · **M1 core contracts, ISA tables, lexer (done)**
 · M2 assembler and disassembler · M3 headless emulation and debugging · M4 editing and GUI shell ·
 M5 language services · M6 debugging UI · M7 performance and hardening · M8 distribution. A milestone
 gets its spec in `docs/specs/` when it starts.
@@ -60,8 +60,9 @@ shipped binary, 2026-10-16):
 
 M1 adds no platform-specific code. Its `va` commands ran on Windows 11 x64 and in WSL Ubuntu 26.04
 x64: Security built a release `va` on both and ran crafted inputs through it (`SECURITY.md`), and
-Performance measured the lexer on both (`docs/perf/2026-10-23-m1-lexer.md`). The M1 code has not run
-on the CI runners yet, ARM64 included.
+Performance measured the lexer on both (`docs/perf/2026-10-23-m1-lexer.md`). On the four CI runners,
+ARM64 included, run 40027188396 (2026-10-23, `5f45f9b`) passed clippy, the layering checks, every
+headless test and the release build of the M1 tree.
 
 ## Performance status
 
