@@ -6,10 +6,11 @@
 //! mode prints the summary line `<SPELLING>: <summary>`, the details as written in the Fluent file
 //! (newlines kept), the condition, aliases, borrowed forms and flags note when present, then one
 //! block per form. JSON mode prints one [`ISA_SCHEMA`] or [`ISA_LIST_SCHEMA`] line. An unknown
-//! spelling (with up to 3 suggestions within edit distance 2) or a size that no form accepts
-//! exits 1, reported like any failure (a `va.error/1` document in JSON mode). The labels of the
-//! text layout are English CLI chrome; summaries, details and outcome and unit names are
-//! localized.
+//! spelling (with up to 3 suggestions within edit distance 2, none for an empty spelling) or a
+//! size that no form accepts exits 1, reported like any failure (a `va.error/1` document in JSON
+//! mode; the `error:` line escapes the echoed query and suffix for the terminal, M1-S4). The
+//! labels of the text layout are English CLI chrome; summaries, details and outcome and unit
+//! names are localized.
 
 use std::cmp::Reverse;
 use std::io::{self, Write};
@@ -166,8 +167,12 @@ fn accepted_sizes(forms: &[FormInfo]) -> Vec<&'static str> {
 
 /// Up to [`MAX_SUGGESTIONS`] spellings within [`MAX_SUGGESTION_DISTANCE`] of `query` (compared
 /// in uppercase): the closest first, then the longest common prefix with the query, then the
-/// order of `spellings`.
+/// order of `spellings`. An empty query (`""`, `.l`) gets none: every short spelling would be
+/// within the distance, which suggests nothing useful (m1 §12.8 N-3).
 fn suggestions(spellings: &[&'static str], query: &str) -> Vec<&'static str> {
+    if query.is_empty() {
+        return Vec::new();
+    }
     let query = query.to_ascii_uppercase();
     let mut candidates: Vec<(usize, Reverse<usize>, usize, &'static str)> = spellings
         .iter()

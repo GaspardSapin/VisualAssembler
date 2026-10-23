@@ -4,7 +4,10 @@
 //! - **Text**: stdout gets one line per non-whitespace token, `<line>:<column> <kind> <text as a
 //!   JSON string>`, plus ` <code>` for `invalid` and `suspect-comment` tokens. stderr gets the
 //!   diagnostics, GNU style: `<file>:<line>:<column>: error[<code>]: <message>`, then
-//!   `  help: …`, `  note: …` and `  fix: <the line with the fix applied>` when present.
+//!   `  help: …`, `  note: …` and `  fix: <the line with the fix applied>` when present. Every
+//!   piece of outside text on these lines (token text after JSON quoting, file name, message,
+//!   help, note, fixed line) goes through `report::terminal_safe`, so control, C1 and bidi
+//!   characters of the source never reach the terminal raw (Security M1-S1, M1-S3).
 //! - **JSON** ([`LEX_SCHEMA`]): one line, written incrementally and never held whole. The lines
 //!   and their tokens (whitespace included) are streamed in a first pass; the diagnostics come
 //!   from a second, identical lexing pass, so memory stays bounded by one line whatever the
@@ -25,7 +28,7 @@ use va_workspace::i18n::{Localizer, RenderedDiagnostic};
 
 use crate::commands::Session;
 use crate::input::{self, Input};
-use crate::report::{CommandError, Outcome};
+use crate::report::{CommandError, Outcome, terminal_safe};
 
 /// Schema identifier of the JSON document printed by `va lex --json`.
 pub const LEX_SCHEMA: &str = "va.lex/1";
@@ -145,9 +148,11 @@ fn write_text(session: &Session, input: &Input) -> Result<u64, CommandError> {
     let syntax = session.arch.syntax();
     let mut stdout = BufWriter::new(io::stdout().lock());
     let mut stderr = BufWriter::new(io::stderr().lock());
+    let file = terminal_safe(&input.name);
+    let mut quoted = Vec::new();
     let mut errors = 0_u64;
     for_each_line(syntax, input.text.as_str(), |line| {
-        write_token_lines(&mut stdout, line).map_err(CommandError::Stdout)?;
+        write_token_lines(&mut stdout, &mut quoted, line).map_err(CommandError::Stdout)?;
         if line.diagnostics.is_empty() {
             return Ok(());
         }
@@ -156,14 +161,8 @@ fn write_text(session: &Session, input: &Input) -> Result<u64, CommandError> {
             if diagnostic.severity == Severity::Error {
                 errors += 1;
             }
-            write_diagnostic_text(
-                &mut stderr,
-                &session.localizer,
-                &input.name,
-                line,
-                diagnostic,
-            )
-            .map_err(CommandError::Stderr)?;
+            write_diagnostic_text(&mut stderr, &session.localizer, &file, line, diagnostic)
+                .map_err(CommandError::Stderr)?;
         }
         stderr.flush().map_err(CommandError::Stderr)
     })?;
@@ -173,13 +172,24 @@ fn write_text(session: &Session, input: &Input) -> Result<u64, CommandError> {
 }
 
 /// Writes `<line>:<column> <kind> <text>[ <code>]` for every non-whitespace token of `line`.
-fn write_token_lines(out: &mut impl Write, line: &LexedLine<'_>) -> io::Result<()> {
+///
+/// The text is quoted by serde_json, which escapes C0 controls but keeps DEL, C1 and bidi
+/// characters, then passed through `terminal_safe` (M1-S3). `quoted` is a buffer reused from
+/// token to token.
+fn write_token_lines(
+    out: &mut impl Write,
+    quoted: &mut Vec<u8>,
+    line: &LexedLine<'_>,
+) -> io::Result<()> {
     let mut column = 1_u32;
     for token in line.tokens {
         let text = token.range.slice(line.text).unwrap_or("");
         if token.kind != TokenKind::Whitespace {
             write!(out, "{}:{column} {} ", line.number, token.kind.name())?;
-            serde_json::to_writer(&mut *out, text)?;
+            quoted.clear();
+            serde_json::to_writer(&mut *quoted, text)?;
+            // serde_json writes valid UTF-8, so the lossy decoding always borrows.
+            out.write_all(terminal_safe(&String::from_utf8_lossy(quoted)).as_bytes())?;
             if let Some(code) = token_code(token.kind) {
                 write!(out, " {}", code.0)?;
             }
@@ -191,6 +201,9 @@ fn write_token_lines(out: &mut impl Write, line: &LexedLine<'_>) -> io::Result<(
 }
 
 /// Writes one diagnostic in the GNU style, with its help, note and fixed line when present.
+///
+/// `file` is already terminal-safe; the message, help, note and fixed line are made so here (the
+/// message carries the token text as its `text` argument).
 fn write_diagnostic_text(
     out: &mut impl Write,
     localizer: &Localizer,
@@ -206,23 +219,24 @@ fn write_diagnostic_text(
     let column = column_at(line.text, relative(line, diagnostic.span.range.start));
     writeln!(
         out,
-        "{file}:{}:{column}: {}[{}]: {message}",
+        "{file}:{}:{column}: {}[{}]: {}",
         line.number,
         diagnostic.severity.id(),
-        diagnostic.code.0
+        diagnostic.code.0,
+        terminal_safe(&message)
     )?;
     if let Some(help) = help {
-        writeln!(out, "  help: {help}")?;
+        writeln!(out, "  help: {}", terminal_safe(&help))?;
     }
     if let Some(note) = note {
-        writeln!(out, "  note: {note}")?;
+        writeln!(out, "  note: {}", terminal_safe(&note))?;
     }
     if let Some(fixed) = diagnostic
         .suggestion
         .as_ref()
         .and_then(|suggestion| fixed_line(line, suggestion))
     {
-        writeln!(out, "  fix: {fixed}")?;
+        writeln!(out, "  fix: {}", terminal_safe(&fixed))?;
     }
     Ok(())
 }

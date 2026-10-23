@@ -31,6 +31,24 @@ fn architectures_text() -> String {
     }
 }
 
+/// The English text of the error of a write to a pipe without reader (m1 §12.8 F-1):
+/// ERROR_NO_DATA on Windows, EPIPE on Unix.
+const BROKEN_PIPE: &str = if cfg!(windows) {
+    "broken pipe (os error 232)"
+} else {
+    "broken pipe (os error 32)"
+};
+
+/// The stderr of `va <args>` when stdout fails with `reason` (m1 §12.8 F-1): clap's help and
+/// version go through `main.rs`, `va info` through `CommandError::Stdout`.
+fn stdout_failure(args: &[&str], reason: &str) -> String {
+    if args.contains(&"--version") || args.contains(&"--help") {
+        format!("error: cannot print the command-line message: {reason}\n")
+    } else {
+        format!("error: cannot write to stdout: {reason}\n")
+    }
+}
+
 /// Version line printed by `va --version` and first line of `va info`.
 fn version_line() -> String {
     format!("va {}", env!("CARGO_PKG_VERSION"))
@@ -292,10 +310,10 @@ fn unwritable_stdout_is_io_error() {
             .output()
             .unwrap();
         assert_eq!(output.status.code(), Some(EXIT_IO), "args: {args:?}");
-        let stderr = text(&output.stderr);
-        assert!(
-            stderr.starts_with("error:"),
-            "args: {args:?}, stderr: {stderr}"
+        assert_eq!(
+            text(&output.stderr),
+            stdout_failure(args, "no storage space (os error 28)"),
+            "args: {args:?}"
         );
     }
 }
@@ -400,7 +418,8 @@ fn json_output_is_identical_whatever_the_flag_position() {
 
 /// A pipe whose read end is closed before the child starts makes every write to stdout fail
 /// deterministically (EPIPE on Unix, ERROR_NO_DATA on Windows), so the exit code 3 path is
-/// covered on all four CI runners, not only on Linux through `/dev/full`.
+/// covered on all four CI runners, not only on Linux through `/dev/full`. The message is English
+/// whatever the OS language (m1 §12.8 F-1).
 #[test]
 fn closed_stdout_pipe_is_io_error() {
     for args in [
@@ -417,10 +436,10 @@ fn closed_stdout_pipe_is_io_error() {
             .output()
             .unwrap();
         assert_eq!(output.status.code(), Some(EXIT_IO), "args: {args:?}");
-        let stderr = text(&output.stderr);
-        assert!(
-            stderr.starts_with("error:"),
-            "args: {args:?}, stderr: {stderr}"
+        assert_eq!(
+            text(&output.stderr),
+            stdout_failure(args, BROKEN_PIPE),
+            "args: {args:?}"
         );
     }
 }

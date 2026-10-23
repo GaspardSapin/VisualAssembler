@@ -4,9 +4,16 @@
 //! A subcommand that cannot do its work returns a [`CommandError`]. [`report_failure`] prints it:
 //! the human line `error: <message>` on stderr and, in `--json` mode, the document
 //! `{"schema":"va.error/1","code":"<code>","message":"<english>"}` on stdout, unless stdout is the
-//! stream that failed. CLI messages are English (m1 §7.5; localizing the CLI chrome is M4).
-//! Diagnostics found in a source file are not failures: they are the result of `va lex`.
+//! stream that failed. CLI messages are English (m1 §7.5; localizing the CLI chrome is M4), and
+//! every I/O error is rendered in English by [`english_io`] (m1 §12.8 F-1). Diagnostics found in
+//! a source file are not failures: they are the result of `va lex`.
+//!
+//! Text written for a terminal passes through [`terminal_safe`] (Security M1-S1, S3, S4): control
+//! characters, C1 controls and bidirectional or line-separator format characters coming from the
+//! source, a file name, the query or `VA_LANG` cannot reach the terminal raw. JSON documents are
+//! not rewritten.
 
+use std::borrow::Cow;
 use std::error::Error;
 use std::fmt;
 use std::io::{self, Write};
@@ -146,8 +153,8 @@ impl CommandError {
 impl fmt::Display for CommandError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Stdout(error) => write!(f, "cannot write to stdout: {error}"),
-            Self::Stderr(error) => write!(f, "cannot write to stderr: {error}"),
+            Self::Stdout(error) => write!(f, "cannot write to stdout: {}", english_io(error)),
+            Self::Stderr(error) => write!(f, "cannot write to stderr: {}", english_io(error)),
             Self::Reported { message, .. } => f.write_str(message),
         }
     }
@@ -188,7 +195,10 @@ pub fn report_failure(error: &CommandError, json: bool) -> u8 {
         };
         if let Err(io_error) = write_json_line(&document) {
             print_error_line(&message);
-            print_error_line(&format!("cannot write to stdout: {io_error}"));
+            print_error_line(&format!(
+                "cannot write to stdout: {}",
+                english_io(&io_error)
+            ));
             return EXIT_IO;
         }
     }
@@ -205,21 +215,81 @@ fn write_json_line<T: Serialize>(value: &T) -> io::Result<()> {
     stdout.flush()
 }
 
-/// Writes `error: <message>` and a newline on stderr.
+/// Writes `error: <message>` and a newline on stderr, the message passed through
+/// [`terminal_safe`] (it may echo a file name or a query).
 ///
 /// stderr is the last reporting channel. If it cannot be written either, nothing else can carry
 /// the message, so the write result is dropped on purpose: the caller's non-zero exit code still
 /// signals the failure.
 pub fn print_error_line(message: &str) {
     let mut stderr = io::stderr().lock();
-    let _ = writeln!(stderr, "error: {message}");
+    let _ = writeln!(stderr, "error: {}", terminal_safe(message));
 }
 
-/// Writes `warning: <message>` and a newline on stderr.
+/// Writes `warning: <message>` and a newline on stderr, the message passed through
+/// [`terminal_safe`] (it may echo the value of `VA_LANG`).
 ///
 /// A warning never changes the exit code, so a failure to write it is dropped on purpose, like
 /// [`print_error_line`].
 pub fn print_warning_line(message: &str) {
     let mut stderr = io::stderr().lock();
-    let _ = writeln!(stderr, "warning: {message}");
+    let _ = writeln!(stderr, "warning: {}", terminal_safe(message));
+}
+
+/// Describes an I/O error in English (m1 §7.5, §12.7, §12.8 F-1): an OS error becomes its kind
+/// and number, e.g. `broken pipe (os error 232)` or `entity not found (os error 2)`, because the
+/// OS formats its own messages in the user's language (Windows); any other error keeps the
+/// standard library's English text.
+pub fn english_io(error: &io::Error) -> String {
+    match error.raw_os_error() {
+        Some(code) => format!("{} (os error {code})", error.kind()),
+        None => error.to_string(),
+    }
+}
+
+/// Tells whether [`terminal_safe`] rewrites `c`: the C0 controls U+0000–U+001F (tab included),
+/// DEL U+007F, the C1 controls U+0080–U+009F, the marks U+200E/U+200F, the separators
+/// U+2028/U+2029, and the bidirectional embeddings, overrides and isolates U+202A–U+202E and
+/// U+2066–U+2069 (Security M1-S1).
+fn is_unsafe_for_terminal(c: char) -> bool {
+    matches!(
+        c,
+        '\u{0}'..='\u{1F}'
+            | '\u{7F}'..='\u{9F}'
+            | '\u{200E}'
+            | '\u{200F}'
+            | '\u{2028}'
+            | '\u{2029}'
+            | '\u{202A}'..='\u{202E}'
+            | '\u{2066}'..='\u{2069}'
+    )
+}
+
+/// Returns `text` with every character of [`is_unsafe_for_terminal`] rewritten in its
+/// `char::escape_debug` form (`\t`, `\n`, `\0`, `\u{1b}`, `\u{9b}`, `\u{202e}`, ...); other
+/// characters, backslashes included, are kept. Borrows `text` when nothing needs rewriting.
+///
+/// Used for every human line that carries outside text: the diagnostics, fixed lines, file prefix
+/// and token lines of `va lex`, and the `error:` and `warning:` lines. Escape sequences (ESC, BEL,
+/// OSC 52, CSI as U+009B) and bidi overrides (U+202E) therefore never reach the terminal.
+pub fn terminal_safe(text: &str) -> Cow<'_, str> {
+    if !text.chars().any(is_unsafe_for_terminal) {
+        return Cow::Borrowed(text);
+    }
+    let mut safe = String::with_capacity(text.len() + 16);
+    for c in text.chars() {
+        if is_unsafe_for_terminal(c) {
+            let escaped = c.escape_debug();
+            // escape_debug keeps a char it deems printable as is; every char of the set is
+            // escaped anyway, in the same `\u{…}` notation.
+            if escaped.len() > 1 {
+                safe.extend(escaped);
+            } else {
+                safe.extend(c.escape_unicode());
+            }
+        } else {
+            safe.push(c);
+        }
+    }
+    Cow::Owned(safe)
 }

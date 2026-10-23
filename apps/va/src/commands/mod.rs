@@ -29,7 +29,9 @@ impl Session {
     /// The language comes from `flag` (`--lang`), else `VA_LANG`, else the locale variables
     /// (m1 §6.2, §7.1). Variables are read with `var_os` and decoded lossily, so a non-Unicode
     /// `VA_LANG` is reported too; with a flag, no variable is read. A rejected `VA_LANG` prints
-    /// `warning: ignoring VA_LANG=<value> (expected en, fr or auto)` on stderr.
+    /// `warning: ignoring VA_LANG=<value> (expected en, fr or auto)` on stderr, the value passed
+    /// through `report::terminal_safe` (m1 §12.8 N-2, Security M1-S4), so it stays on one line
+    /// and carries no escape sequence.
     ///
     /// # Errors
     ///

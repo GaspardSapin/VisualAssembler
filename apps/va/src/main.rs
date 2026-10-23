@@ -47,7 +47,8 @@ fn print_parse_outcome(error: &clap::Error) -> ExitCode {
         Ok(()) => ExitCode::from(u8::try_from(error.exit_code()).unwrap_or(EXIT_USAGE)),
         Err(io_error) => {
             report::print_error_line(&format!(
-                "cannot print the command-line message: {io_error}"
+                "cannot print the command-line message: {}",
+                report::english_io(&io_error)
             ));
             ExitCode::from(EXIT_IO)
         }

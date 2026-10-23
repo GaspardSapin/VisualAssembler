@@ -5,6 +5,10 @@
 //! stripped). Every failure exits 3: `read-failed` (unreadable path, directory, stdin error),
 //! `input-too-large` (more than 16 MiB) or `input-not-utf8` (with the byte offset). Bytes are
 //! never decoded lossily: encoding conversion is an M4 editor feature.
+//!
+//! The messages quote the file name as given and the I/O error in English
+//! (`crate::report::english_io`); the `error:` line escapes the name for the terminal
+//! (`crate::report::terminal_safe`), while the `va.error/1` document keeps it as is.
 
 use std::ffi::OsStr;
 use std::fs::{self, File};
@@ -12,7 +16,7 @@ use std::io::{self, Read};
 
 use va_core::source::{MAX_SOURCE_BYTES, SourceError, SourceText};
 
-use crate::report::{CommandError, ErrorCode};
+use crate::report::{CommandError, ErrorCode, english_io};
 
 /// The argument that selects standard input instead of a file.
 pub const STDIN_ARGUMENT: &str = "-";
@@ -56,7 +60,7 @@ pub fn read(argument: &OsStr) -> Result<Input, CommandError> {
         let reason = if !is_stdin && fs::metadata(argument).is_ok_and(|meta| meta.is_dir()) {
             "it is a directory".to_owned()
         } else {
-            english(&error)
+            english_io(&error)
         };
         CommandError::reported(
             ErrorCode::ReadFailed,
@@ -78,17 +82,6 @@ pub fn read(argument: &OsStr) -> Result<Input, CommandError> {
         ),
     })?;
     Ok(Input { name, text })
-}
-
-/// Describes an I/O error in English: the OS formats its own messages in the user's language
-/// (Windows), while CLI messages and `va.error/1` messages are English (m1 §7.5). An OS error
-/// becomes its kind and number, e.g. `entity not found (os error 2)`; other errors keep the
-/// standard library's English text.
-fn english(error: &io::Error) -> String {
-    match error.raw_os_error() {
-        Some(code) => format!("{} (os error {code})", error.kind()),
-        None => error.to_string(),
-    }
 }
 
 /// Reads at most [`READ_LIMIT`] bytes from `reader`.

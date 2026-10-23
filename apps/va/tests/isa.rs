@@ -21,6 +21,14 @@ const EXIT_USAGE: i32 = 2;
 /// Exit code of an I/O or environment error.
 const EXIT_IO: i32 = 3;
 
+/// The English text of the error of a write to a pipe without reader (m1 §12.8 F-1):
+/// ERROR_NO_DATA on Windows, EPIPE on Unix.
+const BROKEN_PIPE: &str = if cfg!(windows) {
+    "broken pipe (os error 232)"
+} else {
+    "broken pipe (os error 32)"
+};
+
 /// Builds a command running the `va` binary under test with `args`.
 ///
 /// The language variables are removed so the user's locale cannot change the texts, and
@@ -501,10 +509,274 @@ fn closed_stdout_pipe_is_io_error() {
             .output()
             .unwrap();
         assert_eq!(output.status.code(), Some(EXIT_IO), "args: {args:?}");
-        let stderr = text(&output.stderr);
-        assert!(
-            stderr.starts_with("error: cannot write to stdout: "),
-            "args: {args:?}, stderr: {stderr}"
+        assert_eq!(
+            text(&output.stderr),
+            format!("error: cannot write to stdout: {BROKEN_PIPE}\n"),
+            "args: {args:?}"
         );
     }
+}
+
+// QA edge cases (m1 §4.1, §7.4, §7.5, §12.4, §12.7).
+
+/// Runs `va --json isa <query>`, asserts the `va.error/1` failure with `code` and exit 1, and
+/// that stderr is the human line of the same message.
+fn assert_lookup_failure(query: &str, code: &str) {
+    let output = run_va(&["--json", "isa", query]);
+    assert_eq!(
+        output.status.code(),
+        Some(EXIT_PROBLEMS),
+        "query: {query:?}"
+    );
+    let (_, document) = json_line(&output.stdout);
+    assert_eq!(document["schema"], "va.error/1", "query: {query:?}");
+    assert_eq!(document["code"], code, "query: {query:?}");
+    let message = document["message"].as_str().unwrap();
+    assert_eq!(
+        text(&output.stderr),
+        format!("error: {message}\n"),
+        "query: {query:?}"
+    );
+}
+
+/// Odd queries never panic: an empty spelling, a lone dot, spaces, non-ASCII text and a very
+/// long word are unknown mnemonics; an empty, doubled, non-ASCII or unknown suffix is a size
+/// that no form accepts; single-size and unsized forms refuse other suffixes.
+#[test]
+fn qa_odd_queries_are_lookup_failures() {
+    let long = "M".repeat(10_000);
+    for query in [
+        "",
+        ".",
+        ".l",
+        " move",
+        "move ",
+        "ÉÉ",
+        "\u{1F600}",
+        long.as_str(),
+    ] {
+        assert_lookup_failure(query, "isa-unknown-mnemonic");
+    }
+    for query in [
+        "move.", "move.l.w", "MOVE.Q", "move.ł", "move.bw", "nop.l", "rte.w", "trap.l", "dbra.l",
+        "lea.w", "swap.l", "exg.w", "ext.b", "btst.w", "tas.w", "scc.w", "chk.l", "moveq.w",
+        "bra.x",
+    ] {
+        assert_lookup_failure(query, "isa-size-not-accepted");
+    }
+}
+
+/// Branch suffixes follow A68k (§4.1): `.B` means S and `.L` means W, for every branch spelling;
+/// single-size forms accept their own suffix.
+#[test]
+fn qa_branch_and_single_size_suffixes() {
+    for (query, size, syntax) in [
+        ("bra.b", "S", "BRA.S <label>"),
+        ("bra.l", "W", "BRA.W <label>"),
+        ("bsr.b", "S", "BSR.S <label>"),
+        ("bsr.l", "W", "BSR.W <label>"),
+        ("beq.l", "W", "BEQ.W <label>"),
+        ("BHS.B", "S", "BHS.S <label>"),
+    ] {
+        let document = describe(query);
+        assert_eq!(document["size"], size, "query: {query}");
+        assert_eq!(syntaxes(&document), [syntax], "query: {query}");
+    }
+    for (query, size) in [
+        ("lea.l", "L"),
+        ("moveq.l", "L"),
+        ("swap.w", "W"),
+        ("exg.l", "L"),
+        ("dbra.w", "W"),
+        ("sf.b", "B"),
+        ("tas.b", "B"),
+        ("chk.w", "W"),
+    ] {
+        let document = describe(query);
+        assert_eq!(document["size"], size, "query: {query}");
+        for form in document["forms"].as_array().unwrap() {
+            let sizes = form["sizes"].as_array().unwrap();
+            assert!(sizes.contains(&Value::from(size)), "query: {query}: {form}");
+        }
+    }
+}
+
+/// Aliases resolve to their canonical spelling, list each other, and keep the condition of the
+/// family they belong to (§4.1).
+#[test]
+fn qa_aliases_resolve_to_their_canonical_spelling() {
+    for (query, canonical, family, condition) in [
+        ("bhs", "BCC", Some("Bcc"), Some("CC")),
+        ("blo", "BCS", Some("Bcc"), Some("CS")),
+        ("dbhs", "DBCC", Some("DBcc"), Some("CC")),
+        ("dblo", "DBCS", Some("DBcc"), Some("CS")),
+        ("dbra", "DBF", Some("DBcc"), Some("F")),
+        ("shs", "SCC", Some("Scc"), Some("CC")),
+        ("slo", "SCS", Some("Scc"), Some("CS")),
+        ("rolx", "ROXL", None, None),
+        ("rorx", "ROXR", None, None),
+    ] {
+        let document = describe(query);
+        assert_eq!(document["spelling"], query.to_ascii_uppercase(), "{query}");
+        assert_eq!(document["canonical"], canonical, "{query}");
+        assert_eq!(
+            document["family"],
+            family.map_or(Value::Null, Value::from),
+            "{query}"
+        );
+        assert_eq!(
+            document["condition"]["name"],
+            condition.map_or(Value::Null, Value::from),
+            "{query}"
+        );
+        assert!(
+            document["aliases"]
+                .as_array()
+                .unwrap()
+                .contains(&Value::from(canonical)),
+            "{query}: {}",
+            document["aliases"]
+        );
+        let back = describe(canonical);
+        assert!(
+            back["aliases"]
+                .as_array()
+                .unwrap()
+                .contains(&Value::from(query.to_ascii_uppercase())),
+            "{canonical}: {}",
+            back["aliases"]
+        );
+    }
+}
+
+/// §12.7 pins the suggestion order: `MOV` gives exactly `MOVE, MOVEA, MOVEM`.
+#[test]
+fn qa_mov_suggestions_are_exactly_move_movea_movem() {
+    let output = run_va(&["isa", "mov"]);
+    assert_eq!(output.status.code(), Some(EXIT_PROBLEMS));
+    assert_eq!(
+        text(&output.stderr),
+        "error: unknown mnemonic 'mov' (did you mean MOVE, MOVEA, MOVEM?)\n"
+    );
+}
+
+/// CLI messages are English (§7.5), OS errors as `io::ErrorKind` and number (§12.7): a closed
+/// stdout pipe reads `cannot write to stdout: broken pipe (os error <n>)` on every OS language.
+#[test]
+fn qa_stdout_failure_message_is_english() {
+    let kind = std::io::ErrorKind::BrokenPipe.to_string();
+    for args in [&["isa", "MOVE"][..], &["isa", "--list", "--json"]] {
+        let (reader, writer) = std::io::pipe().unwrap();
+        drop(reader);
+        let output = va_command(args)
+            .stdout(Stdio::from(writer))
+            .stderr(Stdio::piped())
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(EXIT_IO), "args: {args:?}");
+        let stderr = text(&output.stderr);
+        let number = stderr
+            .strip_prefix(&format!("error: cannot write to stdout: {kind} (os error "))
+            .and_then(|rest| rest.strip_suffix(")\n"))
+            .unwrap_or_else(|| panic!("args: {args:?}: OS-localized or unexpected: {stderr:?}"));
+        assert!(
+            !number.is_empty() && number.bytes().all(|byte| byte.is_ascii_digit()),
+            "{stderr:?}"
+        );
+    }
+}
+
+// Wave-3 fixes: N-3 (m1 §12.8) and Security round 1 (M1-S4, superseding N-2's plain
+// escape_debug).
+
+/// An empty spelling part (`""`, `.l`) is an unknown mnemonic without any suggestion: every short
+/// spelling would be within the edit distance (m1 §12.8 N-3).
+#[test]
+fn empty_spelling_has_no_suggestion() {
+    for query in ["", ".l"] {
+        let output = run_va(&["isa", query]);
+        assert_eq!(
+            output.status.code(),
+            Some(EXIT_PROBLEMS),
+            "query: {query:?}"
+        );
+        assert_eq!(text(&output.stdout), "", "query: {query:?}");
+        assert_eq!(
+            text(&output.stderr),
+            "error: unknown mnemonic ''\n",
+            "query: {query:?}"
+        );
+
+        let output = run_va(&["--json", "isa", query]);
+        assert_eq!(
+            output.status.code(),
+            Some(EXIT_PROBLEMS),
+            "query: {query:?}"
+        );
+        let (line, _) = json_line(&output.stdout);
+        assert_eq!(
+            line,
+            r#"{"schema":"va.error/1","code":"isa-unknown-mnemonic","message":"unknown mnemonic ''"}"#,
+            "query: {query:?}"
+        );
+    }
+}
+
+/// The echoed query and size suffix are escaped on the `error:` line; `va.error/1` keeps them as
+/// given (Security M1-S4).
+#[test]
+fn echoed_query_and_suffix_are_terminal_safe() {
+    for (query, code, shown) in [
+        (
+            "mo\u{1b}]0;x\u{7}v",
+            "isa-unknown-mnemonic",
+            r"'mo\u{1b}]0;x\u{7}v'",
+        ),
+        (
+            "move.\u{202e}l\u{9b}",
+            "isa-size-not-accepted",
+            r"'.\u{202e}l\u{9b}'",
+        ),
+    ] {
+        let output = run_va(&["--json", "isa", query]);
+        assert_eq!(
+            output.status.code(),
+            Some(EXIT_PROBLEMS),
+            "query: {query:?}"
+        );
+        let stderr = text(&output.stderr);
+        for unsafe_char in ['\u{1b}', '\u{7}', '\u{9b}', '\u{202e}'] {
+            assert!(!stderr.contains(unsafe_char), "{stderr:?}");
+        }
+        assert!(stderr.contains(shown), "{stderr:?}");
+        let (_, document) = json_line(&output.stdout);
+        assert_eq!(document["code"], code, "query: {query:?}");
+        let message = document["message"].as_str().unwrap();
+        let raw = query.rsplit_once('.').map_or(query, |(_, size)| size);
+        assert!(message.contains(raw), "{message:?}");
+    }
+}
+
+/// A `VA_LANG` holding CR, LF and a clear-screen sequence gives one warning line, with backslash
+/// escapes and no CR, LF or ESC (m1 §12.8 N-2, Security M1-S4).
+#[test]
+fn va_lang_with_control_characters_gives_one_safe_warning_line() {
+    let output = va_command(&["isa", "nop"])
+        .env("VA_LANG", "fr\r\n\u{1b}[2J")
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(0));
+    let stderr = text(&output.stderr);
+    assert_eq!(
+        stderr,
+        concat!(
+            r"warning: ignoring VA_LANG=fr\r\n\u{1b}[2J (expected en, fr or auto)",
+            "\n"
+        )
+    );
+    let line = stderr.strip_suffix('\n').unwrap();
+    assert!(
+        !line.contains(['\r', '\n', '\u{1b}']),
+        "one line without CR, LF or ESC: {stderr:?}"
+    );
 }

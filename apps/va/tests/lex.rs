@@ -26,6 +26,31 @@ const EXIT_USAGE: i32 = 2;
 /// Exit code of an I/O or environment error.
 const EXIT_IO: i32 = 3;
 
+/// The English text of the error of a write to a pipe without reader (m1 §12.8 F-1):
+/// ERROR_NO_DATA on Windows, EPIPE on Unix.
+const BROKEN_PIPE: &str = if cfg!(windows) {
+    "broken pipe (os error 232)"
+} else {
+    "broken pipe (os error 32)"
+};
+
+/// Byte sequences that must never reach a terminal raw (Security M1-S1): ESC, BEL, the C1 CSI
+/// U+009B and the right-to-left override U+202E, in UTF-8.
+const TERMINAL_UNSAFE: [&[u8]; 4] = [b"\x1b", b"\x07", b"\xc2\x9b", b"\xe2\x80\xae"];
+
+/// Asserts that `bytes` holds none of [`TERMINAL_UNSAFE`].
+fn assert_terminal_safe(bytes: &[u8], what: &str) {
+    for unsafe_bytes in TERMINAL_UNSAFE {
+        assert!(
+            !bytes
+                .windows(unsafe_bytes.len())
+                .any(|window| window == unsafe_bytes),
+            "{what} holds {unsafe_bytes:02x?}: {}",
+            String::from_utf8_lossy(bytes)
+        );
+    }
+}
+
 /// The six golden fixtures of m1 §5.5.
 const FIXTURES: [&str; 6] = [
     "basic", "labels", "literals", "comments", "macros", "errors",
@@ -276,8 +301,9 @@ fn suspect_comment_text_mode_prints_help_and_fixed_line() {
         ("cause", DiagArg::Str("after-comma".to_owned())),
     ];
     let id = "diag-lex-operands-in-comment";
+    // The fixed line is terminal-safe: its leading tab is written `\t` (Security M1-S1).
     let expected = format!(
-        "{name}:1:10: error[lex-operands-in-comment]: {}\n  help: {}\n  fix: \tdc.b 1,2,3\n",
+        "{name}:1:10: error[lex-operands-in-comment]: {}\n  help: {}\n  fix: \\tdc.b 1,2,3\n",
         localizer.message(id, None, &args).unwrap(),
         localizer.message(id, Some("help"), &args).unwrap()
     );
@@ -546,10 +572,10 @@ fn closed_stdout_pipe_is_io_error() {
             .output()
             .unwrap();
         assert_eq!(output.status.code(), Some(EXIT_IO), "args: {args:?}");
-        let stderr = text(&output.stderr);
-        assert!(
-            stderr.starts_with("error: cannot write to stdout: "),
-            "args: {args:?}, stderr: {stderr}"
+        assert_eq!(
+            text(&output.stderr),
+            format!("error: cannot write to stdout: {BROKEN_PIPE}\n"),
+            "args: {args:?}"
         );
     }
 }
@@ -575,4 +601,371 @@ fn missing_or_extra_file_argument_is_a_usage_error() {
         assert_eq!(output.status.code(), Some(EXIT_USAGE), "args: {args:?}");
         assert_eq!(text(&output.stdout), "", "args: {args:?}");
     }
+}
+
+// QA edge cases (m1 §3.2, §5.2, §7.2, §7.3, §7.5, §12.2, §12.7).
+
+/// An empty input and a BOM-only input are one empty line: exit 0, no output in text mode,
+/// `"tokens":[]` in JSON (§7.3 "every line appears"; §12.2 `lines("")` yields one line).
+#[test]
+fn qa_empty_and_bom_only_inputs_are_one_empty_line() {
+    for input in [&b""[..], b"\xEF\xBB\xBF"] {
+        let output = run_va_with_stdin(&["lex", "-"], input.to_vec());
+        assert_eq!(output.status.code(), Some(0), "input: {input:?}");
+        assert_eq!(text(&output.stdout), "", "input: {input:?}");
+        assert_eq!(text(&output.stderr), "", "input: {input:?}");
+
+        let output = run_va_with_stdin(&["--json", "lex", "-"], input.to_vec());
+        assert_eq!(output.status.code(), Some(0), "input: {input:?}");
+        let (line, _) = json_line(&output.stdout);
+        assert_eq!(
+            line,
+            r#"{"schema":"va.lex/1","arch":"m68k","lang":"en","file":"-","lines":[{"line":1,"offset":0,"tokens":[]}],"diagnostics":[],"summary":{"lines":1,"tokens":0,"errors":0}}"#
+        );
+    }
+}
+
+/// A second BOM is text: U+FEFF in column 1 is not a label start (one char, three bytes).
+#[test]
+fn qa_a_second_bom_is_text() {
+    let output = run_va_with_stdin(
+        &["--json", "lex", "-"],
+        b"\xEF\xBB\xBF\xEF\xBB\xBFstart nop\n".to_vec(),
+    );
+    assert_eq!(output.status.code(), Some(EXIT_PROBLEMS));
+    let (_, document) = json_line(&output.stdout);
+    let tokens = document["lines"][0]["tokens"].as_array().unwrap();
+    assert_eq!(tokens[0]["kind"], "invalid");
+    assert_eq!(tokens[0]["code"], "lex-bad-label");
+    assert_eq!(tokens[0]["text"], "\u{FEFF}start");
+    assert_eq!(numbers(&tokens[0], &["start", "end", "column"]), [0, 8, 1]);
+    assert_eq!(tokens[1]["column"], 7);
+    assert_eq!(tokens[2]["kind"], "mnemonic");
+}
+
+/// A line of exactly `MAX_LINE_BYTES` (64 KiB, terminator excluded) is lexed normally, with LF
+/// or CRLF; one byte more is exactly one `lex-line-too-long` token over the whole line, whose
+/// message carries the truncated text, never the whole line (§3.4, §5.2).
+#[test]
+fn qa_line_of_exactly_64_kib_is_lexed_and_one_byte_more_is_one_invalid_token() {
+    let max = va_core::source::MAX_LINE_BYTES;
+    let line = |len: usize| {
+        let mut line = b"\tnop ;".to_vec();
+        line.resize(len, b'x');
+        line
+    };
+    for terminator in [&b"\n"[..], b"\r\n"] {
+        let mut input = line(max);
+        input.extend_from_slice(terminator);
+        let output = run_va_with_stdin(&["--json", "lex", "-"], input);
+        assert_eq!(output.status.code(), Some(0));
+        let (_, document) = json_line(&output.stdout);
+        let kinds: Vec<&str> = document["lines"][0]["tokens"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|token| token["kind"].as_str().unwrap())
+            .collect();
+        assert_eq!(kinds, ["whitespace", "mnemonic", "whitespace", "comment"]);
+    }
+    // Exactly 64 KiB of two-byte chars in the comment.
+    let mut input = b"\tnop ;".to_vec();
+    while input.len() < max {
+        input.extend_from_slice("é".as_bytes());
+    }
+    assert_eq!(input.len(), max);
+    let output = run_va_with_stdin(&["lex", "-"], input);
+    assert_eq!(output.status.code(), Some(0), "{}", text(&output.stderr));
+
+    let mut input = line(max + 1);
+    input.extend_from_slice(b"\n\tnop\n");
+    let output = run_va_with_stdin(&["--json", "lex", "-"], input);
+    assert_eq!(output.status.code(), Some(EXIT_PROBLEMS));
+    let (_, document) = json_line(&output.stdout);
+    let tokens = document["lines"][0]["tokens"].as_array().unwrap();
+    assert_eq!(tokens.len(), 1);
+    assert_eq!(tokens[0]["code"], "lex-line-too-long");
+    assert_eq!(tokens[0]["start"], 0);
+    assert_eq!(tokens[0]["end"], max + 1);
+    assert_eq!(document["lines"][1]["offset"], max + 2);
+    assert_eq!(document["lines"][1]["tokens"].as_array().unwrap().len(), 2);
+    let diagnostics = document["diagnostics"].as_array().unwrap();
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(diagnostics[0]["end"], max + 1);
+    assert!(diagnostics[0]["message"].as_str().unwrap().len() < 200);
+}
+
+/// The 16 MiB limit counts the input bytes including a BOM (§12.2): BOM + content of exactly
+/// 16 MiB in total is accepted, one byte more is `input-too-large`.
+#[test]
+fn qa_the_16_mib_limit_counts_the_bom() {
+    let mut at_limit = b"\xEF\xBB\xBF".to_vec();
+    while at_limit.len() < MAX_SOURCE_BYTES {
+        let run = (MAX_SOURCE_BYTES - at_limit.len()).min(512);
+        at_limit.extend(std::iter::repeat_n(b';', run - 1));
+        at_limit.push(b'\n');
+    }
+    assert_eq!(at_limit.len(), MAX_SOURCE_BYTES);
+    let dir = temp_dir("qa-lex-limit-bom");
+    let at_path = dir.join("at-limit-bom.asm");
+    std::fs::write(&at_path, &at_limit).unwrap();
+    let output = run_va(&["lex", at_path.to_str().unwrap()]);
+    assert_eq!(output.status.code(), Some(0), "{}", text(&output.stderr));
+
+    at_limit.push(b';');
+    let over_path = dir.join("over-limit-bom.asm");
+    std::fs::write(&over_path, &at_limit).unwrap();
+    let output = run_va(&["--json", "lex", over_path.to_str().unwrap()]);
+    assert_eq!(output.status.code(), Some(EXIT_IO));
+    let (_, document) = json_line(&output.stdout);
+    assert_eq!(document["code"], "input-too-large");
+}
+
+/// NUL is a control character: an error in operands, plain text in a comment.
+#[test]
+fn qa_nul_bytes() {
+    let output = run_va_with_stdin(&["lex", "-"], b"\tmove.l d0,\0d1\n".to_vec());
+    assert_eq!(output.status.code(), Some(EXIT_PROBLEMS));
+    assert!(
+        text(&output.stdout).contains("1:12 invalid \"\\u0000\" lex-unexpected-char\n"),
+        "stdout: {}",
+        text(&output.stdout)
+    );
+    assert!(
+        text(&output.stderr).starts_with("-:1:12: error[lex-unexpected-char]: "),
+        "stderr: {}",
+        text(&output.stderr)
+    );
+    let output = run_va_with_stdin(&["lex", "-"], b"\tnop ; a\0b\n".to_vec());
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(text(&output.stderr), "");
+}
+
+/// Columns count chars and token offsets count line bytes, diagnostic offsets file bytes, with
+/// 4-byte UTF-8 chars before the token (§3.2, §7.3).
+#[test]
+fn qa_columns_count_chars_and_offsets_count_bytes() {
+    let source = "; \u{1F600}é\n\tdc.b '\u{1F600}',é\n";
+    let output = run_va_with_stdin(&["lex", "-"], source.as_bytes().to_vec());
+    assert_eq!(output.status.code(), Some(EXIT_PROBLEMS));
+    assert_eq!(
+        text(&output.stdout),
+        "1:1 comment \"; \u{1F600}é\"\n2:2 directive \"dc\"\n2:4 size-suffix \".b\"\n\
+         2:7 string \"'\u{1F600}'\"\n2:10 punctuation \",\"\n2:11 invalid \"é\" lex-non-ascii\n"
+    );
+    assert!(text(&output.stderr).starts_with("-:2:11: error[lex-non-ascii]: "));
+
+    let output = run_va_with_stdin(&["--json", "lex", "-"], source.as_bytes().to_vec());
+    let (_, document) = json_line(&output.stdout);
+    let line = &document["lines"][1];
+    assert_eq!(line["offset"], 9);
+    let invalid = line["tokens"].as_array().unwrap().last().unwrap();
+    assert_eq!(numbers(invalid, &["start", "end", "column"]), [13, 15, 11]);
+    assert_eq!(
+        numbers(
+            &document["diagnostics"][0],
+            &["line", "column", "start", "end"]
+        ),
+        [2, 11, 22, 24]
+    );
+}
+
+/// The unsigned integers at `keys` of the JSON object `value`.
+fn numbers(value: &Value, keys: &[&str]) -> Vec<u64> {
+    keys.iter()
+        .map(|key| {
+            value[*key]
+                .as_u64()
+                .unwrap_or_else(|| panic!("{key}: {value}"))
+        })
+        .collect()
+}
+
+/// With a BOM and CRLF terminators, line offsets, diagnostic offsets and the fix are file bytes
+/// of the text after the BOM, and the text-mode fixed line carries no `\r`.
+#[test]
+fn qa_bom_and_crlf_diagnostic_and_fix_offsets_are_file_bytes() {
+    let input = b"\xEF\xBB\xBF\tnop\r\n\tdc.b 1, 2\r\n".to_vec();
+    let output = run_va_with_stdin(&["--json", "lex", "-"], input.clone());
+    assert_eq!(output.status.code(), Some(EXIT_PROBLEMS));
+    let (_, document) = json_line(&output.stdout);
+    let offsets: Vec<u64> = document["lines"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|line| line["offset"].as_u64().unwrap())
+        .collect();
+    assert_eq!(offsets, [0, 6, 18]);
+    let diagnostic = &document["diagnostics"][0];
+    assert_eq!(
+        numbers(diagnostic, &["start", "end", "column"]),
+        [15, 16, 10]
+    );
+    assert_eq!(
+        diagnostic["fix"],
+        serde_json::json!({"start": 14, "end": 16, "replacement": "2"})
+    );
+
+    let output = run_va_with_stdin(&["lex", "-"], input);
+    let stderr = text(&output.stderr);
+    assert!(
+        stderr.starts_with("-:2:10: error[lex-operands-in-comment]: "),
+        "{stderr}"
+    );
+    // Security M1-S1 (wave-3 fix): the fixed line is terminal-safe, its tab written `\t`.
+    assert!(stderr.ends_with("  fix: \\tdc.b 1,2\n"), "{stderr:?}");
+}
+
+/// An ignored `VA_LANG` is reported once on stderr before the diagnostics, which stay English;
+/// with `--lang`, the variable is not read (§7.1, §12.2).
+#[test]
+fn qa_va_lang_warning_on_lex() {
+    let path = fixture("comments", "asm");
+    let path = path.to_str().unwrap();
+    for value in ["FR", "", "fr_FR", "AUTO"] {
+        let output = va_command(&["lex", path])
+            .env("VA_LANG", value)
+            .output()
+            .unwrap();
+        assert_eq!(
+            output.status.code(),
+            Some(EXIT_PROBLEMS),
+            "VA_LANG={value:?}"
+        );
+        let stderr = text(&output.stderr);
+        let warning = format!("warning: ignoring VA_LANG={value} (expected en, fr or auto)\n");
+        assert!(stderr.starts_with(&warning), "VA_LANG={value:?}: {stderr}");
+        assert_eq!(stderr.matches("warning:").count(), 1, "{stderr}");
+        assert!(stderr.contains("a68k will ignore"), "{stderr}");
+    }
+    let output = va_command(&["--lang", "fr", "lex", path])
+        .env("VA_LANG", "FR")
+        .output()
+        .unwrap();
+    let stderr = text(&output.stderr);
+    assert!(!stderr.contains("warning:"), "{stderr}");
+    assert!(stderr.contains("a68k ignorera"), "{stderr}");
+}
+
+/// CLI messages are English (§7.5): an OS error is rendered as its `io::ErrorKind` and number,
+/// the form §12.7 ratifies because Windows localizes OS messages. A closed stdout pipe must
+/// therefore read `cannot write to stdout: broken pipe (os error <n>)` on every OS language.
+#[test]
+fn qa_stdout_failure_message_is_english() {
+    let kind = std::io::ErrorKind::BrokenPipe.to_string();
+    let path = fixture("basic", "asm");
+    for args in [&["lex"][..], &["--json", "lex"]] {
+        let mut args = args.to_vec();
+        args.push(path.to_str().unwrap());
+        let (reader, writer) = std::io::pipe().unwrap();
+        drop(reader);
+        let output = va_command(&args)
+            .stdout(Stdio::from(writer))
+            .stderr(Stdio::piped())
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(EXIT_IO), "args: {args:?}");
+        let stderr = text(&output.stderr);
+        let number = stderr
+            .strip_prefix(&format!("error: cannot write to stdout: {kind} (os error "))
+            .and_then(|rest| rest.strip_suffix(")\n"))
+            .unwrap_or_else(|| panic!("args: {args:?}: OS-localized or unexpected: {stderr:?}"));
+        assert!(
+            !number.is_empty() && number.bytes().all(|byte| byte.is_ascii_digit()),
+            "{stderr:?}"
+        );
+    }
+}
+
+// Security round 1 (M1-S1, M1-S3, M1-S4): text mode never writes terminal control, C1 or bidi
+// characters raw; the JSON document keeps the source text as it is.
+
+/// A source holding a title-setting OSC (`ESC ] 0 ; x BEL`), a clear-screen CSI (`ESC [ 2 J`), an
+/// OSC 52 clipboard write, a right-to-left override and a C1 CSI, in comments, strings, invalid
+/// tokens and suspect comments (hence in messages and fixed lines).
+const HOSTILE_SOURCE: &str = concat!(
+    "* title \u{1b}]0;x\u{7} clear \u{1b}[2J\n",
+    "\tdc.b 1, 2\u{1b}[2J\n",
+    "\tmove.l d0,d1 ; clip \u{1b}]52;c;aGk=\u{7}\n",
+    "\tdc.b \u{202e}x, \u{9b}2J\n",
+    "\tdc.b 'a\u{202e}b', 1, \u{9b}31m\n",
+    "\tdc.b \u{1b}[31m\n",
+);
+
+#[test]
+fn text_mode_never_writes_terminal_controls_raw() {
+    let output = run_va_with_stdin(&["lex", "-"], HOSTILE_SOURCE.as_bytes().to_vec());
+    assert_eq!(output.status.code(), Some(EXIT_PROBLEMS));
+    assert_terminal_safe(&output.stdout, "stdout");
+    assert_terminal_safe(&output.stderr, "stderr");
+    let stdout = text(&output.stdout);
+    let stderr = text(&output.stderr);
+    // The characters are shown, in their escape_debug form, after JSON quoting on stdout.
+    assert!(stdout.contains(r#"string "'a\u{202e}b'""#), "{stdout}");
+    assert!(stdout.contains(r"\u001b]52;c;aGk=\u0007"), "{stdout}");
+    assert!(stdout.contains(r"\u{9b}"), "{stdout}");
+    // On stderr, in messages and fixed lines; tabs of the fixed line are escaped too.
+    assert!(stderr.contains(r"\u{1b}[2J"), "{stderr}");
+    assert!(stderr.contains(r"\u{202e}"), "{stderr}");
+    assert!(stderr.contains(r"\u{9b}"), "{stderr}");
+    assert!(stderr.contains(r"  fix: \tdc.b 1,2\u{1b}[2J"), "{stderr}");
+    for line in stderr.lines() {
+        assert!(!line.contains('\t') && !line.contains('\r'), "{line:?}");
+    }
+
+    // JSON keeps the text: a JSON reader decodes the same characters the source holds.
+    let output = run_va_with_stdin(&["--json", "lex", "-"], HOSTILE_SOURCE.as_bytes().to_vec());
+    assert_eq!(output.status.code(), Some(EXIT_PROBLEMS));
+    let (line, document) = json_line(&output.stdout);
+    assert!(
+        line.contains('\u{202e}') && line.contains('\u{9b}'),
+        "{line}"
+    );
+    let texts: String = document["lines"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|line| line["tokens"].as_array().unwrap())
+        .map(|token| token["text"].as_str().unwrap())
+        .collect();
+    assert_eq!(texts, HOSTILE_SOURCE.replace('\n', ""));
+}
+
+/// The file name of the diagnostic prefix and of an `error:` line is escaped; `va.error/1` keeps
+/// it as given.
+#[test]
+fn echoed_file_names_are_terminal_safe() {
+    // U+202E is a valid file name char everywhere; ESC is not on Windows.
+    let name = if cfg!(windows) {
+        "evil\u{202e}txt.asm"
+    } else {
+        "evil\u{202e}\u{1b}[2J.asm"
+    };
+    let path = temp_file("lex-hostile-name", name, b"\tdc.b 1, 2\n");
+    let output = run_va(&["lex", path.to_str().unwrap()]);
+    assert_eq!(output.status.code(), Some(EXIT_PROBLEMS));
+    assert_terminal_safe(&output.stderr, "stderr");
+    let stderr = text(&output.stderr);
+    assert!(stderr.contains(r"evil\u{202e}"), "{stderr}");
+    assert!(
+        stderr.contains(":1:10: error[lex-operands-in-comment]: "),
+        "{stderr}"
+    );
+
+    let missing = temp_dir("lex-hostile-missing").join("gone\u{1b}]0;x\u{7}\u{202e}.asm");
+    let missing = missing.to_str().unwrap();
+    let output = run_va(&["--json", "lex", missing]);
+    assert_eq!(output.status.code(), Some(EXIT_IO));
+    assert_terminal_safe(&output.stderr, "stderr");
+    let stderr = text(&output.stderr);
+    assert!(
+        stderr.contains(r"gone\u{1b}]0;x\u{7}\u{202e}.asm': "),
+        "{stderr}"
+    );
+    let (_, document) = json_line(&output.stdout);
+    assert_eq!(document["code"], "read-failed");
+    assert!(
+        document["message"].as_str().unwrap().contains(missing),
+        "{document}"
+    );
 }
