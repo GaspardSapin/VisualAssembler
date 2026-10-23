@@ -24,7 +24,14 @@ all-features = true
 unmaintained = "all"
 unsound = "all"
 yanked = "deny"
-ignore = []
+# Approved in m1-core-isa-lexer.md §12.8 and SECURITY.md: "unmaintained" advisories (merged into
+# zbus 6), no safe upgrade; Linux-only AT-SPI path eframe 0.36.2 -> egui-winit -> accesskit_winit ->
+# accesskit_unix -> zbus 5 / atspi. Revisit at the next eframe/egui bump, at the latest in M8.
+ignore = [
+    { id = "RUSTSEC-2026-0370", reason = "zvariant unmaintained (merged into zbus 6); Linux AT-SPI via eframe 0.36.2; revisit at next eframe bump, latest M8" },
+    { id = "RUSTSEC-2026-0371", reason = "zbus_names unmaintained (merged into zbus 6); Linux AT-SPI via eframe 0.36.2; revisit at next eframe bump, latest M8" },
+    { id = "RUSTSEC-2026-0372", reason = "zvariant_derive unmaintained (merged into zbus 6); Linux AT-SPI via eframe 0.36.2; revisit at next eframe bump, latest M8" },
+]
 
 [licenses]
 confidence-threshold = 0.93
