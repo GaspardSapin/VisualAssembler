@@ -88,7 +88,9 @@ const EXTRA: &str = "is not in the canonical configuration";
 const CHANGED: &str = "differs from the canonical line";
 
 /// §17.3.2 changed the step order: step 0 "build configuration" now comes first. §19.6 added
-/// step 3b, the wgpu-only clippy run, right after the glow-only one.
+/// step 3b, the wgpu-only clippy run, right after the glow-only one. m1 §12.7 (R12-4) added step
+/// 3c, clippy on `va` without any CPU, after it, and step 5b, the `va` tests without any CPU,
+/// after the workspace tests.
 #[test]
 fn steps_match_the_spec_in_order() {
     assert_eq!(
@@ -99,10 +101,36 @@ fn steps_match_the_spec_in_order() {
             "cargo clippy --workspace --all-targets --all-features --locked -- -D warnings",
             "cargo clippy -p visual-assembler --all-targets --no-default-features --features renderer-glow --locked -- -D warnings",
             "cargo clippy -p visual-assembler --all-targets --no-default-features --features renderer-wgpu --locked -- -D warnings",
+            "cargo clippy -p va --all-targets --no-default-features --locked -- -D warnings",
             "layering and source checks",
             "cargo test --workspace --all-features --locked",
+            "cargo test -p va --no-default-features --locked",
         ]
     );
+}
+
+/// m1 §12.7 (R12-4): `va` without any `arch-*` feature is linted once and tested once, both with
+/// the default features off and no feature enabled, on `va` alone (neither step rebuilds xtask).
+#[test]
+fn va_without_architecture_is_linted_and_tested() {
+    use xtask::ci::{CLIPPY_VA_NO_ARCH, TEST_VA_NO_ARCH};
+    let all = steps(&CiArgs::default());
+    for (args, command) in [(CLIPPY_VA_NO_ARCH, "clippy"), (TEST_VA_NO_ARCH, "test")] {
+        let runs = all
+            .iter()
+            .filter(|step| **step == Step::Cargo(args))
+            .count();
+        assert_eq!(runs, 1, "{args:?}");
+        assert_eq!(args.first(), Some(&command), "{args:?}");
+        assert!(args.contains(&"--no-default-features"), "{args:?}");
+        assert!(!args.contains(&"--features"), "{args:?}");
+        assert!(!args.contains(&"--all-features"), "{args:?}");
+        let package = args.iter().position(|arg| *arg == "-p").unwrap();
+        assert_eq!(args[package + 1], "va", "{args:?}");
+        assert!(!args.contains(&"--workspace"), "{args:?}");
+        assert!(!Step::Cargo(args).rebuilds_xtask(), "{args:?}");
+    }
+    assert!(CLIPPY_VA_NO_ARCH.contains(&"--all-targets"));
 }
 
 /// §17.3.2: step 0 also runs with `--no-fmt`; only the format check is skipped.

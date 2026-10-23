@@ -1,5 +1,6 @@
 //! `cargo xtask ci`: the single source of the CI check list (m0-foundations.md §6, amended by
-//! §17.3, §18.3, §18.4 and §19.6, which adds step 3b, the wgpu-only clippy run).
+//! §17.3, §18.3, §18.4 and §19.6, which adds step 3b, the wgpu-only clippy run; and by
+//! m1-core-isa-lexer.md §12.7 R12-4, which adds steps 3c and 5b, `va` without any CPU).
 //!
 //! Steps run in order and the command stops at the first failure. `==> <step>` is printed on
 //! stderr before each step. Step 0, the build configuration check, always runs first, also with
@@ -80,8 +81,26 @@ pub const CLIPPY_WGPU_ONLY: &[&str] = &[
     "warnings",
 ];
 
+/// Step 3c: clippy on `va` built without any CPU (`no-architecture` path), warnings denied
+/// (m1-core-isa-lexer.md §12.7, R12-4).
+pub const CLIPPY_VA_NO_ARCH: &[&str] = &[
+    "clippy",
+    "-p",
+    "va",
+    "--all-targets",
+    "--no-default-features",
+    "--locked",
+    "--",
+    "-D",
+    "warnings",
+];
+
 /// Step 5: every test of the workspace with every feature.
 pub const TEST_ALL: &[&str] = &["test", "--workspace", "--all-features", "--locked"];
+
+/// Step 5b: the `va` tests without any CPU, which run the `no-architecture` test
+/// (m1-core-isa-lexer.md §12.7, R12-4).
+pub const TEST_VA_NO_ARCH: &[&str] = &["test", "-p", "va", "--no-default-features", "--locked"];
 
 /// Environment variables that replace the `rustflags` of `.cargo/config.toml` (§17.3.2 a,
 /// §18.3). `CARGO_TARGET_<triple>_RUSTFLAGS` is matched with [`TARGET_RUSTFLAGS_PREFIX`] and
@@ -155,7 +174,7 @@ impl Step {
 
 /// Returns the steps of `cargo xtask ci`, in execution order.
 pub fn steps(args: &CiArgs) -> Vec<Step> {
-    let mut steps = Vec::with_capacity(7);
+    let mut steps = Vec::with_capacity(9);
     steps.push(Step::BuildConfiguration);
     if !args.no_fmt {
         steps.push(Step::Cargo(FMT));
@@ -164,8 +183,10 @@ pub fn steps(args: &CiArgs) -> Vec<Step> {
         Step::Cargo(CLIPPY_ALL_FEATURES),
         Step::Cargo(CLIPPY_GLOW_ONLY),
         Step::Cargo(CLIPPY_WGPU_ONLY),
+        Step::Cargo(CLIPPY_VA_NO_ARCH),
         Step::Layering,
         Step::Cargo(TEST_ALL),
+        Step::Cargo(TEST_VA_NO_ARCH),
     ]);
     steps
 }
