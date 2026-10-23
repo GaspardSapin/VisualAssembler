@@ -337,12 +337,14 @@ isa-m68k-movem = Transfère plusieurs registres vers la mémoire ou depuis la m�
         leur signe. Aucun indicateur n’est modifié. La durée croît avec le nombre de registres
         transférés, plus vite en mot long qu’en taille mot.
 
-isa-m68k-movep = Transfère des données entre un registre de données et un octet sur deux en mémoire.
-    .details = Syntaxe : MOVEP.W/L Dx,d16(Ay) ou MOVEP.W/L d16(Ay),Dx. Les octets du registre,
-        poids fort en premier, vont vers les adresses d16(Ay), d16+2(Ay), et ainsi de suite, ou
-        en proviennent, en sautant un octet à chaque fois. Cela convient aux périphériques 8 bits
-        branchés sur une seule moitié du bus de données de 16 bits. Un mot transfère 2 octets et
-        un mot long 4. Aucun indicateur n’est modifié.
+isa-m68k-movep = Copie un registre de données vers un octet sur deux de la mémoire, ou l’inverse, comme l’attendent les périphériques 8 bits.
+    .details = Syntaxe : MOVEP.W/L Dx,d16(Ay) pour écrire le registre, ou MOVEP.W/L d16(Ay),Dx pour
+        le relire. Le registre est découpé en octets, l’octet de poids fort en premier, et ces
+        octets occupent d16(Ay), d16+2(Ay), d16+4(Ay), et ainsi de suite, sans toucher l’octet
+        intermédiaire. Un périphérique 8 bits n’est relié qu’à une moitié du bus de données de
+        16 bits : ses registres se trouvent donc à une adresse sur deux, exactement celles que
+        parcourt cette instruction. La taille mot transfère 2 octets et la taille mot long 4. Aucun
+        indicateur n’est modifié.
 
 isa-m68k-moveq = Charge une petite constante signée dans un registre de données.
     .details = Syntaxe : MOVEQ #<data>,Dn, avec une constante de -128 à 127 ; la taille est toujours
@@ -498,12 +500,13 @@ isa-m68k-scc = Met un octet à 1 partout si la condition est vraie, à zéro sin
         une condition vraie prend un peu plus de temps qu’une condition fausse.
 
 isa-m68k-stop = Charge le registre d’état et attend une interruption (privilégiée).
-    .details = Syntaxe : STOP #<data>, avec une valeur immédiate sur 16 bits. La valeur est
-        copiée dans le registre d’état, puis le processeur cesse d’exécuter des instructions
-        jusqu’à une interruption de niveau supérieur au nouveau masque, une exception de trace
-        ou une réinitialisation. Elle permet d’attendre un événement sans boucle d’attente
-        active. Elle est privilégiée : en mode utilisateur, elle déclenche une exception de
-        violation de privilège.
+    .details = Syntaxe : STOP #<data>, avec une valeur immédiate sur 16 bits. Le processeur copie la
+        valeur dans le registre d’état, puis n’exécute plus rien jusqu’à l’un de ces quatre
+        événements : une réinitialisation, une interruption de niveau supérieur au nouveau masque,
+        une interruption de niveau 7 même si le masque vaut 7 (le niveau 7 n’est jamais masqué), ou
+        une exception de trace si la nouvelle valeur met T à 1. Elle permet d’attendre un événement
+        sans boucle d’attente active. Elle est privilégiée : en mode utilisateur, elle déclenche une
+        exception de violation de privilège.
 
 isa-m68k-sub = Soustrait la source de la destination.
     .details = Syntaxe : SUB.B/W/L <ea>,Dn ou SUB.B/W/L Dn,<ea> ; la destination devient

@@ -318,11 +318,13 @@ isa-m68k-movem = Moves several registers to or from memory.
         are sign-extended to 32 bits. No flag is changed. The time grows with the number of
         registers transferred, more steeply in long size than in word size.
 
-isa-m68k-movep = Moves data between a data register and every other byte of memory.
-    .details = Syntax: MOVEP.W/L Dx,d16(Ay) or MOVEP.W/L d16(Ay),Dx. The bytes of the register,
-        most significant first, go to or come from the addresses d16(Ay), d16+2(Ay), and so on,
-        skipping one byte each time. This suits 8-bit peripherals wired to one half of the
-        16-bit data bus. A word transfers 2 bytes and a long word 4. No flag is changed.
+isa-m68k-movep = Copies a data register to or from every second byte of memory, the layout that 8-bit peripherals use.
+    .details = Syntax: MOVEP.W/L Dx,d16(Ay) to write the register out, or MOVEP.W/L d16(Ay),Dx to
+        read it back. The register is split into bytes, highest byte first, and those bytes land at
+        d16(Ay), d16+2(Ay), d16+4(Ay) and so on, leaving the byte in between untouched. An 8-bit
+        device sits on only one half of the 16-bit data bus, so its registers appear at every second
+        address, which is exactly what this instruction walks over. The word size moves 2 bytes and
+        the long size 4. No flag is changed.
 
 isa-m68k-moveq = Loads a small signed constant into a data register.
     .details = Syntax: MOVEQ #<data>,Dn, with a constant from -128 to 127; the size is always long.
@@ -468,11 +470,12 @@ isa-m68k-scc = Sets a byte to all ones when the condition holds, and to zero oth
         longer than a false one.
 
 isa-m68k-stop = Loads the status register and waits for an interrupt (privileged).
-    .details = Syntax: STOP #<data>, with a 16-bit immediate value. The value is copied into the
-        status register, then the CPU stops executing instructions until an interrupt above the
-        new mask, a trace exception or a reset occurs. It lets a system wait for an event
-        without a busy loop. It is privileged: in user mode it raises a privilege violation
-        exception.
+    .details = Syntax: STOP #<data>, with a 16-bit immediate value. The CPU copies the value into
+        the status register, then executes nothing more until one of four events: a reset, an
+        interrupt whose level is above the new mask, a level-7 interrupt even when the mask is 7
+        (level 7 can never be masked), or a trace exception when the new value sets T. It lets a
+        system wait for an event without a busy loop. It is privileged: in user mode it raises a
+        privilege violation exception.
 
 isa-m68k-sub = Subtracts the source from the destination.
     .details = Syntax: SUB.B/W/L <ea>,Dn or SUB.B/W/L Dn,<ea>; the destination becomes
