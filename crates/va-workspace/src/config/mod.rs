@@ -5,10 +5,11 @@
 //! a bad key never discards its neighbours, and every problem becomes a [`ConfigProblem`] with
 //! its position, a non-blocking warning.
 //!
-//! WP0 scaffold: the frozen signatures of §4.2, §4.4 and §4.5, and the `Settings` shape of §4.3,
-//! with `todo!()` bodies. WP-B implements them and may move them into `problems.rs`,
-//! `settings.rs`, `keybindings.rs` and `project.rs`, re-exported here so the paths
-//! `va_workspace::config::*` that the other work packages compile against stay valid.
+//! WP0 scaffold: the frozen signatures of §4.2–§4.5 with `todo!()` bodies. The §4.3 types, their
+//! `Default` impls, the enum ids and [`DEFAULT_SETTINGS_TOML`] are complete (WP0 follow-up, m4
+//! §1). WP-B implements the rest and may move the items into `problems.rs`, `settings.rs`,
+//! `keybindings.rs` and `project.rs`, re-exported here so the paths `va_workspace::config::*`
+//! that the other work packages compile against stay valid.
 
 #![expect(
     unused_variables,
@@ -21,6 +22,8 @@ use std::path::{Path, PathBuf};
 
 use va_core::diag::{DiagArg, DiagCode, Diagnostic};
 use va_core::source::{FileId, LineCol, TextRange};
+
+use crate::i18n::Lang;
 
 // -------------------------------------------------------------------------------------------
 // Problems (§4.2, frozen)
@@ -78,11 +81,11 @@ pub fn read_config_text(path: &Path) -> Result<Option<String>, ConfigProblem> {
 }
 
 // -------------------------------------------------------------------------------------------
-// settings.toml (§4.3)
+// settings.toml (§4.3, frozen)
 // -------------------------------------------------------------------------------------------
 
-/// The settings of `settings.toml`; `Default` is the §4.3 table.
-#[derive(Clone, Debug, Default, PartialEq)]
+/// The settings of `settings.toml`, one field per table; `Default` is the §4.3 Default column.
+#[derive(Clone, Debug, PartialEq)]
 pub struct Settings {
     /// The `[ui]` table.
     pub ui: UiSettings,
@@ -96,33 +99,275 @@ pub struct Settings {
     pub render: RenderSettings,
 }
 
-/// The `ui.*` keys of §4.3 (`language`, `theme`, `native_dialogs`); fields arrive with WP-B.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct UiSettings {}
+impl Default for Settings {
+    /// Every table at its default.
+    fn default() -> Self {
+        Self {
+            ui: UiSettings::default(),
+            editor: EditorSettings::default(),
+            files: FileSettings::default(),
+            explorer: ExplorerSettings::default(),
+            render: RenderSettings::default(),
+        }
+    }
+}
 
-/// The `editor.*` keys of §4.3 (font, tabs, blink, gutter, current line, diagnostics delay);
-/// fields arrive with WP-B.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct EditorSettings {}
+/// The `[ui]` table.
+#[derive(Clone, Debug, PartialEq)]
+pub struct UiSettings {
+    /// `ui.language`: the UI and diagnostics language; `None` is `"auto"`. Applies at the next
+    /// start.
+    pub language: Option<Lang>,
+    /// `ui.theme`: the base theme; `None` is `"auto"` (follows the system).
+    pub theme: Option<ThemeKind>,
+    /// `ui.native_dialogs`: Windows native open and save dialogs; `false` (and always on Linux)
+    /// uses the internal path prompt.
+    pub native_dialogs: bool,
+}
 
-/// The `files.*` keys of §4.3 (hot exit, backup delay, autosave, line ending); fields arrive
-/// with WP-B.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct FileSettings {}
+impl Default for UiSettings {
+    /// `language = "auto"`, `theme = "auto"`, `native_dialogs = true`.
+    fn default() -> Self {
+        Self {
+            language: None,
+            theme: None,
+            native_dialogs: true,
+        }
+    }
+}
 
-/// The `explorer.*` keys of §4.3 (`exclude`); fields arrive with WP-B.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct ExplorerSettings {}
+/// The `[editor]` table.
+#[derive(Clone, Debug, PartialEq)]
+pub struct EditorSettings {
+    /// `editor.font_size`: code font size in points before zoom, 8.0 to 40.0.
+    pub font_size: f32,
+    /// `editor.font_file`: a `.ttf` or `.otf` replacing the embedded font, absolute or relative
+    /// to the config folder, stored as written; `None` is `""`.
+    pub font_file: Option<PathBuf>,
+    /// `editor.tab_width`: width of a tab stop in columns, 1 to 16.
+    pub tab_width: u8,
+    /// `editor.insert_spaces`: the Tab key inserts spaces; `false` inserts a tab character.
+    pub insert_spaces: bool,
+    /// `editor.cursor_blink`: blinking caret.
+    pub cursor_blink: bool,
+    /// `editor.line_numbers`: line numbers in the gutter.
+    pub line_numbers: bool,
+    /// `editor.highlight_current_line`: background of the caret's line.
+    pub highlight_current_line: bool,
+    /// `editor.diagnostics_delay_ms`: delay before diagnostics refresh, 50 to 5000; parsed now,
+    /// used from M5.
+    pub diagnostics_delay_ms: u32,
+}
 
-/// The `render.*` keys of §4.3 (`renderer`); fields arrive with WP-B.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct RenderSettings {}
+impl Default for EditorSettings {
+    /// `font_size = 14.0`, `font_file = ""`, `tab_width = 8`, `insert_spaces = false`,
+    /// `cursor_blink = true`, `line_numbers = true`, `highlight_current_line = true`,
+    /// `diagnostics_delay_ms = 300`.
+    fn default() -> Self {
+        Self {
+            font_size: 14.0,
+            font_file: None,
+            tab_width: 8,
+            insert_spaces: false,
+            cursor_blink: true,
+            line_numbers: true,
+            highlight_current_line: true,
+            diagnostics_delay_ms: 300,
+        }
+    }
+}
+
+/// The `[files]` table.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FileSettings {
+    /// `files.hot_exit`: closing the window keeps unsaved changes and restores them at the next
+    /// start.
+    pub hot_exit: bool,
+    /// `files.backup_delay_ms`: delay after the last edit before a backup, 250 to 60000.
+    pub backup_delay_ms: u32,
+    /// `files.autosave`: when the student's files are saved automatically.
+    pub autosave: AutosaveMode,
+    /// `files.autosave_delay_ms`: delay of the `after-delay` autosave, 250 to 60000.
+    pub autosave_delay_ms: u32,
+    /// `files.eol`: line ending of new files; `None` is `"auto"` (CRLF on Windows, LF
+    /// elsewhere).
+    pub eol: Option<EolKind>,
+}
+
+impl Default for FileSettings {
+    /// `hot_exit = true`, `backup_delay_ms = 1500`, `autosave = "off"`,
+    /// `autosave_delay_ms = 1000`, `eol = "auto"`.
+    fn default() -> Self {
+        Self {
+            hot_exit: true,
+            backup_delay_ms: 1500,
+            autosave: AutosaveMode::Off,
+            autosave_delay_ms: 1000,
+            eol: None,
+        }
+    }
+}
+
+/// The `[explorer]` table.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ExplorerSettings {
+    /// `explorer.exclude`: names hidden in the explorer and in quick open (non-empty, without
+    /// `/` or `\`; case-insensitive on Windows).
+    pub exclude: Vec<String>,
+}
+
+impl Default for ExplorerSettings {
+    /// `exclude = [".git"]`.
+    fn default() -> Self {
+        Self {
+            exclude: vec![".git".to_owned()],
+        }
+    }
+}
+
+/// The `[render]` table.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RenderSettings {
+    /// `render.renderer`: the renderer; `None` is `"auto"`. Applies at the next start, below
+    /// `--renderer` and `VA_RENDERER`.
+    pub renderer: Option<RendererKind>,
+}
+
+impl Default for RenderSettings {
+    /// `renderer = "auto"`.
+    fn default() -> Self {
+        Self { renderer: None }
+    }
+}
+
+/// A colour theme (`ui.theme`, and the session's override).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ThemeKind {
+    /// `"light"`.
+    Light,
+    /// `"dark"`.
+    Dark,
+}
+
+impl ThemeKind {
+    /// The id of the theme in TOML files: `"light"` or `"dark"`.
+    pub const fn id(self) -> &'static str {
+        match self {
+            Self::Light => "light",
+            Self::Dark => "dark",
+        }
+    }
+
+    /// Parses an exact lowercase id; anything else, `"auto"` included, gives `None`.
+    pub fn from_id(id: &str) -> Option<Self> {
+        match id {
+            "light" => Some(Self::Light),
+            "dark" => Some(Self::Dark),
+            _ => None,
+        }
+    }
+}
+
+/// A line ending of new files (`files.eol`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum EolKind {
+    /// `"lf"`: `\n`.
+    Lf,
+    /// `"crlf"`: `\r\n`.
+    CrLf,
+}
+
+impl EolKind {
+    /// The id of the line ending in TOML files: `"lf"` or `"crlf"`.
+    pub const fn id(self) -> &'static str {
+        match self {
+            Self::Lf => "lf",
+            Self::CrLf => "crlf",
+        }
+    }
+
+    /// Parses an exact lowercase id; anything else, `"auto"` included, gives `None`.
+    pub fn from_id(id: &str) -> Option<Self> {
+        match id {
+            "lf" => Some(Self::Lf),
+            "crlf" => Some(Self::CrLf),
+            _ => None,
+        }
+    }
+}
+
+/// A renderer of the window (`render.renderer`, m0 §19).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum RendererKind {
+    /// `"glow"`: OpenGL.
+    Glow,
+    /// `"wgpu"`.
+    Wgpu,
+}
+
+impl RendererKind {
+    /// The id of the renderer in TOML files: `"glow"` or `"wgpu"`.
+    pub const fn id(self) -> &'static str {
+        match self {
+            Self::Glow => "glow",
+            Self::Wgpu => "wgpu",
+        }
+    }
+
+    /// Parses an exact lowercase id; anything else, `"auto"` included, gives `None`.
+    pub fn from_id(id: &str) -> Option<Self> {
+        match id {
+            "glow" => Some(Self::Glow),
+            "wgpu" => Some(Self::Wgpu),
+            _ => None,
+        }
+    }
+}
+
+/// When the student's files are saved automatically (`files.autosave`, m4 §4.8).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum AutosaveMode {
+    /// `"off"`: only Save, Save As and Save All write a file (the default).
+    #[default]
+    Off,
+    /// `"after-delay"`: dirty file buffers are saved `files.autosave_delay_ms` after the last
+    /// edit.
+    AfterDelay,
+    /// `"on-focus-change"`: dirty file buffers are saved when the window loses focus or the tab
+    /// changes.
+    OnFocusChange,
+}
+
+impl AutosaveMode {
+    /// The id of the mode in TOML files: `"off"`, `"after-delay"` or `"on-focus-change"`.
+    pub const fn id(self) -> &'static str {
+        match self {
+            Self::Off => "off",
+            Self::AfterDelay => "after-delay",
+            Self::OnFocusChange => "on-focus-change",
+        }
+    }
+
+    /// Parses an exact lowercase id; anything else gives `None`.
+    pub fn from_id(id: &str) -> Option<Self> {
+        match id {
+            "off" => Some(Self::Off),
+            "after-delay" => Some(Self::AfterDelay),
+            "on-focus-change" => Some(Self::OnFocusChange),
+            _ => None,
+        }
+    }
+}
 
 /// Parses `settings.toml` (`text` is `None` when the file is missing): the defaults overridden
 /// by every valid key, and one problem per invalid one.
 pub fn parse_settings(path: &Path, text: Option<&str>) -> (Settings, Vec<ConfigProblem>) {
     todo!()
 }
+
+/// The commented default `settings.toml` (ASCII, LF): `schema_version = 1`, then every key of
+/// §4.3 commented out with its default value. The app writes it once, when the file is missing.
+pub const DEFAULT_SETTINGS_TOML: &str = include_str!("default_settings.toml");
 
 // -------------------------------------------------------------------------------------------
 // keybindings.toml (§4.4, frozen)

@@ -1,0 +1,50 @@
+# VisualAssembler settings. Every key is listed commented out, with its default value.
+# To change a value, remove the "# " in front of its key. A bad value is reported and ignored.
+# The app creates this file once, when it is missing, and never rewrites it.
+schema_version = 1
+
+[ui]
+# Interface language: "auto" (from the system), "en" or "fr"; applies at the next start.
+# language = "auto"
+# Colour theme: "auto" (follows the system), "light" or "dark".
+# theme = "auto"
+# Windows: use the native open and save dialogs; false uses the built-in path prompt.
+# native_dialogs = true
+
+[editor]
+# Code font size in points, 8.0 to 40.0, before zoom.
+# font_size = 14.0
+# A .ttf or .otf file replacing the embedded font, absolute or relative to this folder.
+# font_file = ""
+# Width of a tab stop in columns, 1 to 16.
+# tab_width = 8
+# true: the Tab key inserts spaces; false: it inserts a tab character.
+# insert_spaces = false
+# Blinking caret; it stays solid after 10 s without input.
+# cursor_blink = true
+# Show line numbers in the gutter.
+# line_numbers = true
+# Highlight the line of the caret.
+# highlight_current_line = true
+# Delay in ms before diagnostics refresh after an edit, 50 to 5000 (not used yet).
+# diagnostics_delay_ms = 300
+
+[files]
+# Hot exit: closing the window keeps unsaved changes and restores them at the next start.
+# hot_exit = true
+# Delay in ms after the last edit before unsaved changes are backed up, 250 to 60000.
+# backup_delay_ms = 1500
+# Save your files automatically: "off", "after-delay" or "on-focus-change".
+# autosave = "off"
+# Delay in ms of the "after-delay" autosave, 250 to 60000.
+# autosave_delay_ms = 1000
+# Line ending of new files: "auto" (CRLF on Windows, LF elsewhere), "lf" or "crlf".
+# eol = "auto"
+
+[explorer]
+# Names hidden in the explorer and in quick open.
+# exclude = [".git"]
+
+[render]
+# Renderer: "auto", "glow" or "wgpu"; applies at the next start (--renderer and VA_RENDERER win).
+# renderer = "auto"

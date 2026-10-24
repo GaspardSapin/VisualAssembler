@@ -9,7 +9,8 @@
 //! - Backups live in the data folder only: `<id>.txt` is written before `index.toml`, and
 //!   removed after it, so a kill never leaves an index entry pointing at a torn file.
 //!
-//! WP0 scaffold: frozen signatures with `todo!()` bodies. WP-C implements them and may move them
+//! WP0 scaffold: frozen signatures with `todo!()` bodies. The session types and their `Default`
+//! impls are complete (WP0 follow-up, m4 §1). WP-C implements the rest and may move the items
 //! into `worker.rs`, `atomic.rs`, `session.rs`, `lock.rs` and `backup.rs`, re-exported here so
 //! the paths `va_workspace::persist::*` that the other work packages compile against stay valid.
 
@@ -25,6 +26,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
+use crate::config::ThemeKind;
 use crate::paths::Paths;
 
 // -------------------------------------------------------------------------------------------
@@ -129,10 +131,116 @@ pub fn try_lock_session(paths: &Paths) -> std::io::Result<Option<SessionLock>> {
     todo!()
 }
 
-/// The content of `session.toml` (§4.7 schema: window, ui, workspace, tabs); fields arrive with
-/// WP-C.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct Session {}
+/// The content of `session.toml` (§4.7): the window, the UI state, the project root and the
+/// open tabs.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Session {
+    /// The `window` table: the window geometry, read before the window opens.
+    pub window: SessionWindow,
+    /// The `ui` table: zoom, theme override and explorer.
+    pub ui: SessionUi,
+    /// The `workspace` table: the project root.
+    pub workspace: SessionWorkspace,
+    /// The `[[tab]]` tables, in tab order.
+    pub tabs: Vec<SessionTab>,
+}
+
+impl Default for Session {
+    /// Every table at its default, no tab.
+    fn default() -> Self {
+        Self {
+            window: SessionWindow::default(),
+            ui: SessionUi::default(),
+            workspace: SessionWorkspace::default(),
+            tabs: Vec::new(),
+        }
+    }
+}
+
+/// The `window` table of `session.toml`, in logical pixels.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SessionWindow {
+    /// `width`, 400 to 10000.
+    pub width: f32,
+    /// `height`, 300 to 10000.
+    pub height: f32,
+    /// `maximized`.
+    pub maximized: bool,
+}
+
+impl Default for SessionWindow {
+    /// 1280 × 800 (M0's window size), not maximized.
+    fn default() -> Self {
+        Self {
+            width: 1280.0,
+            height: 800.0,
+            maximized: false,
+        }
+    }
+}
+
+/// The `ui` table of `session.toml`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SessionUi {
+    /// `zoom`, 0.5 to 3.0 (m4 §5.5 `ZOOM_MIN` to `ZOOM_MAX`).
+    pub zoom: f32,
+    /// `theme`: the palette toggle's override of `ui.theme`; `None` is no override.
+    pub theme: Option<ThemeKind>,
+    /// `explorer_visible`.
+    pub explorer_visible: bool,
+    /// `explorer_width` in logical pixels, 120 to 2000.
+    pub explorer_width: f32,
+}
+
+impl Default for SessionUi {
+    /// Zoom 1.0, no theme override, explorer visible and 240 pixels wide.
+    fn default() -> Self {
+        Self {
+            zoom: 1.0,
+            theme: None,
+            explorer_visible: true,
+            explorer_width: 240.0,
+        }
+    }
+}
+
+/// The `workspace` table of `session.toml`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SessionWorkspace {
+    /// `root`: the absolute project root; `None` when no folder is open.
+    pub root: Option<PathBuf>,
+}
+
+impl Default for SessionWorkspace {
+    /// No project root.
+    fn default() -> Self {
+        Self { root: None }
+    }
+}
+
+/// One `[[tab]]` table of `session.toml`: what the tab shows and where its caret was.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SessionTab {
+    /// `path` or `backup`: the file or the untitled buffer.
+    pub source: TabSource,
+    /// `line` of the caret, 1-based.
+    pub line: u32,
+    /// `column` of the caret in chars, 1-based.
+    pub column: u32,
+    /// `top_line`: the first visible line, 1-based.
+    pub top_line: u32,
+    /// `active`: the selected tab (only the first one stays active).
+    pub active: bool,
+}
+
+/// What a session tab shows.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum TabSource {
+    /// `path = "…"`: a file, by its absolute path.
+    File(PathBuf),
+    /// `backup = "<id>"`: an untitled buffer, by its backup.
+    Backup(BackupId),
+}
 
 /// Parses `session.toml` (`text` is `None` when the file is missing); never fails: bad parts
 /// are dropped.
