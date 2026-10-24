@@ -8,14 +8,14 @@ The check list itself lives in `cargo xtask ci`, so the workflow never duplicate
 ## Contents
 | Entry | Type | Purpose |
 |-------|------|---------|
-| `ci.yml` | workflow | Jobs `fmt`, `docs`, `deny` and `check` (4 runners). Normative content: m0-foundations.md §8, amended by §17.5, §18.7, §19.3 and §19.9 (row 19-9 a). |
+| `ci.yml` | workflow | Jobs `fmt`, `docs`, `deny` and `check` (4 runners). Normative content: m0-foundations.md §8, amended by §17.5, §18.7, §19.3, §19.9 (row 19-9 a) and §20 (runner labels). |
 
 | Job | Runner | What it runs |
 |-----|--------|--------------|
-| `fmt` | `ubuntu-latest` | `cargo fmt --all -- --check` |
-| `docs` | `ubuntu-latest` | `python3 scripts/check_project_docs.py .` with `fetch-depth: 50`, so the AI co-author check sees the last 50 commits |
-| `deny` | `ubuntu-latest` | Builds cargo-deny 0.20.2 from crates.io (`--locked`) in the runner's temp folder, outside the checkout, with no cache. Then runs `cargo deny --locked --manifest-path Cargo.toml --config .cargo/deny.toml check`. |
-| `check (<os>)` | `windows-latest`, `windows-11-arm`, `ubuntu-latest`, `ubuntu-24.04-arm` | Step `clippy, layering, tests`: `cargo xtask ci --no-fmt`, the 8 non-fmt steps listed in `xtask/README.md` (since M1 they include clippy and the tests of `va` without any CPU, m1 §12.7). Then `cargo build --release --locked -p visual-assembler -p va`, then (Windows only) the two GUI smoke steps |
+| `fmt` | `ubuntu-26.04` | `cargo fmt --all -- --check` |
+| `docs` | `ubuntu-26.04` | `python3 scripts/check_project_docs.py .` with `fetch-depth: 50`, so the AI co-author check sees the last 50 commits |
+| `deny` | `ubuntu-26.04` | Builds cargo-deny 0.20.2 from crates.io (`--locked`) in the runner's temp folder, outside the checkout, with no cache. Then runs `cargo deny --locked --manifest-path Cargo.toml --config .cargo/deny.toml check`. |
+| `check (<os>)` | `windows-2025`, `windows-11-arm`, `ubuntu-26.04`, `ubuntu-24.04-arm` | Step `clippy, layering, tests`: `cargo xtask ci --no-fmt`, the 8 non-fmt steps listed in `xtask/README.md` (since M1 they include clippy and the tests of `va` without any CPU, m1 §12.7). Then `cargo build --release --locked -p visual-assembler -p va`, then (Windows only) the two GUI smoke steps |
 
 ## Entry points
 - `ci.yml`. Rules for editing it:
@@ -24,6 +24,9 @@ The check list itself lives in `cargo xtask ci`, so the workflow never duplicate
     `git ls-remote https://github.com/Swatinem/rust-cache refs/tags/v2.9.2 'refs/tags/v2.9.2^{}'`.
     For an annotated tag the commit is the `^{}` line; a lightweight tag (such as checkout's
     `v7.0.1`) prints only one line, which is the commit.
+  - **Pin every runner label to one OS release**, never a `-latest` label (m0 §20). A matrix label is
+    part of a required check name and keys the rust cache, so changing one needs a spec revision and a
+    branch-protection update in the same step.
   - **Never set `RUSTFLAGS`** (or any `RUSTFLAGS`-type variable): it replaces `.cargo/config.toml` and
     drops `+crt-static`. `cargo xtask ci` step 0 fails the job if one is set.
   - Keep `permissions: contents: read`, `persist-credentials: false`, and no `${{ … }}` inside `run:`
@@ -37,7 +40,7 @@ The check list itself lives in `cargo xtask ci`, so the workflow never duplicate
   - **GUI startup smoke** runs `./target/release/visual-assembler.exe --bench startup`, so its line
     shows what `auto` starts on the hosted image.
   - **GUI renderer fallback smoke** sets `VA_TEST_FAIL_RENDERER`, through the step's `env:`, to the
-    first renderer of the runner's `auto` order: `glow` on `windows-latest`, `wgpu` on
+    first renderer of the runner's `auto` order: `glow` on `windows-2025`, `wgpu` on
     `windows-11-arm`. Its log shows a fallback (`"fallback_from":"glow"` on x64,
     `"fallback_from":"wgpu"` on ARM64). On ARM64, when the image has no usable OpenGL, it shows the
     `no renderer could be initialized (tried wgpu, then glow)` lines instead.

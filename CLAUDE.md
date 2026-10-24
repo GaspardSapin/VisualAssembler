@@ -10,9 +10,10 @@ is done. Still skeletons: `va-editor`, `va-lang`, `va-debug`, `va-ui`; the GUI i
 Specs: `docs/specs/architecture.md`, then the milestone specs.
 - `docs/specs/m1-core-isa-lexer.md`: **§12 (ratified implementation, fix-now rows R12-1…R12-4, QA
   round 1 in §12.8) wins over the body**.
-- `docs/specs/m0-foundations.md`: precedence **§19 > §18 > §17 > body (§0–§16)**. §18.8 indexes the
-  body passages that §17/§18/§19 supersede. §19 is the user's renderer decision (it replaces the
-  rule of §12.3/§12.4/§17.13 and outcome W); §19.9 ratifies its implementation, rows 19-8…19-11.
+- `docs/specs/m0-foundations.md`: precedence **§20 > §19 > §18 > §17 > body (§0–§16)**. §18.8
+  indexes the body passages that §17/§18/§19/§20 supersede. §19 is the user's renderer decision (it
+  replaces the rule of §12.3/§12.4/§17.13 and outcome W); §19.9 ratifies its implementation, rows
+  19-8…19-11. §20 pins the CI runner labels (no `-latest`).
 
 ## Stack and versions
 - Rust **1.99.0** pinned (`rust-toolchain.toml`, with rustfmt and clippy), edition 2024, resolver 3,
@@ -116,7 +117,9 @@ Live layering check alone: `cargo test -p xtask --test layering -- --ignored liv
 - Offline product, no telemetry: cargo-deny bans network/TLS/telemetry crates and `mio/net`; source
   scan for network APIs (architecture §9.3).
 - Makefile is a thin shell-free wrapper; logic that needs a shell becomes an xtask command (m0 §7).
-- CI: `cargo xtask ci` is the single source of the check list; 4 native runners; actions pinned by SHA (m0 §8).
+- CI: `cargo xtask ci` is the single source of the check list; 4 native runners with pinned labels
+  `windows-2025`, `windows-11-arm`, `ubuntu-26.04`, `ubuntu-24.04-arm` (never `-latest`, m0 §20);
+  actions pinned by SHA (m0 §8).
 - `.cargo/config.toml` must equal `CANONICAL_CARGO_CONFIG` in `xtask/src/ci.rs` (m0 §18.4).
 - CPU traits use dynamic dispatch (`dyn Architecture`), diagnostics are kebab-case codes rendered by
   Fluent (architecture §3, §5). 68000 emulation will use the `m68k` crate behind `Emulator` (M3).
@@ -161,6 +164,8 @@ Live layering check alone: `cargo test -p xtask --test layering -- --ignored liv
   accepted bypasses and fail by design.
 - The `xtask` alias has no `--locked`: `cargo xtask …` can silently rewrite a stale `Cargo.lock`.
   After a manifest change, commit the updated lock; `make security` (`--locked`) catches a mismatch.
+- A CI runner label is part of a required check name (`check (<label>)`): changing one in `ci.yml`
+  blocks every pull request until branch protection lists the new name (m0 §20.3).
 - `make help` ends with "Nothing to be done for 'help'"; `make -s help` is the clean form.
 - `python` vs `python3`: xtask uses `$VA_PYTHON`, else `python` on Windows, else `python3`.
 - Bench numbers depend on power: measure on mains in "Best performance" (battery adds about 33 %).
