@@ -3,7 +3,8 @@
 # GNU make uses sh (Git for Windows, Ubuntu) or cmd.exe (Windows without sh on PATH).
 # Normative content: docs/specs/m0-foundations.md section 7, amended by sections 17.5 and 18.7
 # (security target) and 19.5 (RENDERER default), and amended by m1-core-isa-lexer.md section 8
-# (bench-lexer target). Comments may be added; values must not change.
+# (bench-lexer target) and m4-editor-shell.md section 8 (bench help line). Comments may be added;
+# values must not change.
 
 CARGO    ?= cargo
 SCENARIO ?= all
@@ -26,7 +27,7 @@ help:
 	$(info   docs      regenerate AGENCEMENT.md and verify the documentation ritual)
 	$(info   build     release build of the GUI and the CLI)
 	$(info   clean     remove build artifacts)
-	$(info   bench     measure the GUI - SCENARIO=startup|idle|all RENDERER=auto|glow|wgpu|all RUNS=n)
+	$(info   bench     measure the GUI - SCENARIO=startup|idle|open|scroll|type|all RENDERER=auto|glow|wgpu|all RUNS=n)
 	$(info   bench-lexer  measure lexer throughput on 100000 generated lines in release)
 	$(info   ci        run the CI checks locally - fmt clippy layering tests)
 

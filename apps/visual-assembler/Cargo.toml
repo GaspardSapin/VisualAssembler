@@ -1,7 +1,8 @@
 # VisualAssembler desktop IDE (GUI binary + library that makes the UI testable headless).
 # Normative content: docs/specs/m0-foundations.md §3.6 (template), §4.1 (features and
 # dependencies), §17.1 (licence) and §19.1/§19.8 row 19-2 (both renderers by default, Linux
-# winit). Comments may be added; values must not change.
+# winit), amended by m4-editor-shell.md §8.2 (internal crates, `arch-m68k` feature, Windows rfd).
+# Comments may be added; values must not change.
 # Targets are auto-discovered: lib `visual_assembler` (src/lib.rs), bin `visual-assembler`
 # (src/main.rs).
 [package]
@@ -20,10 +21,13 @@ workspace = true
 # At least one must be enabled (`compile_error!` in src/lib.rs otherwise). The shipped binary has
 # both (§19.1): `auto` tries glow then wgpu (wgpu then glow on Windows aarch64). Single-renderer
 # builds stay compilable for CI clippy but are neither shipped nor benchmarked.
+# m4-editor-shell.md §6.7, §8.2: each CPU crate is an optional feature, registered by the
+# architecture registry; a build without any `arch-*` feature uses the plain syntax.
 [features]
-default = ["renderer-glow", "renderer-wgpu"]
+default = ["renderer-glow", "renderer-wgpu", "arch-m68k"]
 renderer-wgpu = ["eframe/wgpu"]
 renderer-glow = ["eframe/glow"]
+arch-m68k = ["dep:va-arch-m68k"]
 
 [dependencies]
 clap = { workspace = true }
@@ -31,9 +35,16 @@ eframe = { workspace = true }
 raw-window-handle = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+va-arch-m68k = { workspace = true, optional = true }
+va-core = { workspace = true }
+va-editor = { workspace = true }
+va-ui = { workspace = true }
+va-workspace = { workspace = true }
 
-# Process statistics for the bench (src/bench/process_windows.rs).
+# Process statistics for the bench (src/bench/process_windows.rs), and rfd for the native
+# open/save dialogs and the startup error box (m4-editor-shell.md §6.4, §6.6; Windows only).
 [target.'cfg(windows)'.dependencies]
+rfd = { workspace = true }
 windows-sys = { workspace = true }
 
 # Process statistics for the bench (src/bench/process_linux.rs), and winit for the X11 event-loop

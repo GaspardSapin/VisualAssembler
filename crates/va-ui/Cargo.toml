@@ -7,5 +7,17 @@ rust-version.workspace = true
 publish.workspace = true
 license.workspace = true
 
+# m4-editor-shell.md §5, §8.2: widgets are built on egui alone, never eframe (rule R3); egui and
+# egui_kittest are the only GUI crates this crate may use.
+[dependencies]
+egui = { workspace = true }
+va-core = { workspace = true }
+va-editor = { workspace = true }
+va-workspace = { workspace = true }
+
+# Headless kittest suite (§10.2): AccessKit tree only, no GPU.
+[dev-dependencies]
+egui_kittest = { workspace = true }
+
 [lints]
 workspace = true

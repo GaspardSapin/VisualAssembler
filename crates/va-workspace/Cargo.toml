@@ -8,10 +8,18 @@ publish.workspace = true
 license.workspace = true
 
 # m1-core-isa-lexer.md §8: the Fluent localizer of architecture §5 (m1 §6.2).
+# m4-editor-shell.md §8.2: serde and toml for the settings, keybindings, project, session and
+# backup index files (§4.2-§4.8).
 [dependencies]
 fluent-bundle = { workspace = true }
+serde = { workspace = true }
+toml = { workspace = true }
 unic-langid = { workspace = true }
 va-core = { workspace = true }
+
+# m4-editor-shell.md §4.6, §8.2: the Windows UI language of `auto` (`system_ui_language`).
+[target.'cfg(windows)'.dependencies]
+sys-locale = { workspace = true }
 
 [lints]
 workspace = true
