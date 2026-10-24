@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Ready for development. The new dependencies, the font download and the UX defaults were approved by the user on 2026-10-24 (§8.3, §8.4, §13); the architecture amendments this spec needs are ratified in `architecture.md` (2026-10-24); the merged wave order with M2 is §14 |
+| Status | Ready for development. The new dependencies, the font download and the UX defaults were approved by the user on 2026-10-24 (§8.3, §8.4, §13); the architecture amendments this spec needs are ratified in `architecture.md` (2026-10-24); the merged wave order with M2 is §14. The settings types of §4.3 and the session types of §4.7 were frozen on 2026-10-24 after WP0 (WP0 follow-up, §1) |
 | Owner | Architect role |
 | Date | 2026-10-24 |
 | Depends on | `architecture.md` (§2 R1–R8, §4 T1–T6, §5, §6, §7, §9.6, §9.8); `m0-foundations.md` §4, §6, §17.10, §19 (renderer, fallback, bench v2); `m1-core-isa-lexer.md` §3 (frozen `va-core`), §5 (lexer), §6.2 (Localizer) |
@@ -36,10 +36,10 @@ Documentarian its new files with a one-line purpose.
 
 | WP | Wave | Write scope | Needs (frozen APIs only) |
 |---|---|---|---|
-| WP0 scaffold | 1 (∥ M2 WP-A, §14) | Root `Cargo.toml`, `Cargo.lock`, `Makefile` (§8); manifests of `va-editor`, `va-workspace`, `va-ui`, `visual-assembler`; compiling stubs that wave 2 then owns, one for every module the crate roots declare: `crates/va-editor/src/lib.rs`, `crates/va-ui/src/{lib.rs,theme.rs,fonts.rs,editor/mod.rs,shell/mod.rs}`, `crates/va-workspace/src/{lib.rs,paths.rs,config/mod.rs,persist/mod.rs}`; `crates/va-ui/tests/support/mod.rs` (the fake `SyntaxProvider`/`Architecture` and harness helpers, §10); `locales/{en,fr}/{ui,commands,config}.ftl` (header comment only); `assets/fonts/{JetBrainsMono-Regular.ttf,OFL.txt}` (§8.4) | user approvals (given 2026-10-24) |
+| WP0 scaffold | 1 (∥ M2 WP-A, §14) | Root `Cargo.toml`, `Cargo.lock`, `Makefile` (§8); manifests of `va-editor`, `va-workspace`, `va-ui`, `visual-assembler`; compiling stubs that wave 2 then owns, one for every module the crate roots declare: `crates/va-editor/src/lib.rs`, `crates/va-ui/src/{lib.rs,theme.rs,fonts.rs,editor/mod.rs,shell/mod.rs}`, `crates/va-workspace/src/{lib.rs,paths.rs,config/{mod.rs,default_settings.toml},persist/mod.rs}`; `crates/va-ui/tests/support/mod.rs` (the fake `SyntaxProvider`/`Architecture` and harness helpers, §10); `locales/{en,fr}/{ui,commands,config}.ftl` (header comment only); `assets/fonts/{JetBrainsMono-Regular.ttf,OFL.txt}` (§8.4) | user approvals (given 2026-10-24) |
 | WP-A editor | 2 | `crates/va-editor/src/**`, `crates/va-editor/tests/**` (§3) | — |
 | WP-B config | 2 | `crates/va-workspace/src/{paths.rs,config/**}`, `tests/{paths,config_settings,config_keybindings,config_project}.rs`, `locales/{en,fr}/config.ftl` (§4.1–§4.5) | — |
-| WP-C persist | 2 | `crates/va-workspace/src/persist/**`, `tests/persist_*.rs` (§4.7–§4.8) | WP-B `Paths` |
+| WP-C persist | 2 | `crates/va-workspace/src/persist/**`, `tests/persist_*.rs` (§4.7–§4.8) | WP-B `Paths`; `ThemeKind` (§4.3) |
 | WP-D i18n | 2 | `crates/va-workspace/src/i18n/**` (adds `ui.rs`, `system.rs`), `tests/i18n_ui.rs`, `crates/va-ui/tests/locales.rs` (§4.6) | — |
 | WP-E view | 2 | `crates/va-ui/src/{editor/**,theme.rs,fonts.rs}`, `tests/{editor_view,editor_input,editor_cache,theme,fonts}.rs`, `tests/support/mod.rs` after WP0 (§5.2–§5.6) | WP-A |
 | WP-F shell | 2 | `crates/va-ui/src/{lib.rs,shell/**}`, `tests/shell_*.rs`, `locales/{en,fr}/{ui,commands}.ftl` (§5.1, §5.7–§5.13) | WP-A–E |
@@ -54,6 +54,12 @@ on day 1 with a stub `Document` built from §3; WP-G starts with stub shells and
 from the GUI until the end-to-end run, which uses WP-G's recorder (§6.8). Crate roots (`lib.rs`) and `tests/support/mod.rs` already
 declare every module after WP0, so no wave-2 package edits a file another one owns: WP-F keeps its own test helpers inside its
 `shell_*.rs` files and asks WP-E for a change to `support/mod.rs`.
+
+**WP0 follow-up (frozen 2026-10-24 (after WP0); wave 1, after commit `b4e7aae`, before the wave-1c docs checkpoint and wave 2).**
+WP0 stubbed §4.3 and `Session` as empty structs because they were not frozen yet. WP0 now writes into its own stubs: the §4.3
+types into `config/mod.rs` plus the new `config/default_settings.toml` and `DEFAULT_SETTINGS_TOML`, and the session types of §4.7
+into `persist/mod.rs`. The `Default` impls, the enums' `id`/`from_id` and the file content are written in full (pure data, no
+`todo!()`); `parse_settings`, `parse_session` and `session_to_toml` stay `todo!()` for WP-B and WP-C.
 
 ## 2. File tree (new or changed at the end of M4)
 
@@ -304,18 +310,45 @@ pub fn read_config_text(path: &Path) -> Result<Option<String>, ConfigProblem>;  
   <path>:<line>:<col>: <message>` (English, path and values through `escape_debug` as m0 §19.9 S19-2), and become M5 Problems-panel
   entries via `to_diagnostic`.
 
-### 4.3 `settings.toml` schema (`config/settings.rs`, WP-B)
+### 4.3 `settings.toml` schema (`config/settings.rs`, WP-B; frozen 2026-10-24 (after WP0))
 
 ```rust
+// The six structs: derive Clone, Debug, PartialEq; `Default` is hand-written and equals the Default column below.
 pub struct Settings { pub ui: UiSettings, pub editor: EditorSettings, pub files: FileSettings,
-                      pub explorer: ExplorerSettings, pub render: RenderSettings }    // Default = the table below
+                      pub explorer: ExplorerSettings, pub render: RenderSettings }
+pub struct UiSettings { pub language: Option<Lang>, pub theme: Option<ThemeKind>, pub native_dialogs: bool }
+pub struct EditorSettings { pub font_size: f32, pub font_file: Option<PathBuf>, pub tab_width: u8,
+                            pub insert_spaces: bool, pub cursor_blink: bool, pub line_numbers: bool,
+                            pub highlight_current_line: bool, pub diagnostics_delay_ms: u32 }
+pub struct FileSettings { pub hot_exit: bool, pub backup_delay_ms: u32, pub autosave: AutosaveMode,
+                          pub autosave_delay_ms: u32, pub eol: Option<EolKind> }
+pub struct ExplorerSettings { pub exclude: Vec<String> }
+pub struct RenderSettings { pub renderer: Option<RendererKind> }
+// The four enums: derive Clone, Copy, Debug, PartialEq, Eq, Hash; AutosaveMode also derives Default (`Off`).
+pub enum ThemeKind { Light, Dark }                            // ids "light" | "dark"
+pub enum EolKind { Lf, CrLf }                                 // ids "lf" | "crlf"
+pub enum RendererKind { Glow, Wgpu }                          // ids "glow" | "wgpu"
+pub enum AutosaveMode { Off, AfterDelay, OnFocusChange }      // ids "off" | "after-delay" | "on-focus-change"
+impl ThemeKind { pub const fn id(self) -> &'static str; pub fn from_id(id: &str) -> Option<Self>; } // same on the other three
 pub fn parse_settings(path: &Path, text: Option<&str>) -> (Settings, Vec<ConfigProblem>);
 pub const DEFAULT_SETTINGS_TOML: &str = include_str!("default_settings.toml");
 ```
 
+- **Names.** Each struct is one table (`[ui]`, `[editor]`, `[files]`, `[explorer]`, `[render]`) and each field is named exactly as
+  its key. `Lang` is `crate::i18n::Lang`. Public paths: `va_workspace::config::*` (re-exported if WP-B moves them to `settings.rs`).
+- **`None` means `"auto"`** for `language`, `theme`, `eol` and `renderer` (absent, `"auto"` and an invalid value all give `None`),
+  so the values pass unchanged to `resolve_ui_lang(…, setting, …)` (§4.6) and to `resolve_renderer(…, setting, …)` (§6.3).
+  `font_file = ""` is `None`.
+- **Values.** String values are exact lowercase ids (`from_id`, or `Lang::parse`; `"auto"` is handled by the parser, so `"Glow"` and
+  `" glow"` give `cfg-invalid-value`). A float key also takes a TOML integer (`font_size = 16`), and `nan`/`inf` are out of range;
+  an integer key never takes a float. Ranges are inclusive. `font_file` must end in `.ttf` or `.otf` (ASCII case-insensitive), else
+  `cfg-invalid-value`; it is stored as written, and a relative path is joined to `Paths::config_dir` where the font is read (§5.5).
+  Each `exclude` element must be a non-empty string without `/` or `\`: a bad element is dropped (`cfg-wrong-type` or
+  `cfg-invalid-value`) and the others are kept; `exclude = []` hides nothing.
+
 | Key | Type | Default | Allowed | Effect |
 |---|---|---|---|---|
-| `ui.language` | string | `"auto"` | `auto`, `en`, `fr` | UI and diagnostics language (§4.6) |
+| `ui.language` | string | `"auto"` | `auto`, `en`, `fr` | UI and diagnostics language (§4.6); read before the window, applied at the next start |
 | `ui.theme` | string | `"auto"` | `auto` (follows the OS), `light`, `dark` | Base theme; the palette toggle overrides it in `session.toml`. Default: user decision 2026-10-24 (§13) |
 | `ui.native_dialogs` | bool | `true` | — | Windows: native open/save dialogs; `false` (and always on Linux) uses the internal path prompt (§6.6) |
 | `editor.font_size` | float | `14.0` | 8.0–40.0 | Code font size in points, before zoom |
@@ -331,15 +364,89 @@ pub const DEFAULT_SETTINGS_TOML: &str = include_str!("default_settings.toml");
 | `files.autosave` | string | `"off"` | `off`, `after-delay`, `on-focus-change` | Writes the student's file; only on the user's opt-in (§4.8) |
 | `files.autosave_delay_ms` | integer | `1000` | 250–60000 | For `after-delay` |
 | `files.eol` | string | `"auto"` | `auto` (CRLF on Windows, LF elsewhere), `lf`, `crlf` | Line ending of new files only |
-| `explorer.exclude` | array of strings | `[".git"]` | names (no `/`) | Entries hidden in the explorer and quick open; case-insensitive on Windows |
+| `explorer.exclude` | array of strings | `[".git"]` | non-empty names (no `/` or `\`) | Entries hidden in the explorer and quick open; case-insensitive on Windows |
 | `render.renderer` | string | `"auto"` | `auto`, `glow`, `wgpu` | §6.3; read before the window, applied at the next start |
 
-- `default_settings.toml` lists every key commented out with its default and one English comment line; a test asserts that the file
-  parses to `Settings::default()` with no problem.
-- The app writes `settings.toml` only once, when it is missing, by writing `DEFAULT_SETTINGS_TOML` (architecture §6), and never in
-  bench mode or a read-only session.
+- **`DEFAULT_SETTINGS_TOML`.** The file is `crates/va-workspace/src/config/default_settings.toml`. The `include_str!` above sits in
+  `config/mod.rs` (WP0 follow-up), or in `config/settings.rs` once WP-B moves it: same folder, same argument. Its content is exactly
+  the block below (ASCII, LF, one final newline): `schema_version = 1`, then each table header, then each key commented out with
+  its default under one English comment line. Tests (`config_settings.rs`): the text parses to `Settings::default()` with no
+  problem; it has exactly one line matching `^# [a-z_]+ = ` per row of the table above, in table order; with all of them
+  uncommented it still parses to `Settings::default()` with no problem.
+
+```toml
+# VisualAssembler settings. Every key is listed commented out, with its default value.
+# To change a value, remove the "# " in front of its key. A bad value is reported and ignored.
+# The app creates this file once, when it is missing, and never rewrites it.
+schema_version = 1
+
+[ui]
+# Interface language: "auto" (from the system), "en" or "fr"; applies at the next start.
+# language = "auto"
+# Colour theme: "auto" (follows the system), "light" or "dark".
+# theme = "auto"
+# Windows: use the native open and save dialogs; false uses the built-in path prompt.
+# native_dialogs = true
+
+[editor]
+# Code font size in points, 8.0 to 40.0, before zoom.
+# font_size = 14.0
+# A .ttf or .otf file replacing the embedded font, absolute or relative to this folder.
+# font_file = ""
+# Width of a tab stop in columns, 1 to 16.
+# tab_width = 8
+# true: the Tab key inserts spaces; false: it inserts a tab character.
+# insert_spaces = false
+# Blinking caret; it stays solid after 10 s without input.
+# cursor_blink = true
+# Show line numbers in the gutter.
+# line_numbers = true
+# Highlight the line of the caret.
+# highlight_current_line = true
+# Delay in ms before diagnostics refresh after an edit, 50 to 5000 (not used yet).
+# diagnostics_delay_ms = 300
+
+[files]
+# Hot exit: closing the window keeps unsaved changes and restores them at the next start.
+# hot_exit = true
+# Delay in ms after the last edit before unsaved changes are backed up, 250 to 60000.
+# backup_delay_ms = 1500
+# Save your files automatically: "off", "after-delay" or "on-focus-change".
+# autosave = "off"
+# Delay in ms of the "after-delay" autosave, 250 to 60000.
+# autosave_delay_ms = 1000
+# Line ending of new files: "auto" (CRLF on Windows, LF elsewhere), "lf" or "crlf".
+# eol = "auto"
+
+[explorer]
+# Names hidden in the explorer and in quick open.
+# exclude = [".git"]
+
+[render]
+# Renderer: "auto", "glow" or "wgpu"; applies at the next start (--renderer and VA_RENDERER win).
+# renderer = "auto"
+```
+
+- The app writes `settings.toml` only once, when it is missing, by writing `DEFAULT_SETTINGS_TOML` with `write_atomic` (architecture
+  §6): at §6.2 step 7 (WP-G) and in `app.open-settings` (§5.12, WP-F); never in bench mode or a read-only session.
 - Reload: on window focus gain, and right after the IDE itself saves the file, settings and keybindings are re-read if their length
-  or mtime changed; every key applies live except `render.renderer` (status note "applies at next start").
+  or mtime changed; every key applies live except `render.renderer` and `ui.language` (status note "applies at next start"):
+  `ShellConfig::lang` (§5.1) does not record whether `--lang` or `VA_LANG` chose it, so a live switch could override them.
+  *Rejected:* a live `ui.language`, which needs that source in the frozen `ShellConfig`. `ui.native_dialogs` applies live because
+  the shell checks it before each `ShellHost::native_dialog` call (§6.6).
+- **Ownership.**
+
+| Piece | Lands with | Owner in wave 2 | Read by |
+|---|---|---|---|
+| §4.3 types, `Default` impls, enum `id`/`from_id`, `default_settings.toml`, `DEFAULT_SETTINGS_TOML` | WP0 follow-up (§1), `config/mod.rs` | WP-B (content frozen: a change goes back to the Architect) | all |
+| `parse_settings` and `config_settings.rs` | WP0 stub (`todo!()`) | WP-B | WP-G at start (§6.2 step 3), WP-F on reload |
+| Session types of §4.7 and their `Default` | WP0 follow-up, `persist/mod.rs` | WP-C (may move them to `persist/session.rs`, re-exported) | WP-G, WP-F |
+| `parse_session`, `session_to_toml`, `persist_session.rs` | WP0 stub (`todo!()`) | WP-C | WP-G at start, WP-F |
+
+  Keys by reader: `ui.language` and `render.renderer`: WP-G only (`resolve_ui_lang`, `resolve_renderer`). Every other key: WP-F,
+  which builds `EditorStyle` and `EditOptions` from `editor.*`, the effective theme (§5.4) from `ui.theme`, the font request (§5.5)
+  from `editor.font_file`, and runs `files.*` (§4.8) and `explorer.exclude` (§5.8, §5.9). WP-E reads `EditorStyle` and
+  `EditorContext`, never `Settings`. `editor.diagnostics_delay_ms` has no reader in M4.
 
 ### 4.4 `keybindings.toml` schema (`config/keybindings.rs`, WP-B; frozen)
 
@@ -455,7 +562,7 @@ pub struct DiskStamp { pub len: u64, pub modified: Option<SystemTime> }
 pub fn stamp(path: &Path) -> std::io::Result<DiskStamp>;
 pub struct SessionLock { /* private: File */ }
 pub fn try_lock_session(paths: &Paths) -> std::io::Result<Option<SessionLock>>;   // None: another instance holds it
-pub struct Session { /* fields of the schema below */ }
+pub struct Session { /* frozen 2026-10-24 (after WP0): session types below */ }
 pub fn parse_session(text: Option<&str>) -> Session;              // never fails: bad parts are dropped
 pub fn session_to_toml(session: &Session) -> String;
 ```
@@ -485,6 +592,36 @@ active = true
 
   Paths are stored as UTF-8; a path that is not valid Unicode is not stored (its tab is not restored; documented). `window` and `ui`
   are read synchronously before the window opens (§6.2).
+- **Session types** (`persist/mod.rs` from the WP0 follow-up, owned by WP-C; frozen 2026-10-24 (after WP0)):
+
+```rust
+// Session, SessionWindow, SessionUi, SessionWorkspace: derive Clone, Debug, PartialEq; `Default` hand-written (values in comments).
+pub struct Session { pub window: SessionWindow, pub ui: SessionUi, pub workspace: SessionWorkspace,
+                     pub tabs: Vec<SessionTab> }                                   // the [[tab]] tables, in tab order; empty
+pub struct SessionWindow { pub width: f32, pub height: f32, pub maximized: bool }  // 1280.0, 800.0 (M0's size), false
+pub struct SessionUi { pub zoom: f32, pub theme: Option<ThemeKind>, pub explorer_visible: bool,
+                       pub explorer_width: f32 }                                  // 1.0, None, true, 240.0
+pub struct SessionWorkspace { pub root: Option<PathBuf> }                          // None
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SessionTab { pub source: TabSource, pub line: u32, pub column: u32, pub top_line: u32, pub active: bool }
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum TabSource { File(PathBuf), Backup(BackupId) }       // `path = "…"` | `backup = "<id>"` (untitled buffer)
+```
+
+- Fields are named as the keys (`[[tab]]` → `tabs`); `ThemeKind` is the §4.3 enum (`crate::config::ThemeKind`); `theme: None` = no
+  override. `line`, `column` (in chars) and `top_line` are 1-based like `LineCol`; the shell clamps them to the document.
+- `parse_session` reports nothing. A missing file, a syntax error or a `schema_version` other than 1 gives `Session::default()`.
+  Otherwise a value of the wrong type or out of range takes its default (`width` 400–10000, `height` 300–10000, `zoom` 0.5–3.0 =
+  §5.5 `ZOOM_MIN`–`ZOOM_MAX`, `explorer_width` 120–2000, `line`/`column`/`top_line` ≥ 1); a `theme` other than `light`/`dark` and
+  a relative `root` are `None`; a `[[tab]]` is dropped unless it has exactly one of an absolute `path` or a well-formed `backup` id
+  (§4.8); only the first `active = true` tab stays active; unknown keys are ignored.
+- `session_to_toml` writes `schema_version = 1`, `window`, `ui` and `workspace` as inline tables, then one `[[tab]]` per tab. It
+  omits `theme` and `root` when `None`, and a path that is not valid Unicode (with its tab); paths are written verbatim (the `/` of
+  the example are illustrative). `persist_session.rs` asserts `parse_session(Some(&session_to_toml(&s))) == s` for in-range
+  sessions with absolute UTF-8 paths.
+- WP-G reads `window` (`with_window_geometry`, §6.2) and hands the whole `Session` to `ShellConfig::session`; WP-F applies `ui`,
+  `workspace` and `tabs`, keeps them current (zoom, `view.toggle-theme` sets `theme`, `view.theme-from-settings` clears it,
+  explorer, tabs and carets) and writes the file.
 
 ### 4.8 Hot exit, backups, autosave, restore (`persist/backup.rs`, WP-C; frozen)
 
@@ -517,9 +654,10 @@ pub enum BackupProblem { MissingText(BackupId), NewerSchema, Unreadable(String) 
   `false`, closing with dirty buffers cancels the close and asks Save all / Don't save / Cancel; "Don't save" deletes their backups.
   Closing one dirty tab always asks Save / Don't save / Cancel.
 - **Restore** (after the first frame, on `va-io`): each entry reopens as a dirty tab with the backup text, in the session's tab
-  order. If the file's current `DiskStamp` differs from the recorded one, the tab shows a banner: "The file changed on disk after
-  your last unsaved edit" with **Keep my version** / **Load the disk version** (the latter discards the backup). A missing file
-  keeps the buffer, titled with its old path. An orphan becomes an untitled "Recovered" tab. A backup is deleted only after its
+  order (`Session::tabs`: a `TabSource::File` tab takes the entry whose `file` is its path, a `TabSource::Backup` tab the entry of
+  its id; clean `File` tabs reload from disk; entries and orphans that no tab names come last). If the file's current `DiskStamp`
+  differs from the recorded one, the tab shows a banner: "The file changed on disk after your last unsaved edit" with **Keep my
+  version** / **Load the disk version** (the latter discards the backup). A missing file keeps the buffer, titled with its old path. An orphan becomes an untitled "Recovered" tab. A backup is deleted only after its
   buffer is saved, reverted to clean, or explicitly discarded.
 - **Autosave.** `after-delay`: dirty file buffers are saved `autosave_delay_ms` after the last edit; `on-focus-change`: when the
   window loses focus or the tab changes. Untitled buffers, Windows-1252 buffers with unencodable chars, and files changed on disk
@@ -833,10 +971,14 @@ visual-assembler [--renderer …] --bench <startup|idle|open|scroll|type> [--ben
 ### 6.3 Renderer precedence with the settings level
 
 `resolve_renderer(cli, env, setting, compiled, os, arch)` gains `setting: Option<RendererChoice>` between the environment and
-`auto`; `ChoiceSource` gains `Settings` (`as_str` = `"settings"`). The invalid-value rule of m0 §19.9 WP2-5 applies to the setting
-through its `cfg-invalid-value` problem (an invalid setting is ignored, the next level applies). Only the winning level is checked
-against the build: a forced setting naming a renderer that is not compiled in is a warning (`render.renderer names a renderer that
-is not compiled in; using auto`) and falls back to `auto`, never exit 2 (a settings file must not make the app unlaunchable).
+`auto`; `ChoiceSource` gains `Settings` (`as_str` = `"settings"`). Precedence: `--renderer` > `VA_RENDERER` > `render.renderer` >
+`auto` (m0 §19.1). WP-G maps `Settings::render.renderer` (§4.3): `Some(RendererKind::Glow)` → `Some(RendererChoice::Glow)`,
+`Some(RendererKind::Wgpu)` → `Some(RendererChoice::Wgpu)`, `None` (absent, `"auto"` or invalid) → `None`. So `"auto"` in the file
+acts as the built-in `auto` (source `default`) and `ChoiceSource::Settings` appears only for a forced setting. The invalid-value
+rule of m0 §19.9 WP2-5 applies to the setting through its `cfg-invalid-value` problem (an invalid setting is ignored, the next
+level applies). Only the winning level is checked against the build: a forced setting naming a renderer that is not compiled in is
+a warning (`render.renderer names a renderer that is not compiled in; using auto`) and falls back to `auto`, never exit 2 (a
+settings file must not make the app unlaunchable).
 `--renderer` keeps exit 2 and `VA_RENDERER` keeps its M0 behaviour. A forced setting that fails to initialize exits 3 with `(forced
 by settings.toml render.renderer; try --renderer auto)`.
 
@@ -861,9 +1003,9 @@ without a console would know to open.
 
 ### 6.6 Dialog host (`host.rs`)
 
-`NativeHost` implements `ShellHost`. On Windows with `ui.native_dialogs = true` it runs `rfd::FileDialog` (`pick_file`,
-`pick_folder`, `save_file`, filters `*.asm;*.s;*.i;*.inc` and all files) on a short-lived thread `va-dialog` and calls
-`DialogReply::send`; a second request while one is open is refused. Elsewhere it returns `false`, and the shell uses the internal
+`NativeHost` implements `ShellHost`; the shell calls it only while `ui.native_dialogs = true` (§4.3). On Windows it runs
+`rfd::FileDialog` (`pick_file`, `pick_folder`, `save_file`, filters `*.asm;*.s;*.i;*.inc` and all files) on a short-lived thread
+`va-dialog` and calls `DialogReply::send`; a second request while one is open is refused. Elsewhere it returns `false`, and the shell uses the internal
 path prompt (§5.9). Dialogs are not parented to the window (not modal). *Rejected:* rfd on Linux: under WSLg there is no portal,
 native Linux is not a manual tier (architecture §9.1), and its portal backend falls back to spawning `zenity` from `PATH`.
 
@@ -1071,7 +1213,7 @@ loop `harness.step()` until a condition holds, with a 5 s timeout.
 | `…/search.rs` | Literal, case, whole word with `.`/`_` words, regex, `^`/`$` per line, empty matches, `MAX_MATCHES` truncation, cancel, `find_from` wrap both ways, templates `$1`/`${name}`/`$$`, invalid regex, `TooBig` on a huge counted repetition, `replace_all` count and result |
 | `…/document.rs` | `revision` increments; `snapshot` shares storage (clone timing independent of size: 16 MiB snapshot < 1 ms in debug); `widest_line_hint` growth; no-op edits return false |
 | `va-workspace/tests/paths.rs` | Every row of §4.1 with fake `var`/`is_file`: env > portable > OS, relative and empty values warned and skipped, Windows `USERPROFILE` fallback, Linux `HOME` fallback, no location → `None` |
-| `…/config_settings.rs` | Defaults; `DEFAULT_SETTINGS_TOML` parses to defaults with no problem; each key valid, wrong type, out of range, invalid value (with line and column); unknown key keeps neighbours; schema 2 ignored; syntax error → defaults + one problem; 1 MiB + 1; non-UTF-8; renderer values incl. `Glow`, `" glow"` |
+| `…/config_settings.rs` | Defaults; the three `DEFAULT_SETTINGS_TOML` checks of §4.3; integer for a float key; `exclude` elements; each key valid, wrong type, out of range, invalid value (with line and column); unknown key keeps neighbours; schema 2 ignored; syntax error → defaults + one problem; 1 MiB + 1; non-UTF-8; renderer values incl. `Glow`, `" glow"` |
 | `…/config_keybindings.rs` | Chord parsing (modifiers any case, aliases, every `KEY_NAMES` entry), removal, replacement, file order, unknown command, bad key, `when` |
 | `…/config_project.rs` | Keys, defaults, reserved tables kept raw, `..` and absolute paths → `cfg-bad-path` |
 | `…/persist_atomic.rs` | Temp naming and `create_new`; failure removes the temp; target content all-or-nothing; symlink target preserved (Unix; Windows when symlinks are permitted, else a printed note); permissions kept (Unix) |
