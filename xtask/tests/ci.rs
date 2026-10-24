@@ -2,8 +2,9 @@
 //! with step 0 of §17.3.2), the build-configuration checks of step 0 — `check_build_env` (set
 //! variables, even empty, §18.3) and the canonical `.cargo/config.toml` comparison
 //! `check_cargo_config` / `check_cargo_config_files` (§18.4) — the real `cargo xtask ci`
-//! stopping at step 0, the path used to move the running executable aside on Windows, and the
-//! §19.9 shape of `.github/workflows/ci.yml`, which runs `cargo xtask ci` (CR19-06, S19-5).
+//! stopping at step 0, the path used to move the running executable aside on Windows, the
+//! §19.9 shape of `.github/workflows/ci.yml`, which runs `cargo xtask ci` (CR19-06, S19-5), and
+//! its §20 runner labels (Security S20-1), each check proven by mutated in-memory copies.
 #![allow(clippy::unwrap_used)]
 
 use std::{
@@ -1031,4 +1032,686 @@ fn workflow_run_values_hold_no_expression_and_actions_are_sha_pinned() {
         pinned += 1;
     }
     assert!(pinned >= 4, "{pinned} uses: lines");
+}
+
+// ---------------------------------------------------------------------------------------------
+// QA (m0 §20, Security S20-1): every `runs-on` value and matrix entry of a workflow names one OS
+// release, with no `-latest` label and no exception (§20.1, §20.2). The required check names
+// guard only the `check` matrix labels (§20.3); these tests also guard `fmt`, `docs` and `deny`.
+// Each check is a function of the workflow text, so the mutation tests feed it in-memory copies
+// of `ci.yml` and never edit the real file.
+// ---------------------------------------------------------------------------------------------
+
+/// The four runner labels of m0 §20.2, in the order of the `check` matrix.
+const SECTION_20_LABELS: [&str; 4] = [
+    "windows-2025",
+    "windows-11-arm",
+    "ubuntu-26.04",
+    "ubuntu-24.04-arm",
+];
+
+/// The `runs-on` value of the `check` job (§8, kept by §20).
+const MATRIX_RUNNER: &str = "${{ matrix.os }}";
+
+/// `line` without its YAML comment and trailing whitespace. A `#` starts a comment at the start
+/// of the line or after whitespace, outside a quoted scalar (a quote opens one only at the start
+/// of a value, so the apostrophe of `runner's` does not).
+fn without_comment(line: &str) -> &str {
+    let mut quote = None;
+    let mut previous = ' ';
+    for (at, c) in line.char_indices() {
+        match quote {
+            Some(open) if c == open => quote = None,
+            Some(_) => {}
+            None if (c == '"' || c == '\'') && " \t[{,:".contains(previous) => quote = Some(c),
+            None if c == '#' && previous.is_whitespace() => return line[..at].trim_end(),
+            None => {}
+        }
+        previous = c;
+    }
+    line.trim_end()
+}
+
+/// A line of a workflow that YAML reads (blank and comment-only lines are left out).
+struct WorkflowLine<'a> {
+    /// 1-based line number in the file.
+    number: usize,
+    /// Leading spaces of the line.
+    indent: usize,
+    /// Column of the line's first key, past any `- ` list markers.
+    key_indent: usize,
+    /// The line from that column on, without its comment.
+    item: &'a str,
+}
+
+/// The lines of `text` that YAML reads, comments dropped.
+fn workflow_lines(text: &str) -> Vec<WorkflowLine<'_>> {
+    text.lines()
+        .enumerate()
+        .filter_map(|(index, line)| {
+            let code = without_comment(line);
+            let content = code.trim_start();
+            if content.is_empty() {
+                return None;
+            }
+            let mut item = content;
+            while let Some(rest) = item
+                .strip_prefix('-')
+                .filter(|rest| rest.is_empty() || rest.starts_with([' ', '\t']))
+            {
+                item = rest.trim_start();
+            }
+            Some(WorkflowLine {
+                number: index + 1,
+                indent: code.len() - content.len(),
+                key_indent: code.len() - item.len(),
+                item,
+            })
+        })
+        .collect()
+}
+
+/// The value of `key` when it is the first key of `line`: the rest of the item, trimmed (empty
+/// for a block value).
+fn key_value<'a>(line: &WorkflowLine<'a>, key: &str) -> Option<&'a str> {
+    let rest = line.item.strip_prefix(key)?.strip_prefix(':')?;
+    (rest.is_empty() || rest.starts_with([' ', '\t'])).then(|| rest.trim())
+}
+
+/// `value` without one pair of surrounding YAML quotes.
+fn scalar(value: &str) -> &str {
+    for quote in ['"', '\''] {
+        if let Some(inner) = value
+            .strip_prefix(quote)
+            .and_then(|rest| rest.strip_suffix(quote))
+        {
+            return inner;
+        }
+    }
+    value
+}
+
+/// End (exclusive index into `lines`) of the block under the first key of `lines[at]`: the
+/// following lines indented deeper than that key, plus the `- ` entries of a block sequence
+/// written at the key's own indent (`os:` then `- windows-2025` in the same column).
+fn block_end(lines: &[WorkflowLine<'_>], at: usize) -> usize {
+    let key = lines[at].key_indent;
+    lines[at + 1..]
+        .iter()
+        .position(|line| {
+            line.indent < key || (line.indent == key && line.key_indent == line.indent)
+        })
+        .map_or(lines.len(), |offset| at + 1 + offset)
+}
+
+/// The jobs of a workflow as `(id, lines)`: each key of the top-level `jobs:` block, with the
+/// lines of its own block.
+fn workflow_jobs<'b, 'a>(lines: &'b [WorkflowLine<'a>]) -> Vec<(&'a str, &'b [WorkflowLine<'a>])> {
+    let Some(start) = lines
+        .iter()
+        .position(|line| line.indent == 0 && key_value(line, "jobs") == Some(""))
+    else {
+        return Vec::new();
+    };
+    let end = block_end(lines, start);
+    let mut jobs = Vec::new();
+    let mut at = start + 1;
+    while at < end {
+        let job_end = block_end(lines, at).min(end);
+        let id = lines[at].item.split(':').next().unwrap_or_default();
+        jobs.push((id, &lines[at + 1..job_end]));
+        at = job_end;
+    }
+    jobs
+}
+
+/// The `runs-on` values of `job` (unquoted), in file order; empty when the job is missing.
+fn job_runners<'a>(jobs: &[(&'a str, &[WorkflowLine<'a>])], job: &str) -> Vec<&'a str> {
+    jobs.iter()
+        .filter(|(id, _)| *id == job)
+        .flat_map(|(_, block)| block.iter())
+        .filter_map(|line| key_value(line, "runs-on").map(scalar))
+        .collect()
+}
+
+/// m0 §20.2 (a): every `runs-on` value of the `ci.yml` text that is neither one of the four §20
+/// labels nor `${{ matrix.os }}` in the `check` job, one problem each. It fails closed: a line
+/// that mentions `runs-on` other than as the first key of a job line (a flow mapping, a key
+/// outside `jobs:`), or no `runs-on` key at all, is a problem too.
+fn runs_on_problems(text: &str) -> Vec<String> {
+    let lines = workflow_lines(text);
+    let mut problems = Vec::new();
+    let mut keys = 0;
+    for (job, block) in workflow_jobs(&lines) {
+        for line in block {
+            let Some(value) = key_value(line, "runs-on").map(scalar) else {
+                continue;
+            };
+            keys += 1;
+            let allowed =
+                SECTION_20_LABELS.contains(&value) || (job == "check" && value == MATRIX_RUNNER);
+            if !allowed {
+                problems.push(format!(
+                    "ci.yml:{}: job `{job}` has `runs-on: {value}`, which is neither a m0 §20 label ({}) nor `{MATRIX_RUNNER}` in job `check`",
+                    line.number,
+                    SECTION_20_LABELS.join(", ")
+                ));
+            }
+        }
+    }
+    let mentions = lines
+        .iter()
+        .filter(|line| line.item.contains("runs-on"))
+        .count();
+    if mentions != keys {
+        problems.push(format!(
+            "ci.yml: {mentions} lines mention `runs-on` but {keys} are `runs-on:` keys of a job (m0 §20: one plain label per key)"
+        ));
+    }
+    if keys == 0 {
+        problems.push("ci.yml: no `runs-on:` key was read (m0 §20)".to_owned());
+    }
+    problems
+}
+
+/// The labels of the `check` matrix, given its `matrix:` key line and that key's block, or a
+/// problem when the matrix holds anything but one `os` key with a list (`[…]` or a block
+/// sequence): another key such as `include` could add a runner the `os` list does not show.
+fn matrix_os(matrix: &WorkflowLine<'_>, block: &[WorkflowLine<'_>]) -> Result<Vec<String>, String> {
+    let shape = |line: &WorkflowLine<'_>| {
+        format!(
+            "ci.yml:{}: `{}` in the `check` matrix: m0 §20.2 allows only the `os` list",
+            line.number, line.item
+        )
+    };
+    if key_value(matrix, "matrix") != Some("") {
+        return Err(shape(matrix));
+    }
+    let Some((os, entries)) = block.split_first() else {
+        return Err(shape(matrix));
+    };
+    let value = key_value(os, "os").ok_or_else(|| shape(os))?;
+    if let Some(list) = value
+        .strip_prefix('[')
+        .and_then(|rest| rest.strip_suffix(']'))
+    {
+        if let Some(extra) = entries.first() {
+            return Err(shape(extra));
+        }
+        return Ok(list
+            .split(',')
+            .map(|label| scalar(label.trim()).to_owned())
+            .collect());
+    }
+    if !value.is_empty() {
+        return Err(shape(os));
+    }
+    entries
+        .iter()
+        .map(|entry| {
+            if entry.key_indent > entry.indent && !entry.item.contains(':') {
+                Ok(scalar(entry.item).to_owned())
+            } else {
+                Err(shape(entry))
+            }
+        })
+        .collect()
+}
+
+/// m0 §20.2 (b): the `check` matrix of the `ci.yml` text is exactly one `os` list equal to
+/// [`SECTION_20_LABELS`], in that order; one problem otherwise.
+fn matrix_problems(text: &str) -> Vec<String> {
+    let lines = workflow_lines(text);
+    let jobs = workflow_jobs(&lines);
+    let Some((_, check)) = jobs.iter().find(|(id, _)| *id == "check") else {
+        return vec!["ci.yml has no `check` job (m0 §20.2)".to_owned()];
+    };
+    let matrices: Vec<usize> = (0..check.len())
+        .filter(|&at| key_value(&check[at], "matrix").is_some())
+        .collect();
+    let &[at] = matrices.as_slice() else {
+        return vec![format!(
+            "ci.yml: job `check` has {} `matrix:` keys; m0 §20.2 requires one",
+            matrices.len()
+        )];
+    };
+    match matrix_os(&check[at], &check[at + 1..block_end(check, at)]) {
+        Err(problem) => vec![problem],
+        Ok(labels) if labels == SECTION_20_LABELS => Vec::new(),
+        // `matrix_os` returns labels only when the block's first line, `check[at + 1]`, is `os:`.
+        Ok(labels) => vec![format!(
+            "ci.yml:{}: the `check` matrix `os` is {labels:?}; m0 §20.2 requires exactly {SECTION_20_LABELS:?}, in this order",
+            check[at + 1].number
+        )],
+    }
+}
+
+/// m0 §20.2 (c): `fmt`, `docs` and `deny` each have exactly one `runs-on: ubuntu-26.04`, and
+/// `check` exactly one `runs-on: ${{ matrix.os }}`; one problem per job that differs (a missing
+/// job or `runs-on` key included).
+fn job_runner_problems(text: &str) -> Vec<String> {
+    let lines = workflow_lines(text);
+    let jobs = workflow_jobs(&lines);
+    [
+        ("fmt", "ubuntu-26.04"),
+        ("docs", "ubuntu-26.04"),
+        ("deny", "ubuntu-26.04"),
+        ("check", MATRIX_RUNNER),
+    ]
+    .into_iter()
+    .filter_map(|(job, expected)| {
+        let runners = job_runners(&jobs, job);
+        (runners != [expected]).then(|| {
+            format!(
+                "ci.yml: job `{job}` runs on {runners:?}; m0 §20.2 requires exactly [{expected:?}]"
+            )
+        })
+    })
+    .collect()
+}
+
+/// m0 §20.1 (d): every line of the workflow `file` (its `text`) that holds a `-latest` label in
+/// a runner position: the value of a `runs-on:` or `matrix:` key, inline (a flow mapping
+/// included) or in the block under the line's first key. Comments are ignored; letter case is
+/// not, since GitHub matches runner labels ignoring case.
+fn latest_label_problems(file: &str, text: &str) -> Vec<String> {
+    let lines = workflow_lines(text);
+    let mut in_scope = vec![false; lines.len()];
+    for (at, line) in lines.iter().enumerate() {
+        if ["runs-on:", "matrix:"]
+            .iter()
+            .any(|key| line.item.contains(key))
+        {
+            in_scope[at..block_end(&lines, at)].fill(true);
+        }
+    }
+    lines
+        .iter()
+        .zip(in_scope)
+        .filter(|(line, scoped)| *scoped && line.item.to_ascii_lowercase().contains("-latest"))
+        .map(|(line, _)| {
+            format!(
+                "{file}:{}: `{}` names a `-latest` runner label; m0 §20 requires one OS release per label",
+                line.number, line.item
+            )
+        })
+        .collect()
+}
+
+/// Fails with every problem, one per line, under a heading that names m0 §20.
+fn assert_section_20(problems: &[String], what: &str) {
+    assert!(
+        problems.is_empty(),
+        "m0 §20: {what}:\n{}",
+        problems.join("\n")
+    );
+}
+
+/// m0 §20.2 (a): every `runs-on` value of `ci.yml` is one of the four §20 labels, or exactly
+/// `${{ matrix.os }}` in the `check` job.
+#[test]
+fn every_runs_on_value_is_a_section_20_label() {
+    assert_section_20(
+        &runs_on_problems(&workflow()),
+        "a `runs-on` value of ci.yml is not a §20.2 label",
+    );
+}
+
+/// m0 §20.2 (b): the `check` matrix is exactly `os: [windows-2025, windows-11-arm,
+/// ubuntu-26.04, ubuntu-24.04-arm]`, in that order, with no other matrix key.
+#[test]
+fn check_matrix_is_the_section_20_label_list_in_order() {
+    assert_section_20(
+        &matrix_problems(&workflow()),
+        "the check matrix of ci.yml is not the §20.2 list",
+    );
+}
+
+/// m0 §20.2 (c): `fmt`, `docs` and `deny` run on `ubuntu-26.04` (their labels are not part of
+/// a required check name, S20-1), and `check` on its matrix label.
+#[test]
+fn fmt_docs_and_deny_run_on_ubuntu_26_04() {
+    assert_section_20(
+        &job_runner_problems(&workflow()),
+        "a job of ci.yml runs on another label than §20.2 gives it",
+    );
+}
+
+/// m0 §20.1 (d): no workflow under `.github/workflows/` (`.yml` or `.yaml`, the two extensions
+/// GitHub reads) has a `-latest` label in a `runs-on` value or a matrix entry.
+#[test]
+fn no_workflow_uses_a_latest_runner_label() {
+    let folder = xtask::locate::workspace_root()
+        .unwrap()
+        .join(".github")
+        .join("workflows");
+    let mut files = Vec::new();
+    let mut problems = Vec::new();
+    for entry in std::fs::read_dir(&folder).unwrap() {
+        let path = entry.unwrap().path();
+        let extension = path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        if extension != "yml" && extension != "yaml" {
+            continue;
+        }
+        let name = path.file_name().unwrap().to_string_lossy().into_owned();
+        let text = std::fs::read_to_string(&path).unwrap();
+        problems.extend(latest_label_problems(&name, &text));
+        files.push(name);
+    }
+    assert!(
+        files.iter().any(|name| name == "ci.yml"),
+        "m0 §20: ci.yml was not read from {folder:?}: {files:?}"
+    );
+    assert_section_20(&problems, "a workflow uses a `-latest` runner label");
+}
+
+// Mutation tests: each check above reports an in-memory copy of `ci.yml` changed the way a
+// slipped edit would change it, so none of them can pass vacuously.
+
+/// `text` with the first `from` replaced by `to`; asserts that `from` occurs, so a mutation never
+/// silently tests the unchanged file.
+fn mutated(text: &str, from: &str, to: &str) -> String {
+    assert!(
+        text.contains(from),
+        "mutation target not in ci.yml: {from:?}"
+    );
+    text.replacen(from, to, 1)
+}
+
+/// 1-based number of the first line of `text` that contains `needle`.
+fn line_of(text: &str, needle: &str) -> usize {
+    text.lines().position(|line| line.contains(needle)).unwrap() + 1
+}
+
+/// Asserts that `problems` (for the mutation `case`) is not empty, names m0 §20 in every
+/// problem, and mentions `fragment` in one of them.
+fn assert_reported(problems: &[String], case: &str, fragment: &str) {
+    assert!(!problems.is_empty(), "{case}: not reported");
+    assert!(
+        problems.iter().all(|problem| problem.contains("m0 §20")),
+        "{case}: {problems:?}"
+    );
+    assert!(
+        problems.iter().any(|problem| problem.contains(fragment)),
+        "{case}: no problem mentions {fragment:?}: {problems:?}"
+    );
+}
+
+/// The `runs-on` line of the `fmt` job, with its job key.
+const FMT_RUNNER: &str = "  fmt:\n    runs-on: ubuntu-26.04\n";
+
+/// The `runs-on` line of the `docs` job, with its job key.
+const DOCS_RUNNER: &str = "  docs:\n    runs-on: ubuntu-26.04\n";
+
+/// The `runs-on` line of the `deny` job, with its job key.
+const DENY_RUNNER: &str = "  deny:\n    runs-on: ubuntu-26.04\n";
+
+/// The `os:` line of the `check` matrix (m0 §20.2).
+const OS_LINE: &str =
+    "        os: [windows-2025, windows-11-arm, ubuntu-26.04, ubuntu-24.04-arm]\n";
+
+/// Check (a) on mutated copies: a `-latest` label, a release outside §20, a label list, a block
+/// value, an expression, the matrix expression outside `check`, a flow mapping.
+#[test]
+fn runs_on_check_reports_a_label_outside_section_20() {
+    let text = workflow();
+    for (case, from, to, fragment) in [
+        (
+            "fmt on ubuntu-latest",
+            FMT_RUNNER,
+            "  fmt:\n    runs-on: ubuntu-latest\n",
+            "job `fmt` has `runs-on: ubuntu-latest`",
+        ),
+        (
+            "docs on ubuntu-24.04, one release but not a §20 label",
+            DOCS_RUNNER,
+            "  docs:\n    runs-on: ubuntu-24.04\n",
+            "job `docs` has `runs-on: ubuntu-24.04`",
+        ),
+        (
+            "deny on a label list",
+            DENY_RUNNER,
+            "  deny:\n    runs-on: [self-hosted, ubuntu-26.04]\n",
+            "job `deny` has `runs-on: [self-hosted, ubuntu-26.04]`",
+        ),
+        (
+            "deny on a block value",
+            DENY_RUNNER,
+            "  deny:\n    runs-on:\n      - ubuntu-latest\n",
+            "job `deny` has `runs-on: `",
+        ),
+        (
+            "check on a repository variable",
+            "runs-on: ${{ matrix.os }}",
+            "runs-on: ${{ vars.CHECK_RUNNER }}",
+            "job `check` has `runs-on: ${{ vars.CHECK_RUNNER }}`",
+        ),
+        (
+            "fmt on the matrix expression",
+            FMT_RUNNER,
+            "  fmt:\n    runs-on: ${{ matrix.os }}\n",
+            "job `fmt` has `runs-on: ${{ matrix.os }}`",
+        ),
+        (
+            "a runs-on inside a flow mapping",
+            FMT_RUNNER,
+            "  fmt:\n    runs-on: ubuntu-26.04\n    defaults: { runs-on: ubuntu-latest }\n",
+            "lines mention `runs-on` but",
+        ),
+    ] {
+        assert_reported(&runs_on_problems(&mutated(&text, from, to)), case, fragment);
+    }
+    // The problem names the line of the value.
+    let copy = mutated(&text, FMT_RUNNER, "  fmt:\n    runs-on: ubuntu-latest\n");
+    let problems = runs_on_problems(&copy);
+    let line = line_of(&copy, "runs-on: ubuntu-latest");
+    assert!(
+        problems[0].starts_with(&format!("ci.yml:{line}: ")),
+        "{problems:?}"
+    );
+    // A quoted label is the same YAML value.
+    let quoted = mutated(&text, FMT_RUNNER, "  fmt:\n    runs-on: \"ubuntu-26.04\"\n");
+    assert_eq!(runs_on_problems(&quoted), Vec::<String>::new());
+}
+
+/// Check (b) on mutated copies: a `-latest` label, a new order, a label added or dropped, an
+/// `include` entry, a block sequence, an expression. The same labels as a block sequence pass.
+#[test]
+fn matrix_check_reports_a_changed_list_or_an_extra_key() {
+    let text = workflow();
+    for (case, to, fragment) in [
+        (
+            "windows-latest back in the list",
+            "        os: [windows-latest, windows-11-arm, ubuntu-26.04, ubuntu-24.04-arm]\n",
+            "is [\"windows-latest\", \"windows-11-arm\"",
+        ),
+        (
+            "two labels swapped",
+            "        os: [windows-11-arm, windows-2025, ubuntu-26.04, ubuntu-24.04-arm]\n",
+            "is [\"windows-11-arm\", \"windows-2025\"",
+        ),
+        (
+            "a fifth label",
+            "        os: [windows-2025, windows-11-arm, ubuntu-26.04, ubuntu-24.04-arm, macos-15]\n",
+            "\"macos-15\"]",
+        ),
+        (
+            "a label dropped",
+            "        os: [windows-2025, windows-11-arm, ubuntu-26.04]\n",
+            "is [\"windows-2025\", \"windows-11-arm\", \"ubuntu-26.04\"];",
+        ),
+        (
+            "an include entry beside the list",
+            "        os: [windows-2025, windows-11-arm, ubuntu-26.04, ubuntu-24.04-arm]\n        include:\n          - os: ubuntu-latest\n",
+            "`include:` in the `check` matrix",
+        ),
+        (
+            "a block sequence with a -latest label",
+            "        os:\n        - windows-2025\n        - windows-11-arm\n        - ubuntu-latest\n        - ubuntu-24.04-arm\n",
+            "\"ubuntu-latest\"",
+        ),
+        (
+            "the matrix from an expression",
+            "        os: ${{ fromJSON(vars.RUNNERS) }}\n",
+            "`os: ${{ fromJSON(vars.RUNNERS) }}` in the `check` matrix",
+        ),
+    ] {
+        assert_reported(
+            &matrix_problems(&mutated(&text, OS_LINE, to)),
+            case,
+            fragment,
+        );
+    }
+    // The problem names the line of the `os` list.
+    let copy = mutated(
+        &text,
+        OS_LINE,
+        "        os: [windows-latest, windows-11-arm, ubuntu-26.04, ubuntu-24.04-arm]\n",
+    );
+    let problems = matrix_problems(&copy);
+    let line = line_of(&copy, "os: [windows-latest");
+    assert!(
+        problems[0].starts_with(&format!("ci.yml:{line}: ")),
+        "{problems:?}"
+    );
+    // The same labels as a block sequence are the same value: the check reads values, not layout.
+    let block = mutated(
+        &text,
+        OS_LINE,
+        "        os:\n          - windows-2025\n          - windows-11-arm\n          - ubuntu-26.04\n          - ubuntu-24.04-arm\n",
+    );
+    assert_eq!(matrix_problems(&block), Vec::<String>::new());
+}
+
+/// Check (c) on mutated copies: `fmt` or `docs` moved to another §20 label (which check (a)
+/// accepts), `deny` without `runs-on`, `check` on one fixed label.
+#[test]
+fn job_runner_check_reports_a_job_on_another_label() {
+    let text = workflow();
+    for (case, from, to, fragment) in [
+        (
+            "fmt moved to another §20 label",
+            FMT_RUNNER,
+            "  fmt:\n    runs-on: windows-2025\n",
+            "job `fmt` runs on [\"windows-2025\"]",
+        ),
+        (
+            "docs moved to the ARM64 label",
+            DOCS_RUNNER,
+            "  docs:\n    runs-on: ubuntu-24.04-arm\n",
+            "job `docs` runs on [\"ubuntu-24.04-arm\"]",
+        ),
+        (
+            "deny without runs-on",
+            DENY_RUNNER,
+            "  deny:\n",
+            "job `deny` runs on []",
+        ),
+        (
+            "check on one fixed label",
+            "runs-on: ${{ matrix.os }}",
+            "runs-on: ubuntu-26.04",
+            "job `check` runs on [\"ubuntu-26.04\"]",
+        ),
+    ] {
+        let copy = mutated(&text, from, to);
+        assert_reported(&job_runner_problems(&copy), case, fragment);
+    }
+    // Moving `fmt` to another §20 label passes check (a): only check (c) pins the job's label.
+    let moved = mutated(&text, FMT_RUNNER, "  fmt:\n    runs-on: windows-2025\n");
+    assert_eq!(runs_on_problems(&moved), Vec::<String>::new());
+}
+
+/// Check (d) on mutated copies and on another workflow: `-latest` in a `runs-on` value (any
+/// case, quoted, a block sequence) or a matrix entry (the list, an `include`, a flow mapping)
+/// is reported; a comment or a `run:` value that mentions `-latest` is not.
+#[test]
+fn latest_label_check_reports_runner_positions_and_ignores_comments() {
+    let text = workflow();
+    for (case, from, to, fragment) in [
+        (
+            "fmt on ubuntu-latest",
+            FMT_RUNNER,
+            "  fmt:\n    runs-on: ubuntu-latest\n",
+            "`runs-on: ubuntu-latest` names",
+        ),
+        (
+            "an upper-case label",
+            DOCS_RUNNER,
+            "  docs:\n    runs-on: Ubuntu-Latest\n",
+            "`runs-on: Ubuntu-Latest`",
+        ),
+        (
+            "a quoted label",
+            DENY_RUNNER,
+            "  deny:\n    runs-on: \"windows-latest\"\n",
+            "`runs-on: \"windows-latest\"`",
+        ),
+        (
+            "a runs-on block sequence at the key's indent",
+            DENY_RUNNER,
+            "  deny:\n    runs-on:\n    - ubuntu-latest\n",
+            "`ubuntu-latest` names",
+        ),
+        (
+            "a matrix entry",
+            OS_LINE,
+            "        os: [windows-latest, windows-11-arm, ubuntu-26.04, ubuntu-24.04-arm]\n",
+            "`os: [windows-latest,",
+        ),
+        (
+            "a matrix include entry",
+            OS_LINE,
+            "        os: [windows-2025, windows-11-arm, ubuntu-26.04, ubuntu-24.04-arm]\n        include:\n          - os: macos-latest\n",
+            "`os: macos-latest` names",
+        ),
+    ] {
+        let copy = mutated(&text, from, to);
+        assert_reported(&latest_label_problems("ci.yml", &copy), case, fragment);
+    }
+    // The problem names the file and the line.
+    let copy = mutated(&text, FMT_RUNNER, "  fmt:\n    runs-on: ubuntu-latest\n");
+    let problems = latest_label_problems("ci.yml", &copy);
+    let line = line_of(&copy, "runs-on: ubuntu-latest");
+    assert_eq!(problems.len(), 1, "{problems:?}");
+    assert!(
+        problems[0].starts_with(&format!("ci.yml:{line}: ")),
+        "{problems:?}"
+    );
+    // Another workflow file, with the matrix in a flow mapping.
+    let release = "on: push\njobs:\n  build:\n    strategy: { matrix: { os: [windows-2025, ubuntu-latest] } }\n    runs-on: ${{ matrix.os }}\n";
+    assert_reported(
+        &latest_label_problems("release.yml", release),
+        "a flow-mapping matrix in another workflow",
+        "release.yml:4: `strategy: { matrix: { os: [windows-2025, ubuntu-latest] } }`",
+    );
+    // Comments may mention `-latest`, and so may text outside runner positions.
+    for (case, from, to) in [
+        (
+            "a trailing comment",
+            FMT_RUNNER,
+            "  fmt:\n    runs-on: ubuntu-26.04 # was ubuntu-latest before m0 §20\n",
+        ),
+        (
+            "a comment line inside the matrix",
+            OS_LINE,
+            "        # ubuntu-latest moved to 26.04 (runner-images#14748)\n        os: [windows-2025, windows-11-arm, ubuntu-26.04, ubuntu-24.04-arm]\n",
+        ),
+        (
+            "a run value",
+            "      - run: cargo fmt --all -- --check\n",
+            "      - run: echo \"not on ubuntu-latest\"\n",
+        ),
+    ] {
+        let copy = mutated(&text, from, to);
+        assert_eq!(
+            latest_label_problems("ci.yml", &copy),
+            Vec::<String>::new(),
+            "{case}"
+        );
+    }
 }

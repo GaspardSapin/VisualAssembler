@@ -11,7 +11,7 @@ Tests of the task runner, one file per source module. They call the `xtask` libr
 | `bench_timestamp.rs` | test | `utc_compact` / `utc_iso`, including leap days and the year 2100 |
 | `bench_report.rs` | test | Report file name, markdown header, the `va.bench.report/2` document and its key order; `renderer` taken from the samples (`mixed`, `unknown`), the `fallbacks` count, `"binary": "shipped"`, the eight-variable `env` map; idle `spawn_to_first_frame_ms` is `null` |
 | `bench_runner.rs` | test | Shipped-binary cargo arguments, artifact parsing, GUI arguments (`--renderer <r>` first), `--renderer` values and defaults, deadlines, run-line detection and validation (forced runs never fall back; `auto` accepts any renderer), output caps; on Unix, the run engine against fake GUIs written in `sh` |
-| `ci.rs` | test | The step order (step 0 first; glow-only and wgpu-only clippy once each; the two `va --no-default-features` steps 3c and 5b once each, on `va` only, never rebuilding xtask), `check_build_env` (a variable set even to an empty value fails), the canonical `.cargo/config.toml`, `cargo xtask ci` stopping at step 0, the Windows parking path; in `ci.yml`, the renderer fallback smoke step equals the m0 §19.9 block, no `${{` sits in a `run:` value, and every action is SHA-pinned |
+| `ci.rs` | test | The step order (step 0 first; glow-only and wgpu-only clippy once each; the two `va --no-default-features` steps 3c and 5b once each, on `va` only, never rebuilding xtask), `check_build_env` (a variable set even to an empty value fails), the canonical `.cargo/config.toml`, `cargo xtask ci` stopping at step 0, the Windows parking path; in `ci.yml`, the renderer fallback smoke step equals the m0 §19.9 block, no `${{` sits in a `run:` value, and every action is SHA-pinned; the m0 §20 runner labels: every `runs-on` is a §20 label (or `${{ matrix.os }}` in `check`), the `check` matrix is exactly the four labels in order with no other key, `fmt`/`docs`/`deny` run on `ubuntu-26.04`, and no workflow has a `-latest` label in a `runs-on` value or matrix entry (comments ignored). Mutation tests feed each check in-memory copies of `ci.yml`, never the real file |
 | `docs.rs` | test | `cargo xtask docs` and `scripts/gen_agencement.py` (LF output, git-aware walk), run in fresh git repositories; `check_project_docs.py` manifest checks: implicit members, `[patch]`/`[replace]`, and the reverse workspace-dependency check (an unused pin, a pin used only in a target table, an unused path pin, sorted once per key, root package tables, skipped when a member table is unusable); the AGENCEMENT annotation warning with its paths (at most 10) and the `--strict` exit codes |
 | `hooks.rs` | test | `cargo xtask hooks [--force]` in temporary git repositories, and the `commit-msg` hook run through `sh` and `git hook run`, under several UTF-8 locales |
 | `layering.rs` | test | Layering rules and GUI families on synthetic `cargo metadata`; source rules S1, S3–S9 on synthetic trees, one regression test per known bypass |
@@ -36,6 +36,7 @@ Rules for every test here (architecture §8, m0-foundations.md §17.9):
 ## Tests / usage
 ```bash
 cargo test -p xtask
+cargo test -p xtask --test ci
 cargo test -p xtask --test hooks
 cargo test -p xtask --test layering -- --ignored live_workspace --nocapture
 ```
