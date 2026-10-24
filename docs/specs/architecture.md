@@ -332,12 +332,15 @@ Locations come from `directories::ProjectDirs::from("", "", "VisualAssembler")`:
 | Tier | Meaning | Platforms |
 |---|---|---|
 | **Tested manually** | A human ran the GUI and the CLI | Windows 11 x64 (reference machine: Ryzen AI 7 350 / Radeon 860M); Ubuntu 26.04 x64 under WSLg, through X11 (Xwayland, the default under WSL, §9.8). Wayland under WSLg is tested with glow only (`VA_WAYLAND=1`). |
-| **Tested automatically** | The full test suite, including headless kittest, runs in CI; nobody looks at the UI | GitHub runners `windows-latest` (x64), `windows-11-arm`, `ubuntu-latest` (x64), `ubuntu-24.04-arm` |
+| **Tested automatically** | The full test suite, including headless kittest, runs in CI; nobody looks at the UI | GitHub runners `windows-2025` (x64), `windows-11-arm`, `ubuntu-26.04` (x64), `ubuntu-24.04-arm` |
 | **Compiled only** | Built, never executed | `aarch64-unknown-linux-gnu` cross-built from WSL |
 
 - The root README carries this matrix verbatim.
 - A platform moves up a tier only with evidence: a report in `docs/perf/` or a completed manual checklist.
 - The informational CI GUI smoke run (M0 spec §8) never counts as evidence.
+- Each CI runner label names one OS release, never a `-latest` label (M0 spec §20), so an OS move
+  reaches CI only through a spec revision. x64 Linux CI runs the release of the manual Linux tier.
+  *Rejected:* moving `-latest` labels, which change CI and its cache with no commit.
 
 ### 9.2 Toolchain
 

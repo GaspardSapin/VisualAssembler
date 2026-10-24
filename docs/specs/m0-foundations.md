@@ -1800,6 +1800,7 @@ Both are realistic accidents and cheap to catch, so they are fixed now:
 | §8 smoke bullet "reports whether wgpu initializes" | §19.1 (the step reports what `auto` starts); §19.9 CR19-06 for the second step |
 | §10 item 2 (`[deps]`, from members to the workspace only) | §19.9 row 19-9(b) (reverse direction added) |
 | §12.3/§12.4 decision rule; outcome W as the WSLg decision | §19 preamble, §19.1 |
+| §8 `runs-on` of `fmt` and `docs` and the `check` matrix labels; `runs-on` of the §17.5 and §18.7 `deny` blocks; §14 F17 (moving `-latest` images accepted) | §20.1, §20.2 |
 
 ### 18.9 Fix-wave table (only what must change)
 
@@ -2152,3 +2153,73 @@ only reformats warnings and parses one variable that eframe already reads.
 | §19.4 table (the cases it leaves open) | WP2-8 |
 | §19.5 report result key order, runner arguments and validation | WP4-1…WP4-6 |
 | §19.8 row 19-1 acceptance: "(winit is now used, so `unused` is satisfied)" | S19-3 |
+| §19.9.3 CR19-06 and the row 19-9(a) acceptance check: `windows-latest` | `windows-2025` (§20.1); the step itself is unchanged |
+
+---
+
+## 20. CI runner labels (2026-10-24)
+
+Precedence: **§20 > §19 > §18 > §17 > §0–§16**. §20 changes only the runner labels of `ci.yml` and
+two of its comments; every other value of §8, §17.5, §18.7 and §19.9 stays. §18.8 and §19.9.7 index
+the passages it supersedes. It is folded into the body with §17–§19 (CR1-09).
+
+Facts (verified on 2026-10-24):
+
+- runner-images#14748 moves `ubuntu-latest` from Ubuntu 24.04 to 26.04, rolled out from 2026-10-19
+  to 2026-11-19; meanwhile a job lands on either image. The `check` cache key (rust-cache v2.9.2,
+  `key: ${{ matrix.os }}`) holds the label, job, `Linux-x64`, rustc, env and lockfiles, never the
+  image: a cache saved on 26.04 can be restored on 24.04, where cached build-script and proc-macro
+  binaries fail with `GLIBC_x.y not found`. CI also changes with no commit.
+- Run 40029215643 (`bd9efa2`) ran `ubuntu-24.04` 20261012.334.1 for every `ubuntu-latest` job,
+  `windows-2025-vs2026` for `windows-latest` and `windows-11-vs2026-arm64` for `windows-11-arm`. The
+  runner-images README lists `windows-latest`, `windows-2025` and `windows-2025-vs2026` as labels of
+  one Windows Server 2025 image; runner-images#14602 moved `windows-11-arm` to Visual Studio 2026.
+
+### 20.1 Decisions
+
+| Item | Decision | Rejected |
+|---|---|---|
+| Rule | Every `runs-on` value and matrix entry of a workflow names one OS release (an Ubuntu or Windows Server version; Windows 11, the only OS of the hosted Windows ARM64 images): no `-latest` label, no exception. A label changes only through a spec revision, which also renames the required check (§20.3). | Moving labels, with failures triaged as image changes (§14 F17): CI and its cache change with no commit. |
+| `check`, x64 Linux | **`ubuntu-26.04`**: the release of the only Linux the project runs (WSL Ubuntu 26.04 x64, where QA runs `make test` and `cargo xtask ci`), so an x64 Linux CI failure reproduces locally. With the ARM64 row on 24.04, CI covers both LTS releases; a failure on one Linux row only is triaged on both axes (release, architecture). | `ubuntu-24.04`: uniform with ARM64, with an older glibc, but x64 failures would come from a release nobody runs locally, and a glibc baseline matters for shipped binaries (M8), not for a check job. |
+| `fmt`, `docs`, `deny` | **`ubuntu-26.04`**, the x64 label of `check`. | `ubuntu-24.04` for these light jobs: a second x64 Linux image to track. |
+| `check`, x64 Windows | **`windows-2025`** replaces `windows-latest`. Same image today, so the environment does not change. `windows-latest` carries the Ubuntu hazard into its next migration, and the required names change in this wave anyway: pinning now avoids a second rename under a rollout deadline. | Keeping `windows-latest` as accepted drift until a migration is announced. |
+| ARM64 rows | `ubuntu-24.04-arm` and `windows-11-arm`, unchanged. | `ubuntu-26.04-arm` (CI would test one Linux release); `windows-11-vs2026-arm` (next row). |
+| Accepted drift | Images still change inside a label: weekly updates everywhere, and a Visual Studio major on the Windows labels (#14602). Accepted: Rust is pinned (`rust-toolchain.toml`); an Ubuntu release keeps its glibc version across updates; Windows has no glibc-style symbol versions, and cached Windows binaries link the C runtime statically (§3.3). **Revisit** when runner-images announces that a pinned label moves to another OS or Visual Studio major, or that a pinned image is deprecated (as #14254 did for Ubuntu 22.04), or when a CI failure is triaged as an image change: the Architect picks the label in a spec revision before the change starts. | The `-vs2026` labels now: they also pin Visual Studio, but runner-images states no lifetime for them, and no failure calls for it. |
+| Cache key | Unchanged (`key: ${{ matrix.os }}`); it now differs per image. Each row starts cold once, at the first `main` run after row 20-1. The `-latest` entries are never restored again; GitHub evicts them after 7 days without use. | Adding `ImageVersion` (the cache would be discarded every week for no gain) or `ImageOS` (repeats the pinned label). |
+| Release builds | M8's `release.yml` chooses its own labels under the same rule; its glibc baseline decides the Linux one. | Reusing the `check` labels: they follow the developers' release, not a baseline. |
+
+### 20.2 `ci.yml` (WP5, normative)
+
+Nothing else changes. Header line 4 (`# --locked) and 19.3 (second GUI smoke step). …`) becomes:
+
+```yaml
+# --locked), 19.3 (second GUI smoke step) and 20 (runner labels: each names one OS release, so
+# an OS move reaches CI only through this file). Comments may be added; values must not change.
+```
+
+Jobs `fmt`, `docs` and `deny`: `runs-on: ubuntu-26.04`. Job `check`: the `os:` line becomes:
+
+```yaml
+        # Section 20: one OS release per label. A label is part of a required check name and keys
+        # the rust cache below, so changing one needs a spec revision.
+        os: [windows-2025, windows-11-arm, ubuntu-26.04, ubuntu-24.04-arm]
+```
+
+Line references into `ci.yml` shift: old L4–L75 by +1, old L76 onward by +3.
+
+### 20.3 Required checks and fix wave
+
+`main` requires exactly `fmt`, `docs`, `deny`, `check (windows-2025)`, `check (windows-11-arm)`,
+`check (ubuntu-26.04)` and `check (ubuntu-24.04-arm)`, each bound to app id 15368 (GitHub Actions).
+The matrix labels are in the required names, so a pull request that changes one cannot merge; the
+other labels are guarded by review only (§18.1). Between row 20-1's push and row 20-2 the old names
+never report, so pull requests stay blocked (fail-closed); owner pushes are not gated (SECURITY.md R3-8).
+
+| # | Owner | Change | Acceptance check |
+|---|---|---|---|
+| 20-1 | WP5 | `ci.yml` per §20.2 | YAML parses; `cargo test -p xtask --test ci` passes; `grep -c -- -latest .github/workflows/ci.yml` prints `0`. After the push, the 7 jobs are green under the §20.3 names, and their "Runner Image" groups show `ubuntu-26.04` (`fmt`, `docs`, `deny`, `check (ubuntu-26.04)`), `ubuntu-24.04-arm`, `windows-2025-vs2026` and `windows-11-vs2026-arm64`; any other image goes back to the Architect |
+| 20-2 | Orchestrator | Branch protection = §20.3, one `gh api` call after row 20-1's run is green | `gh api repos/GaspardSapin/VisualAssembler/branches/main/protection` lists exactly the §20.3 contexts, each with app id 15368 |
+| 20-3 | WP7 | READMEs, CLAUDE.md, `docs/specs/README.md`: the §20 labels, rule and precedence; records of past runs keep the labels they ran with | `make docs` exits 0 |
+| — | Security | SECURITY.md: CI-hardening and branch-protection entries; `ci.yml` line references (§20.2) | Security re-audit |
+
+No code, manifest or lock changes, so QA runs only `cargo test -p xtask --test ci` and `make docs`.
