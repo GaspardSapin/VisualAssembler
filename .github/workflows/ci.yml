@@ -1,7 +1,8 @@
 # Continuous integration of VisualAssembler.
 # Normative content: docs/specs/m0-foundations.md section 8, amended by sections 17.5, 18.7 (deny
 # job: cargo-deny installed from crates.io with --locked outside the checkout, no cache, run with
-# --locked) and 19.3 (second GUI smoke step). Comments may be added; values must not change.
+# --locked), 19.3 (second GUI smoke step) and 20 (runner labels: each names one OS release, so
+# an OS move reaches CI only through this file). Comments may be added; values must not change.
 # Actions are pinned to commit SHAs (resolved on 2026-10-13): bumping one requires re-resolving its SHA.
 # The check list itself lives in `cargo xtask ci`, so this file never duplicates cargo commands.
 
@@ -27,7 +28,7 @@ env:
 
 jobs:
   fmt:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -40,7 +41,7 @@ jobs:
       - run: cargo fmt --all -- --check
 
   docs:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -50,7 +51,7 @@ jobs:
       - run: python3 scripts/check_project_docs.py .
 
   deny:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -73,7 +74,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, windows-11-arm, ubuntu-latest, ubuntu-24.04-arm]
+        # Section 20: one OS release per label. A label is part of a required check name and keys
+        # the rust cache below, so changing one needs a spec revision.
+        os: [windows-2025, windows-11-arm, ubuntu-26.04, ubuntu-24.04-arm]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
