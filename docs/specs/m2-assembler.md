@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Ready for development. User decisions Q1–Q2 of 2026-10-24 are recorded in §13.3; the architecture amendments of §3.1 are ratified in `architecture.md` (2026-10-24); the merged wave order with M4 is §14 |
+| Status | Ready for development. User decisions Q1–Q2 of 2026-10-24 are recorded in §13.3; the architecture amendments of §3.1 are ratified in `architecture.md` (2026-10-24); the merged wave order with M4 is §14; the wave-1 implementation (WP-A `e5e9221`, WP0 `c500c74`) is ratified in §15 (2026-10-25), which wins over the body |
 | Owner | Architect role |
 | Date | 2026-10-24 |
 | Depends on | `architecture.md` (R1–R8, §3, §4 T3, §5, §6 atomic writes, §8, §9.5); `m1-core-isa-lexer.md` (§3 frozen `va-core`, §3.7 M2 signatures as amended by §3.1 below, §4 ISA tables, §5 lexer and §5.7, §6.2 Localizer, §7 CLI, §12) |
@@ -37,21 +37,23 @@ write no README; each WP hands the Documentarian its new files with a one-line p
 |---|---|---|---|
 | WP-A core | 1 (∥ M4 WP0) | `crates/va-core/src/{lib,arch,asm,disasm}.rs`, `crates/va-core/tests/{asm,disasm}.rs` (§3) | — |
 | WP0 scaffold | 1b (after WP-A and M4 WP0, §14) | `arch/m68k/src/{lib,arch}.rs` (module declarations, `assembler()`/`disassembler()`, `diagnostic_codes()`), `arch/m68k/src/isa/mod.rs` (the `pub mod fields;` line only), compiling stubs with the §4.2 signatures for every new file of §2 under `arch/m68k/src/{asm,disasm}/` and `isa/fields.rs`; `arch/m68k/tests/asm/main.rs` and `arch/m68k/tests/disasm/main.rs` with every `mod` line of §10.1 plus a `//!`-only file per module (wave 2 then owns each module file, never `main.rs`); `apps/va/src/{cli.rs, commands/mod.rs}` (subcommand shells), Makefile (§9) | WP-A; M4 WP0 (Makefile) |
+| WP0 follow-up | 1b (after WP0, before wave 2; §15.2 W1) | `arch/m68k/tests/arch.rs` (one test reworded, one added), `apps/va/tests/lex.rs` (one assertion and its imports) | WP0 |
 | WP-B front end | 2 | `arch/m68k/src/asm/{parser,operand,expr}.rs`, `arch/m68k/src/syntax/lexer.rs` (§4.3 lexer row only), `arch/m68k/tests/asm/{parser,expr}.rs`, `arch/m68k/tests/syntax/fields.rs` (new rows), `arch/m68k/fixtures/lex/macros.{asm,tokens}` (re-bless) | WP0 |
-| WP-C encoder | 2 | `arch/m68k/src/isa/{fields,mod}.rs` (**day-1 deliverable**, §4.9), `arch/m68k/src/asm/{encode,optimize}.rs`, `arch/m68k/tests/isa/{fields,main}.rs`, `arch/m68k/tests/asm/{encode,optimize}.rs`, `arch/m68k/tests/asm/corpus.rs` (generated forms corpus, shared with §10.4) | WP0 |
-| WP-D driver | 2 | `arch/m68k/src/asm/{mod,codes,symbols,directives,macros,layout,listing,srec}.rs`, `arch/m68k/tests/asm/{directives,macros,relax,output,listing,fixtures,diagnostics}.rs`, `arch/m68k/fixtures/{asm,asm-opt,asm-inc,asm-diag}/**` | B and C APIs (frozen); integrates as they land |
+| WP-C encoder | 2 | `arch/m68k/src/isa/{fields,mod}.rs` (**day-1 deliverable**, §4.9), `arch/m68k/src/asm/{encode,optimize}.rs`, `arch/m68k/tests/isa/{fields,main}.rs`, `arch/m68k/tests/asm/{encode,optimize}.rs`, `arch/m68k/tests/asm/corpus.rs` (generated forms corpus, shared with §10.4 as §15.3 G2 says) | WP0 |
+| WP-D driver | 2 | `arch/m68k/src/asm/{mod,symbols,directives,macros,layout,listing,srec}.rs` (`codes.rs` is read-only for WP-D, §15.2 W1), `arch/m68k/tests/asm/{directives,macros,relax,output,listing,fixtures,diagnostics}.rs`, `arch/m68k/fixtures/{asm,asm-opt,asm-inc,asm-diag}/**` | B and C APIs (frozen); integrates as they land; the coverage assertion after WP-F's codes commit (§15.2 W1) |
 | WP-E disassembler | 2 | `arch/m68k/src/disasm/{mod,decode,format}.rs`, `arch/m68k/tests/disasm/{decode,format,flow}.rs`, `arch/m68k/tests/roundtrip.rs`, `arch/m68k/fixtures/disasm/**` | `isa/fields.rs` (C, day 1); `roundtrip.rs` finishes after D |
-| WP-F texts | 2 | `arch/m68k/locales/{en,fr}/{diagnostics,directives}.ftl`, `arch/m68k/src/locales.rs`, `arch/m68k/src/syntax/keywords.rs` (directive `doc_id`s only), `arch/m68k/tests/{arch,locales}.rs` (EN and FR writing) | code list of §7 |
+| WP-F texts | 2 | `arch/m68k/locales/{en,fr}/{diagnostics,directives}.ftl`, `arch/m68k/src/locales.rs`, `arch/m68k/src/asm/codes.rs` (`ASM_DIAG_CODES` and the module documentation, §15.2 W1), `arch/m68k/src/syntax/keywords.rs` (directive `doc_id`s only), `arch/m68k/tests/{arch,locales}.rs` (EN and FR writing) | code list of §7; WP0 follow-up |
 | WP-G CLI | 2 (finishes after D, E) | `apps/va/src/**` (new `commands/{asm,disasm}.rs`, `sources.rs`; edits to `cli.rs`, `report.rs`, `commands/{mod,lex}.rs`), `apps/va/tests/{asm,disasm}.rs`, `apps/va/tests/lex.rs` (cap rows) | WP0 shells; D, E APIs |
 | WP-H compare + bench | 2 (after D) | `arch/m68k/tests/{a68k,asm_bench}.rs` | D, C corpus |
 | — | 3 | Security, QA | `SECURITY.md`; QA reports |
 | — | 4 | Performance | `docs/perf/<date>-m2-assembler.md` |
 | WP-I docs | 5 | Every README (new folders included), `CLAUDE.md`, `AGENCEMENT.md`, `DEPENDANCE.md`/`IMPORT.md` (no new crate: unchanged), `apps/va/README.md` (path behaviour, §6) | all |
 
-Parallelism: WP-A runs beside M4's WP0; WP0 follows both (§14). In wave 2, B, C, E, F and G
-start at once; D starts with stubs of B/C behind the frozen signatures; H starts when D assembles
-`basic.asm`. `tests/asm/main.rs` and `tests/disasm/main.rs` stay as WP0 wrote them, so B, C, D and
-E never edit the same file; `isa/mod.rs` passes from WP0 (1b) to C (2) in sequence.
+Parallelism: WP-A runs beside M4's WP0; WP0 follows both (§14), then the WP0 follow-up. In wave 2,
+B, C, E, F and G start at once; D starts with stubs of B/C behind the frozen signatures; H starts
+when D assembles `basic.asm`. No merged test calls a `todo!()` of another package (§15.3 G1).
+`tests/asm/main.rs` and `tests/disasm/main.rs` stay as WP0 wrote them, so B, C, D and E never
+edit the same file; `isa/mod.rs` passes from WP0 (1b) to C (2) in sequence.
 
 ## 2. File tree (new or changed)
 
@@ -484,7 +486,8 @@ The a68k comparison skips fixtures marked `; a68k: skip <reason>` (§10.2).
   with the entry address or `000000`. Uppercase hex, **CRLF after every record on every OS**.
   `pub fn to_srec(image: &ProgramImage) -> String` and `pub fn parse_srec(text: &str) ->
   Result<ProgramImage, SrecError>` (S0–S3, S5, S7–S9; LF or CRLF; checksums, lengths and hex
-  checked; ≤ 16 MiB of data; overlapping records rejected; entry from S7–S9). *Rejected:* S1/S9 for
+  checked; ≤ 16 MiB of data; overlapping records rejected; entry from S7–S9; error type, check
+  order, segments and entry 0: §15.2 W3). *Rejected:* S1/S9 for
   addresses below `$10000` (a68k always writes S2/S8; byte identity wins).
 - **Binary:** `pub fn to_binary(image) -> (u64, Vec<u8>)`: base = lowest address, bytes up to the
   highest, gaps filled with `00`; empty image → `(0, [])`.
@@ -497,8 +500,9 @@ The a68k comparison skips fixtures marked `; a68k: skip <reason>` (§10.2).
   address, up to 64 bytes, then `…`. A file change prints `---- <file name>`. After the lines:
   `symbols:` (name, value as `$` + 8 hex, kind id, sorted by name) and
   `errors <n>, warnings <n>`. No diagnostic text (it is prose; diagnostics go to stderr/JSON).
-  `pub fn render_listing(listing: &Listing, symbols: &SymbolTable, name: &dyn Fn(FileId) -> String) -> String`,
-  capped by `max_listing_bytes` (then `listing truncated`).
+  `pub fn render_listing(listing: &Listing, symbols: &SymbolTable, options: &AsmOptions, name: &dyn Fn(FileId) -> String) -> String`
+  (`options` = those of the assembly: header and cap; §15.2 W5), capped by
+  `options.limits.max_listing_bytes` (then `listing truncated`).
 - **Source map** (M3/M6): one entry per byte-producing statement (`address`, `len`, the file and
   line of the statement — the call site for macro output — and its range); a zero-length entry
   for a label-only line; `EVEN`/`CNOP` own their padding; automatic alignment pads are unmapped.
@@ -598,7 +602,9 @@ is committed. `C:\68000` is never written and never named in code.
 VisualAssembler does (including "refused like a68k -s" / "not supported" rows). `keywords()` then
 returns these `doc_id`s; `locale_resources` returns three resources; m1 §6.3's completeness test
 also collects the directive ids. `diagnostic_codes()` returns the 11 lexer codes followed by
-`asm::codes::ASM_DIAG_CODES` (one static array built by a `const fn`). Style as m1 §6.1 and the
+`asm::codes::ASM_DIAG_CODES` (one static array built by a `const fn`); that array holds the 50
+codes of §7.2 in order, the 5 `asm-related-*` included, and WP-F fills it together with the
+messages (§15.2 W1). Style as m1 §6.1 and the
 existing file: message lowercase without final period, typographic quotes, `.help` full sentences,
 FR regular spaces before `: ; ? »`.
 
@@ -734,7 +740,7 @@ va [--json] disasm <FILE|-> [--format srec|bin] [--org <ADDR>]
 
 Reads FILE or stdin (≤ 16 MiB, `Read::take`); `srec` (default) is parsed by `parse_srec`, `bin`
 is loaded at `--org`. Bad S-record → `input-not-srecord` (exit 3, message names the line and the
-reason). Each segment is decoded from its start; an `Illegal` or `Truncated` word prints as
+reason; exact text §15.2 W3). Each segment is decoded from its start; an `Illegal` or `Truncated` word prints as
 `dc.w $XXXX` (a trailing odd byte as `dc.b $XX`) and decoding resumes 2 bytes later. Text: one line
 per item `AAAAAA  <words, padded to 24>  <text>`. JSON `va.disasm/1`: `{"schema":"va.disasm/1",
 "arch":"m68k","file":"…","entry":…|null,"segments":[{"address":…,"items":[{"address":…,"bytes":"4E71",
@@ -756,8 +762,9 @@ an error; `valid:false` marks them).
 - **The lock belongs to M4.** M4's WP0 changes `Cargo.toml` and `Cargo.lock` in wave 1 (§14); M2's
   WP0 and wave 2 start from that lock and never commit a change to it. Because the `xtask` alias
   has no `--locked` (CLAUDE.md pitfall), a `Cargo.lock` diff in an M2 work package is a defect to
-  drop, not to commit. After M4's WP-B, `va` links `toml` and, on Windows, `sys-locale` through
-  `va-workspace` (m4 §8.2); M2 uses neither, and M2's `make security` runs on the merged lock.
+  drop, not to commit. Since M4's WP0 (`b4e7aae`), `va` links `toml` and, on Windows,
+  `sys-locale` through `va-workspace` (m4 §8.2, §15.1 M6); M2 uses neither, and M2's `make
+  security` runs on the merged lock.
 - **Makefile (normative, WP0, applied on top of M4's WP0 diff, §14):** add `bench-asm
   compare-a68k` to `.PHONY`; after the `bench-lexer` help line add `$(info   bench-asm    measure assembler throughput on 5000 and 100000 generated lines in release)`
   and `$(info   compare-a68k compare with a68k byte for byte - needs VA_A68K_PATH - never in CI)`;
@@ -799,7 +806,7 @@ compare-a68k:
 | `tests/asm/directives.rs`, `macros.rs` | every row of §4.5–§4.7; `\0`, `\@` numbering, NARG, `<…>`, MEXIT, depth and statement limits (lowered `AsmLimits`) |
 | `tests/asm/output.rs`, `listing.rs` | exact S-record text of §12.1 probes (`t1`, `t2`, `y2`, `y5`), CRLF, empty image, `parse_srec` errors and round trip `parse_srec(to_srec(i)) == i`; binary base and gap fill; listing layout, truncation, cap |
 | `tests/asm/fixtures.rs` | §10.2 golden files, `VA_BLESS=1` rewrites |
-| `tests/asm/diagnostics.rs` | programmatic cases (16 MiB + 1 include, unreadable, too many files, cancellation mid-run gives `cancelled` and no image); **coverage**: the union of codes over fixtures and this file equals `ASM_DIAG_CODES`; severity and `blocking` per §7.2 |
+| `tests/asm/diagnostics.rs` | programmatic cases (16 MiB + 1 include, unreadable, too many files, cancellation mid-run gives `cancelled` and no image); **coverage**: the union of codes over fixtures and this file (codes of the diagnostics and of their related entries) equals `ASM_DIAG_CODES`; severity and `blocking` per §7.2 |
 | `tests/disasm/{decode,format,flow}.rs` | golden decodes per mode and family, `Truncated`/`Illegal`, all 65,536 words: no panic, valid ⇔ some form matches, `tokens` cover `text`; `flow`/`target` per §5.1 |
 | `tests/roundtrip.rs` | §10.3 |
 | `tests/locales.rs`, `arch.rs` | m1 §6.3 extended to `diag-asm-*` and `isa-m68k-dir-*`; `assembler()`/`disassembler()` are `Some`; `diagnostic_codes()` = lexer codes + `ASM_DIAG_CODES` |
@@ -1005,8 +1012,9 @@ write; everything else is read-only for it.
 | 1 | WP-A core | M2 | `crates/va-core/src/{lib,arch,asm,disasm}.rs`, `crates/va-core/tests/{asm,disasm}.rs` | — |
 | 1 | WP0 scaffold | M4 | `Cargo.toml`, `Cargo.lock`, Makefile (header comment and `bench` help line, m4 §8.2), the manifests of `va-editor`, `va-workspace`, `va-ui`, `visual-assembler`, the stubs of m4 §1, `crates/va-ui/tests/support/mod.rs`, `locales/{en,fr}/*.ftl` (headers), `assets/fonts/*` | user approvals (given 2026-10-24) |
 | 1b | WP0 scaffold | M2 | `arch/m68k/src/{lib,arch}.rs`, `arch/m68k/src/isa/mod.rs` (one line), stubs under `arch/m68k/src/{asm,disasm}/` and `isa/fields.rs`, `arch/m68k/tests/{asm,disasm}/main.rs` and their empty module files, `apps/va/src/{cli.rs,commands/mod.rs}`, Makefile (§9 diff) | M2 WP-A (trait), M4 WP0 (Makefile, lock) |
+| 1b | WP0 follow-up | M2 | `arch/m68k/tests/arch.rs` (one test), `apps/va/tests/lex.rs` (one assertion) (§15.2 W1) | M2 WP0; lands before wave 2, may run beside 1c (disjoint files) |
 | 1c | Docs checkpoint | both | READMEs of the folders created in waves 1–1b, `AGENCEMENT.md` (annotations) | 1, 1b |
-| 2 | WP-B … WP-H | M2 | the §1 scopes | §1 |
+| 2 | WP-B … WP-H | M2 | the §1 scopes (`asm/codes.rs` belongs to WP-F, §15.2 W1) | §1; WP0 follow-up |
 | 2 | WP-A … WP-H | M4 | the m4 §1 scopes | m4 §1 |
 | 3 | Security, then QA | M2, M4 | `SECURITY.md` (one milestone at a time); QA reports outside the repository | the milestone's wave 2 |
 | 4 | Performance | M2, M4 | `docs/perf/<date>-m2-assembler.md`, `docs/perf/<date>-m4-editor.md`, `docs/perf/README.md` (one milestone at a time) | the milestone's QA |
@@ -1025,11 +1033,147 @@ write; everything else is read-only for it.
 
 | Topic | Rule |
 |---|---|
-| `va-core` | Only M2 edits it (WP-A, wave 1). Every trait method it adds is provided (§3.4, `SourceProvider` §3.2), so M4's fakes compile before and after it; M4 relies on no M2 item. |
+| `va-core` | Only M2 edits it (WP-A, wave 1). Every trait method it adds is provided (§3.4, `SourceProvider` §3.2), so M4's fakes compile before and after it; M4 relies on no M2 item. `va_editor::encoding::DecodeError` and `va_core::disasm::DecodeError` share a name: import them by path, never by glob (§15.1 A1). |
 | `Architecture` in the GUI | M4's registry (m4 §6.7) stores `&'static dyn Architecture` and calls only M1 methods; `assembler()`/`disassembler()` are first called by M5. |
+| 68000 facts in M4 tests | M4 tests read what M2 owns (the 68000's resources, codes, keyword docs, token streams) through `Architecture` and never pin a count or a text: in wave 2, WP-F takes the resources from two to three per language and the codes from 11 to 61 (§15.2 W1). |
+| Lexer | WP-B changes how a `MacroName` operand field lexes `<…>` (one `String` token, §4.3); `TokenKind` is unchanged, so M4's colouring (m4 §5.3–§5.4) needs no change. |
 | Fluent | M2 adds `diag-asm-*` and `isa-m68k-dir-*` to `arch/m68k/locales/` (§7.1); M4 adds `ui-*`, `cmd-*`, `diag-cfg-*` in the root `locales/`. M4's `Localizer::for_ui` loads the CPU's resources with its own, so the assembler texts are in the GUI's bundle once both land, but M4 renders no assembler diagnostic: the GUI shows them from M5 (§13.2). |
-| `va-workspace` | Only M4 edits it. `apps/va` uses `Lang`, `LangChoice`, `resolve_lang`, `Localizer::{for_architecture, message, render}`, `RenderedDiagnostic`; M4 keeps their signatures and only adds items (new `LangSource` variants are safe: `va` never matches on it). |
+| `va-workspace` | Only M4 edits it. `apps/va` uses `Lang`, `LangChoice`, `resolve_lang`, `Localizer::{for_architecture, message, render}`, `RenderedDiagnostic`; M4 keeps their signatures and only adds items (new `LangSource` variants are safe: `va` never matches on it). Through `va-workspace`, `va` links `toml` and, on Windows, `sys-locale` since M4's WP0 (§9); M2's `make security` runs on the merged lock. |
 | Project files | `va asm` does not read `project.toml`; `include_dirs` (m4 §4.5, relative, no `..`) is for the M5 GUI provider. `va asm -I` folders come from the command line and are used as given (§6.2). |
 | Writes | `va asm` and the GUI follow the same atomic-write rule (architecture §6; §8.1). |
 | Bench inputs | M2's assembler bench generates its lines in memory (§10.5); M4 owns `bench/generated/` (m4 §7.1). Neither reads the other's inputs. |
 | Shared files | Makefile (waves 1 then 1b), the closing documents (waves 3–5, one milestone at a time). M2 never edits `Cargo.toml`, `Cargo.lock`, `xtask` or the layering table. |
+
+## 15. Ratified wave-1 implementation (waves 1–1b, 2026-10-25)
+
+Same precedence as the body it amends; where §15 and an earlier passage differ, §15 wins. The
+passages wave 2 reads (§1, §4.12, §7.1, §8.3, §9, §10.1, §14) were also corrected in place.
+Source: the notes of WP-A (`e5e9221`) and WP0 (`c500c74`), checked against the code at `c500c74`.
+
+### 15.1 Ratified as implemented
+
+| # | Decision (the spec now says what the code does) |
+|---|---|
+| A1 | `crates/va-core/src/lib.rs` declares `pub mod asm;` and `pub mod disasm;` and re-exports nothing at the root, like the M1 modules. Paths: `va_core::asm::*`, `va_core::disasm::*`. Code that also uses `va_editor::encoding` names `va_core::disasm::DecodeError` by path, never by glob (§14.2). |
+| A2 | `MemorySources` (pinned by `crates/va-core/tests/asm.rs`): text and binary files share one id sequence (root `FileId(0)`, then each `with_text`/`with_binary` in call order). A requested path matches a registered name iff both are byte-equal once every `\` in either is read as `/` (case-sensitive, no other normalization). `from` is ignored, so every file reaches every file, the root included (a root that includes itself is a cycle by id). `resolve_include` returns the first **text** file of that name; `resolve_binary` the first file of any kind; `text` gives text files only; `binary` gives every file, a text file as its UTF-8 bytes. So a fixture's INCBIN of a text file (`asm-inc/blob.txt`, §10.2) works through `with_text`. |
+| A3 | `DecodeError::Truncated { needed }`: `needed` is the full length in bytes of the instruction that starts at `bytes[0]` (opword and every extension word), so always `> bytes.len()`; with fewer than 2 bytes it is 2. **WP-E:** an opword that no form matches is `Illegal { word }` even when bytes are missing after it; a valid opword whose extension words are cut is `Truncated { needed: len }` (on the 68000 the length follows from the opword alone). The CLI does not print `needed` (§8.3). |
+| A4 | Derives. `AssembleOutput`: `Clone, Debug, PartialEq, Eq`, no `Default` (an empty default would have no image, no blocking diagnostic and `cancelled = false`, against its invariant). `AsmOptions`, `AsmLimits`: `Clone, Copy, Debug, PartialEq, Eq, Hash`. `CancelToken`: `Clone, Debug, Default`; `cancel` stores with `Release`, `is_cancelled` loads with `Acquire`. Also as coded: `AssembleInput` is `Clone, Copy` with a hand-written `Debug` that leaves out the provider; `SymbolTable` and `Listing` derive `Default`; `M68kAssembler` and `M68kDisassembler` are `Clone, Copy, Debug, Default, PartialEq, Eq, Hash`; `flow_kind` returning `insn.flow` is final. |
+| A5 | `IncludeError` has no `id()` (§3.2 gives one to `PathRefusal` only). WP-D maps it in its own files: `NotFound` → `asm-include-not-found`; `Refused(r)` → `asm-include-refused` with `reason = r.id()`; `TooLarge`, `NotUtf8`, `Unreadable`, `TooManyFiles`, `Unsupported` → `asm-include-failed` with `reason` `too-large`, `not-utf8`, `unreadable`, `too-many-files`, `unsupported`. A provider that resolves a path but then gives `None` from `text`/`binary` is reported as `unreadable`. |
+| W2 | `pub fn assemble(input: &AssembleInput<'_>, cancel: &CancelToken) -> AssembleOutput` in `asm/mod.rs`, with the contract of `Assembler::assemble`; `M68kAssembler::assemble` delegates to it. |
+| W4 | Until WP-G lands, `va asm` and `va disasm` parse their §8.1 arguments, read nothing, print `error: va <cmd> is not implemented yet (m2-assembler.md, work package WP-G)` and exit 1; with `--json`, stdout first gets a `va.error/1` document with code `not-implemented`. Transitional: `not-implemented` is no `ErrorCode` and no part of the CLI contract; no test pins it; WP-G deletes `not_implemented`, `NOT_IMPLEMENTED_CODE` and `NotImplementedDocument` when it wires the commands. The §10.6 acceptance commands fail until then. |
+| W6 | `encode` carries `#[expect(clippy::ptr_arg)]` while its body is `todo!()`; WP-C removes it in the commit whose body writes into `out`. General rule for every M2 stub, the same as m4 §15.1 M3: each `#![expect(…)]` lists exactly the lints the file's stubs trigger; an owner removes a lint from the list in the commit that makes it stop firing in that file (`#[expect]` then raises `unfulfilled_lint_expectations`, which CI denies) and the attribute with the last `todo!()`; never `allow` instead, never widened to new code. Lint levels are inherited by child modules, so `asm/mod.rs` and `disasm/mod.rs` must not be relied on: a new file that holds a stub carries its own expectation. |
+
+### 15.2 Fix-now and decided (before or during wave 2)
+
+**W1 — `ASM_DIAG_CODES` and the three M1 tests (fix-now, three ordered steps).** Filling the array
+breaks `arch.rs` (codes = lexer codes), `locales.rs` (a message for every code, no message
+without a code) and `apps/va/tests/lex.rs` (`va lex` would have to produce `asm-*` codes).
+
+1. **WP0 follow-up (M2 WP0 developer, wave 1b, before wave 2).** Scope: exactly the two test
+   files below. Both changes pass with the array empty and with it filled, so no later merge
+   depends on them.
+   - `arch/m68k/tests/arch.rs`: `diagnostic_codes_are_the_lexer_codes` becomes
+     `diagnostic_codes_are_the_lexer_then_the_assembler_codes`: the length is
+     `syntax::DIAG_CODES.len() + asm::codes::ASM_DIAG_CODES.len()`, `codes[..11] ==
+     syntax::DIAG_CODES`, `codes[11..] == ASM_DIAG_CODES`, no duplicate, every code kebab-case,
+     `lex-` prefix on the first 11 and `asm-` on the others. New test
+     `the_assembler_and_the_disassembler_are_provided`: `M68K.assembler().is_some()` and
+     `M68K.disassembler().is_some()` (it calls neither).
+   - `apps/va/tests/lex.rs`, `errors_fixture_reports_every_code`: `expected` is built from
+     `va_arch_m68k::syntax::DIAG_CODES` (`va lex` only lexes and never produces an `asm-*`
+     code); the doc comment says "every lexer diagnostic code"; the `Architecture as _` import is
+     dropped if it becomes unused.
+2. **WP-F, wave 2, one commit ("codes commit").** WP-F owns `arch/m68k/src/asm/codes.rs` in wave
+   2 (moved from WP-D, which reads it). In one commit, never split: `pub static ASM_DIAG_CODES:
+   [DiagCode; 50]` = the 50 constants in §7.2 order (45 diagnostic codes, then the 5
+   `asm-related-*`, whose messages the locale tests then check too); the 50 `diag-asm-*` messages
+   in `en` and `fr`; `tests/locales.rs` extended (each message formatted with its §7.2 arguments,
+   `$cause` for `asm-operands-in-comment` as for the lexer code, `diag-asm-` count 50);
+   `tests/arch.rs` pins `ASM_DIAG_CODES.len() == 50`; the module documentation of `codes.rs`
+   updated. The directive documentation (`directives.ftl`, the `keywords()` doc ids, three
+   resources per language, `RESOURCE_NAMES` and `only_en_and_fr_have_resources` in
+   `locales.rs`) is likewise one commit, the same or a later one.
+3. **WP-D.** Its coverage assertion (§10.1 `diagnostics.rs`) merges after the codes commit. WP-D
+   never edits `codes.rs`; per-code severity and blocking live in WP-D's own files. A code found
+   missing goes back to the Architect, then to WP-F (constant, array entry and both messages in
+   one commit).
+
+`apps/va/tests/lex.rs` stays WP-G's (cap rows) and no longer depends on the array. *Rejected:*
+WP-D filling the array (CI red until WP-F's messages land); M1 tests that skip `asm-*` codes
+(missing messages would pass unseen).
+
+**W3 — `SrecError`, final shape (decided; owner WP-D; WP-G reads it).**
+
+```rust
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct SrecError { pub line: u32, pub reason: SrecReason }   // line: 1-based, the refused record
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum SrecReason { NotARecord, UnsupportedType, BadHex, BadLength, BadChecksum, BadCount, AfterEnd, TooLarge, Overlap }
+impl SrecReason { pub const fn id(self) -> &'static str; }
+// "not-a-record" "unsupported-type" "bad-hex" "bad-length" "bad-checksum" "bad-count" "after-end" "too-large" "overlap"
+```
+
+- **Lines.** The text is split at LF and one trailing CR is removed; an empty line is skipped
+  (a final line end is optional). Each record is checked in this order, the first failure wins:
+  `not-a-record` (not `S` followed by a digit); `unsupported-type` (`S4`, `S6`); `bad-hex` (the
+  rest is not an even number of hex digits, either case); `bad-length` (the count byte differs
+  from the number of bytes after it, or is below the address field, 2/3/4 bytes for
+  S0 S1 S5 S9 / S2 S8 / S3 S7, plus the checksum); `bad-checksum` (not the ones' complement of
+  the low byte of the sum of count, address and data bytes). Then across records: `bad-count`
+  (an S5 whose value differs from the number of S1–S3 records before it); `after-end` (any
+  record after the first S7–S9); `too-large` (the S1–S3 data passes 16 MiB, `MAX_SOURCE_BYTES`,
+  at this record); `overlap` (this record places a byte already placed). S0 content is ignored.
+- **Image.** The data bytes form segments that are the maximal runs of contiguous addresses
+  (records ordered by address, adjacent ones merged), kind `Code`, as the assembler builds them
+  (§4.12). Entry = the S7–S9 address, **`None` when it is 0** or when no termination record
+  exists, because `to_srec` writes `000000` for "no entry". So two files with the same bytes and
+  entry give equal images whatever their record order and lengths (needed by §10.4), and
+  `parse_srec(to_srec(i)) == i` for every image whose entry is not `Some(0)` (which comes back
+  as `None`); `output.rs` tests both.
+- **CLI text (WP-G).** `input-not-srecord`, exit 3: `cannot read <file> as S-records: line <n>:
+  <phrase>`, `<file>` named as in m1 §12.7 (`standard input` for `-`), the same message in
+  `va.error/1`. Phrases by id: `not an S-record`, `unsupported record type`, `invalid hexadecimal
+  digits`, `the byte count does not match the record`, `wrong checksum`, `the S5 record count is
+  wrong`, `record after the end record`, `more than 16 MiB of data`, `overlaps an earlier record`.
+
+*Rejected:* `reason: &'static str` (an open set that WP-G could not map exhaustively); an English
+description in `arch/m68k` (CLI text belongs to `va`).
+
+**W5 — listing header and cap (decided; owner WP-D; WP-G calls it).** Frozen signature (arch/m68k,
+§4.12; `va-core` is unchanged):
+
+```rust
+pub fn render_listing(listing: &Listing, symbols: &SymbolTable, options: &AsmOptions,
+                      name: &dyn Fn(FileId) -> String) -> String;
+```
+
+- `options` are the options of the assembly that produced `listing`: the header says
+  `optimizations on` iff `options.optimize`; the cap is `options.limits.max_listing_bytes`.
+- The renderer writes the header, then each line in order (listing lines, `----` lines,
+  `symbols:`, symbol lines, the count line), and stops before the first one that would take the
+  text past `max_listing_bytes − 18`; it then ends with `listing truncated` and LF (18 bytes).
+  When `listing.truncated` is set, the same marker follows the last listing line. Nothing follows
+  the marker. The header and the marker are always written, so the text never exceeds the cap
+  when the cap is at least their combined length.
+- The assembler (WP-D, pass 2) stops collecting `ListingLine`s once the rendered length of those
+  collected (`----` lines excluded: it does not know the names) reaches the cap, and sets
+  `Listing.truncated`; it measures with a crate-private helper of `listing.rs`, so the memory of
+  a listing stays proportional to the cap.
+
+*Rejected:* new `Listing` fields (a new public field breaks every struct literal of the frozen
+`va-core` type, so it is not a pure addition); two loose `bool`/`u64` parameters (the caller
+always holds the `AsmOptions` it assembled with, which carries both).
+
+### 15.3 Also decided (found while checking wave 1)
+
+| # | Decision |
+|---|---|
+| G1 | **Merge order rule.** No merged test calls a `todo!()` of another package (it panics and turns CI red). A test that needs another package's function merges after that function: WP-C's corpus decode check after WP-E's `decode`; WP-D's end-to-end tests after B's and C's functions; WP-E's `roundtrip.rs` after WP-D; WP-G's `asm`/`disasm` tests after D and E; WP-H after D. |
+| G2 | **Corpus sharing.** `arch/m68k/tests/asm/corpus.rs` (WP-C) provides `pub fn lines(generic: bool) -> Vec<String>`: the source lines of the forms corpus (`generic = true`: the §10.4 variant with the generic mnemonics, assembled with optimizations). `tests/a68k.rs` (WP-H) declares `#[path = "asm/corpus.rs"] mod corpus;` (a plain `.rs` literal, allowed by rule S8). Every item of `corpus.rs` is used by its own tests, so the second inclusion raises no dead-code warning; its tests then also run in the `a68k` binary (accepted). |
+| G3 | **Ratified.** `make bench-asm` and `make compare-a68k` (WP0) fail with "no test target" until WP-H adds `tests/asm_bench.rs` and `tests/a68k.rs`. Accepted: neither runs in CI; the Documentarian marks both "decided, not implemented yet" until then. |
+
+### 15.4 Wave-2 order
+
+One change, mirrored in §14.1 and m4 §14.1: the **WP0 follow-up** (W1 step 1) lands before wave
+2. Inside wave 2: `asm/codes.rs` moves from WP-D to WP-F; WP-F's codes commit is atomic; WP-D's
+coverage assertion merges after it; G1 orders the cross-package tests. M4's wave 2 is unchanged.

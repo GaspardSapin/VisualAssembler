@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Ready for development. The new dependencies, the font download and the UX defaults were approved by the user on 2026-10-24 (§8.3, §8.4, §13); the architecture amendments this spec needs are ratified in `architecture.md` (2026-10-24); the merged wave order with M2 is §14. The settings types of §4.3 and the session types of §4.7 were frozen on 2026-10-24 after WP0 (WP0 follow-up, §1) |
+| Status | Ready for development. The new dependencies, the font download and the UX defaults were approved by the user on 2026-10-24 (§8.3, §8.4, §13); the architecture amendments this spec needs are ratified in `architecture.md` (2026-10-24); the merged wave order with M2 is §14. The settings types of §4.3 and the session types of §4.7 were frozen on 2026-10-24 after WP0 (WP0 follow-up, §1). The wave-1 implementation (WP0 `b4e7aae`, follow-up `570afb1`) is ratified in §15 (2026-10-25), which wins over the body |
 | Owner | Architect role |
 | Date | 2026-10-24 |
 | Depends on | `architecture.md` (§2 R1–R8, §4 T1–T6, §5, §6, §7, §9.6, §9.8); `m0-foundations.md` §4, §6, §17.10, §19 (renderer, fallback, bench v2); `m1-core-isa-lexer.md` §3 (frozen `va-core`), §5 (lexer), §6.2 (Localizer) |
@@ -1335,9 +1335,10 @@ for it.
 | 1 | WP-A core | M2 | `crates/va-core/src/{lib,arch,asm,disasm}.rs`, `crates/va-core/tests/{asm,disasm}.rs` | — |
 | 1 | WP0 scaffold | M4 | `Cargo.toml`, `Cargo.lock`, Makefile (header comment and `bench` help line, §8.2), the manifests of `va-editor`, `va-workspace`, `va-ui`, `visual-assembler`, the stubs of §1, `crates/va-ui/tests/support/mod.rs`, `locales/{en,fr}/*.ftl` (headers), `assets/fonts/*` | user approvals (given 2026-10-24) |
 | 1b | WP0 scaffold | M2 | `arch/m68k/src/{lib,arch}.rs`, `arch/m68k/src/isa/mod.rs` (one line), stubs under `arch/m68k/src/{asm,disasm}/` and `isa/fields.rs`, `arch/m68k/tests/{asm,disasm}/main.rs` and their empty module files, `apps/va/src/{cli.rs,commands/mod.rs}`, Makefile (m2 §9 diff) | M2 WP-A (trait), M4 WP0 (Makefile, lock) |
+| 1b | WP0 follow-up | M2 | `arch/m68k/tests/arch.rs` (one test), `apps/va/tests/lex.rs` (one assertion) (m2 §15.2 W1) | M2 WP0; lands before wave 2, may run beside 1c (disjoint files) |
 | 1c | Docs checkpoint | both | READMEs of the folders created in waves 1–1b, `AGENCEMENT.md` (annotations) | 1, 1b |
 | 2 | WP-A … WP-H | M4 | the §1 scopes | §1 |
-| 2 | WP-B … WP-H | M2 | the m2 §1 scopes | m2 §1 |
+| 2 | WP-B … WP-H | M2 | the m2 §1 scopes (`asm/codes.rs` belongs to WP-F, m2 §15.2 W1) | m2 §1; M2 WP0 follow-up |
 | 3 | Security, then QA | M2, M4 | `SECURITY.md` (one milestone at a time); QA reports outside the repository | the milestone's wave 2 |
 | 4 | Performance | M2, M4 | `docs/perf/<date>-m2-assembler.md`, `docs/perf/<date>-m4-editor.md`, `docs/perf/README.md` (one milestone at a time) | the milestone's QA |
 | 5 | WP-I docs | M2, M4 | READMEs, `CLAUDE.md`, `AGENCEMENT.md`, `DEPENDANCE.md`, `IMPORT.md` (one milestone at a time) | the milestone's waves 3–4 |
@@ -1355,6 +1356,7 @@ for it.
 |---|---|
 | `va-core` | Only M2 edits it (WP-A, wave 1). Every trait method it adds is provided with a neutral default (m2 §3.1, §3.4), so `tests/support/mod.rs` and `va-workspace/tests/i18n_localizer.rs` compile before and after it. M4 relies on no M2 item. `va_editor::encoding::DecodeError` and M2's `va_core::disasm::DecodeError` share a name: import them by path, never by glob. |
 | `Architecture` in the GUI | The registry (§6.7) stores `&'static dyn Architecture` and calls only M1 methods; `assembler()`/`disassembler()` are first called by M5. |
+| 68000 facts in M4 tests | M4 tests (`apps/visual-assembler/tests/arch_registry.rs` and any other that uses `va_arch_m68k::M68K`) read what M2 owns (the 68000's resources, codes, keyword docs, token streams) through `Architecture` and never pin a count or a text: in wave 2, M2's WP-F takes the resources from two to three per language and the codes from 11 to 61 (m2 §15.2 W1). |
 | Lexer | M2 changes how a `MacroName` operand field lexes `<…>` (one `String` token, m2 §4.3); `TokenKind` is unchanged, so the colouring of §5.3–§5.4 needs no change. |
 | Fluent | M4 adds `ui-*`, `cmd-*`, `diag-cfg-*` in the root `locales/`; M2 adds `diag-asm-*` and `isa-m68k-dir-*` to `arch/m68k/locales/`. `for_ui` loads both; M4 renders no assembler diagnostic (M5 does, §4.6). |
 | `va-workspace` | Only M4 edits it. `apps/va` (M2) uses `Lang`, `LangChoice`, `resolve_lang`, `Localizer::{for_architecture, message, render}`, `RenderedDiagnostic`: M4 keeps their signatures and only adds items (new `LangSource` variants are safe: `va` never matches on it). Through `va-workspace`, `va` links `toml` and, on Windows, `sys-locale` (§8.2); M2's `make security` runs on the merged lock. |
@@ -1362,3 +1364,29 @@ for it.
 | Writes | The GUI and `va asm` follow the same atomic-write rule (architecture §6; §4.7, m2 §8.1). |
 | Bench inputs | M4 owns `bench/generated/` (§7.1); M2's assembler bench generates its lines in memory (m2 §10.5). Neither reads the other's inputs. |
 | Shared files | Makefile (waves 1 then 1b), the closing documents (waves 3–5, one milestone at a time). M4 never edits `arch/*`, `apps/va` or `crates/va-core`. |
+
+## 15. Ratified wave-1 implementation (WP0 and its follow-up, 2026-10-25)
+
+Same precedence as the body it amends; where §15 and an earlier passage differ, §15 wins. Source: the notes of WP0 (`b4e7aae`)
+and its follow-up (`570afb1`), checked against the code at `c500c74`.
+
+### 15.1 Ratified as implemented
+
+| # | Decision (the spec now says what the code does) |
+|---|---|
+| M1 | The `va-editor` stubs are inline modules of `lib.rs` (`text`, `encoding`, `selection`, `edit`, `history`, `document`, `search`), each with the frozen items of §3. Ratified for the scaffold. **WP-A moves** each module to the file §2 names (`src/text.rs`, …) as it implements it, so that `lib.rs` ends with the crate documentation and seven `pub mod` lines and the test files of §10.1 mirror `src/` (CLAUDE.md); the module paths (`va_editor::text::Text`, `va_editor::encoding::DecodeError`, …) never change. |
+| M2 | WP0 stubbed every frozen block of the modules it declares, beyond the minimum `ShellConfig` needs: §4.4 and §4.5 in `config/mod.rs`, §4.7 and §4.8 in `persist/mod.rs`, §5.2 in `editor/mod.rs`. Ratified: that is what "compiling stubs that wave 2 then owns" means, and every wave-2 package compiles against the frozen signatures from day 1. **Public-path rule** (generalizes §4.3): the path of a stub item is its public path. An owner who splits a module into the files of §2 (`config/{settings,keybindings,project,problems}.rs`, `persist/{atomic,worker,session,backup,lock}.rs`, `editor/{view,layout,cache,input,caret,gutter,plain}.rs`, the `shell/` files) makes them private modules and re-exports each frozen item by name from `mod.rs` (`pub use`, no glob). So `va_workspace::config::KeyChord`, `va_workspace::persist::IoWorker`, `va_ui::editor::EditorView`, … never move. The split is required by the end of each package, for the same mirroring reason as M1. |
+| M3 | Each stub file carries `#![expect(unused_variables, [dead_code,] clippy::todo, [clippy::ptr_arg,] reason = "WP0 stub: …")]` (the workspace sets `clippy::todo = "warn"` and CI denies warnings). Ratified, with this rule, binding for M2's stubs too (m2 §15.1 W6). The list holds exactly the lints the file's stubs trigger. `#[expect]` raises `unfulfilled_lint_expectations` as soon as a listed lint stops firing, so the owner removes each lint in the commit that makes it stop firing in that file (`dead_code` once the placeholder field is used, `unused_variables` once every parameter is read, `clippy::ptr_arg` once the buffer is written) and the attribute with the last `todo!()`. Never `allow` instead, never widened to cover new code. Lint levels are inherited by child modules: a `todo!()` in a new `editor/view.rs` would be absorbed by the expectation of `editor/mod.rs` and fail only when that attribute goes, so a new file that holds a stub carries its own expectation. |
+| M4 | Bodies that are not `todo!()` where a signature cannot compile otherwise (an `impl Iterator` return, or a private field that would be dead code): `Text::chunks` (the rope's chunks), `Selections::iter` (the list in order), `ChangeSet::changes` (the sorted changes), `PlainSyntax::keywords` (`&[]`: it has no keywords, §5.2). They are final. `Selections::is_empty` (always `false`; clippy `len_without_is_empty`) is an extra public helper, which the frozen-block rule allows. |
+| M5 | The §5.1 items are defined in `shell/mod.rs` and re-exported by name at the crate root: `ArchSupport`, `BenchProbe`, `DialogReply`, `DialogRequest`, `Persistence`, `ReadOnlyReason`, `RendererNote`, `Shell`, `ShellConfig`, `ShellHost`. Both `va_ui::Shell` and `va_ui::shell::Shell` are public paths and stay (WP-F may move the definitions into its `shell/` files under the M2 rule). WP-G imports them from the root. |
+| M6 | Since WP0, `va` links `toml` and, on Windows, `sys-locale` through `va-workspace` (`cargo tree -p va -e normal`, checked at `c500c74`), as §8.2 and §14.2 expect. Ratified: no new crate or version; m2 §9 now says "since M4's WP0" instead of "after M4's WP-B". `DEPENDANCE.md`/`IMPORT.md` record it (Documentarian). |
+
+### 15.2 Wave-2 order and cross-milestone notes
+
+- **No change to M4's wave-2 order.** §14.1 gains M2's WP0 follow-up row (wave 1b, two M2 test files, m2 §15.2 W1); it touches no
+  M4 file and may run beside the 1c docs checkpoint.
+- **New contract (§14.2, mirrored in m2 §14.2):** M4 tests never pin a count or a text that M2 owns; they read the 68000 through
+  `Architecture`. The registry test of §10.3 asserts "no duplicate id" and "builds in `en` and `fr`" over whatever
+  `locale_resources` returns.
+- **Cross-package tests inside M4 follow m2 §15.3 G1:** no merged test calls a `todo!()` of another package. WP-E's and WP-F's tests
+  that need a real `Document` merge after WP-A's implementation of what they call; until then they use the stub-free parts or wait.
