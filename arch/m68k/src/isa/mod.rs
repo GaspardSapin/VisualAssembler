@@ -15,6 +15,8 @@
 //! to cross-check timing footnotes only; `a68k.exe` 2.71.F3w run locally (read-only) for the
 //! spellings, aliases, size defaults and golden opwords.
 
+pub mod fields;
+
 mod conditions;
 mod encoding;
 mod model;

@@ -8,8 +8,14 @@
 //! A68k-dialect lexer ([`syntax`]), and [`M68k`], which registers them as a
 //! `va_core::arch::Architecture` together with the register file and the embedded English and
 //! French documentation (`locales/{en,fr}/{isa,diagnostics}.ftl`). The apps register the
-//! instance [`M68K`]. M2 adds `asm` and `disasm`, M3 `emu` and `io`.
+//! instance [`M68K`].
+//!
+//! M2 (m2-assembler.md §4, §5): the strict-A68k assembler ([`asm`], `M68K.assembler()`) and the
+//! disassembler ([`disasm`], `M68K.disassembler()`), with the operand placement table
+//! `isa::fields`. M3 adds `emu` and `io`.
 
+pub mod asm;
+pub mod disasm;
 pub mod isa;
 pub mod syntax;
 

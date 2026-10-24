@@ -1,13 +1,16 @@
 //! Command-line grammar of `va`, declared with clap's derive API.
 //!
 //! `va [--json] [--lang en|fr] info | lex <FILE|-> | isa <MNEMONIC[.SIZE]> | isa --list`
-//! (m1-core-isa-lexer.md §7.1). clap generates `--help`, `--version` and the usage errors;
-//! `main.rs` prints them and maps them to exit codes (docs/specs/m0-foundations.md §5).
+//! (m1-core-isa-lexer.md §7.1), and `asm <FILE|-> [-o <OUT|->] [--format srec|bin]
+//! [--listing[=<PATH>]] [--map[=<PATH>]] [-I <DIR>]... [--no-opt]` and `disasm <FILE|->
+//! [--format srec|bin] [--org <ADDR>]` (m2-assembler.md §8.1). clap generates `--help`,
+//! `--version` and the usage errors; `main.rs` prints them and maps them to exit codes
+//! (docs/specs/m0-foundations.md §5).
 
 use std::ffi::OsString;
 
 use clap::builder::{PossibleValuesParser, TypedValueParser};
-use clap::{ArgGroup, Parser, Subcommand};
+use clap::{ArgGroup, Args, Parser, Subcommand, ValueEnum};
 use va_workspace::i18n::Lang;
 
 /// Parsed command line of `va`.
@@ -64,6 +67,73 @@ pub enum Command {
         #[arg(long)]
         list: bool,
     },
+    /// Assemble a source file into S-records or a binary image.
+    Asm(AsmArgs),
+    /// Disassemble S-records or a binary image.
+    Disasm(DisasmArgs),
+}
+
+/// The arguments of `va asm` (m2-assembler.md §8.1).
+///
+/// WP0 shell: the grammar of §8.1 as declared here; WP-G gives the arguments their meaning
+/// (default output paths, `output-required`, `output-is-input`, `stdout-conflict`).
+#[derive(Debug, Args)]
+#[expect(
+    dead_code,
+    reason = "WP0 shell: WP-G implements va asm (m2 §8) and reads every field"
+)]
+pub struct AsmArgs {
+    /// Source file to assemble, or - for standard input
+    #[arg(value_name = "FILE|-")]
+    pub file: OsString,
+    /// Output file, or - for standard output (default: FILE with the extension .hex or .bin)
+    #[arg(short = 'o', value_name = "OUT|-")]
+    pub output: Option<OsString>,
+    /// Output format
+    #[arg(long, value_enum, value_name = "FORMAT", default_value_t = ImageFormat::Srec)]
+    pub format: ImageFormat,
+    /// Also write the listing (default: OUT with the extension .lst)
+    #[arg(long, value_name = "PATH", num_args = 0..=1, require_equals = true)]
+    pub listing: Option<Option<OsString>>,
+    /// Also write the source map as JSON (default: OUT with the extension .map)
+    #[arg(long, value_name = "PATH", num_args = 0..=1, require_equals = true)]
+    pub map: Option<Option<OsString>>,
+    /// Add a folder where INCLUDE and INCBIN look for files, after the folder of FILE
+    #[arg(short = 'I', value_name = "DIR")]
+    pub include: Vec<OsString>,
+    /// Switch every optimization off (as a68k -n)
+    #[arg(long)]
+    pub no_opt: bool,
+}
+
+/// The arguments of `va disasm` (m2-assembler.md §8.1).
+///
+/// WP0 shell: the grammar of §8.1 as declared here; WP-G gives the arguments their meaning
+/// (reading `--org` as `$1000`, `0x1000` or decimal, for binary input only).
+#[derive(Debug, Args)]
+#[expect(
+    dead_code,
+    reason = "WP0 shell: WP-G implements va disasm (m2 §8) and reads every field"
+)]
+pub struct DisasmArgs {
+    /// S-record or binary file to disassemble, or - for standard input
+    #[arg(value_name = "FILE|-")]
+    pub file: OsString,
+    /// Input format
+    #[arg(long, value_enum, value_name = "FORMAT", default_value_t = ImageFormat::Srec)]
+    pub format: ImageFormat,
+    /// Load address of a binary input (default: 0)
+    #[arg(long, value_name = "ADDR")]
+    pub org: Option<String>,
+}
+
+/// The file format of a program image (`--format` of `va asm` and `va disasm`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, ValueEnum)]
+pub enum ImageFormat {
+    /// Motorola S-records (S0, S2, S8), as a68k -s writes them
+    Srec,
+    /// Raw bytes from the lowest address to the highest, gaps filled with zeros
+    Bin,
 }
 
 /// The values of `--lang`: exactly the shipped languages. `auto` is the absence of the flag

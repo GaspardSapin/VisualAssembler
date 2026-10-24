@@ -3,8 +3,8 @@
 # GNU make uses sh (Git for Windows, Ubuntu) or cmd.exe (Windows without sh on PATH).
 # Normative content: docs/specs/m0-foundations.md section 7, amended by sections 17.5 and 18.7
 # (security target) and 19.5 (RENDERER default), and amended by m1-core-isa-lexer.md section 8
-# (bench-lexer target) and m4-editor-shell.md section 8 (bench help line). Comments may be added;
-# values must not change.
+# (bench-lexer target), m4-editor-shell.md section 8 (bench help line) and m2-assembler.md
+# section 9 (bench-asm and compare-a68k targets). Comments may be added; values must not change.
 
 CARGO    ?= cargo
 SCENARIO ?= all
@@ -12,7 +12,7 @@ RENDERER ?= auto
 RUNS     ?=
 
 .DEFAULT_GOAL := help
-.PHONY: help install hooks dev run test lint format security docs build clean bench bench-lexer ci
+.PHONY: help install hooks dev run test lint format security docs build clean bench bench-lexer bench-asm compare-a68k ci
 
 help:
 	$(info VisualAssembler - make targets)
@@ -29,6 +29,8 @@ help:
 	$(info   clean     remove build artifacts)
 	$(info   bench     measure the GUI - SCENARIO=startup|idle|open|scroll|type|all RENDERER=auto|glow|wgpu|all RUNS=n)
 	$(info   bench-lexer  measure lexer throughput on 100000 generated lines in release)
+	$(info   bench-asm    measure assembler throughput on 5000 and 100000 generated lines in release)
+	$(info   compare-a68k compare with a68k byte for byte - needs VA_A68K_PATH - never in CI)
 	$(info   ci        run the CI checks locally - fmt clippy layering tests)
 
 install:
@@ -74,6 +76,12 @@ bench:
 
 bench-lexer:
 	$(CARGO) test -p va-arch-m68k --release --test syntax_bench -- --ignored --nocapture
+
+bench-asm:
+	$(CARGO) test -p va-arch-m68k --release --test asm_bench -- --ignored --nocapture
+
+compare-a68k:
+	$(CARGO) test -p va-arch-m68k --test a68k -- --ignored --nocapture
 
 ci:
 	$(CARGO) xtask ci
