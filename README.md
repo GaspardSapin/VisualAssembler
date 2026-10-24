@@ -30,8 +30,9 @@ M5 language services · M6 debugging UI · M7 performance and hardening · M8 di
 gets its spec in `docs/specs/` when it starts.
 
 Specifications: `docs/specs/architecture.md` (durable), `docs/specs/m0-foundations.md` (M0) and
-`docs/specs/m1-core-isa-lexer.md` (M1). Measurements: `docs/perf/M0-backend.md` and
-`docs/perf/2026-10-23-m1-lexer.md`.
+`docs/specs/m1-core-isa-lexer.md` (M1). `docs/specs/m2-assembler.md` (M2) and
+`docs/specs/m4-editor-shell.md` (M4) run in parallel; they are specified, not implemented yet.
+Measurements: `docs/perf/M0-backend.md` and `docs/perf/2026-10-23-m1-lexer.md`.
 
 ## Platform support
 

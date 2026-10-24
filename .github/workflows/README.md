@@ -53,7 +53,7 @@ The check list itself lives in `cargo xtask ci`, so the workflow never duplicate
   `Swatinem/rust-cache` v2.9.2, each pinned by SHA in `ci.yml`.
 
 ## Tests / usage
-Recorded runs (read with `gh run view` on 2026-10-16 and 2026-10-23; `SECURITY.md`,
+Recorded runs (read with `gh run view` on 2026-10-16, 2026-10-23 and 2026-10-24; `SECURITY.md`,
 `docs/perf/M0-backend.md`): run 38635672228 (2026-10-14, `c326afd`, before the §19 renderer work)
 passed all 7 jobs; run 38968085878 (`646b6f7`) failed only `check (windows-11-arm)` on a dead-code
 warning; run 38969165969 (2026-10-16, `6ed43c8`) passed all 7 jobs, the §19 smoke steps included.
@@ -64,8 +64,17 @@ egui-winit and eframe 0.36.2), yanked upstream on 2026-10-23 for an out-of-bound
 (2026-10-23, `5f45f9b`) passed all 7 jobs. Its `check (windows-11-arm)` job still shows the
 annotation "Process completed with exit code 3" from the informational GUI smoke steps, as the M0
 run 38970636341 on `cc827b0` did; `continue-on-error` keeps the job green.
-Branch protection on `main` requires `fmt`, `docs`, `deny` and the four `check (…)` jobs. It does not
-include administrators (`enforce_admins` is off), so the owner's direct pushes are not gated.
+These runs used the labels before m0 §20 (`ubuntu-latest`, `windows-latest`), and their job names
+are kept as they ran. With the §20 labels, run 40094415100 (2026-10-24, `workflow_dispatch` on the
+test branch `ci/pin-runner-labels`, `f0d3404`) passed all 7 jobs on the images `ubuntu-26.04`
+(`fmt`, `docs`, `deny`, `check (ubuntu-26.04)`), `windows-2025-vs2026`, `windows-11-vs2026-arm64`
+and `ubuntu-24.04-arm`; run 40107679444 (2026-10-24, push to `main`, `62d0065`) passed all 7 jobs.
+Branch protection on `main` requires exactly `fmt`, `docs`, `deny`, `check (windows-2025)`,
+`check (windows-11-arm)`, `check (ubuntu-26.04)` and `check (ubuntu-24.04-arm)`, each bound to
+GitHub Actions (app id 15368). The check names were renamed on 2026-10-24 (m0 §20.3, row 20-2):
+`check (windows-latest)` and `check (ubuntu-latest)` became `check (windows-2025)` and
+`check (ubuntu-26.04)`. It does not include administrators (`enforce_admins` is off), so the owner's
+direct pushes are not gated.
 
 Reading runs and the protection from the dev machine. `gh` is not on `PATH` in agent shells, so call
 it by its full path:
@@ -78,4 +87,6 @@ it by its full path:
 ```
 Locally, `make ci` (`cargo xtask ci`) runs the checks of the `check` job's first step, plus the fmt
 check. It does not run the release build or the smoke steps. `cargo test -p xtask --test ci` checks
-that the fallback smoke step is the spec block and that every action stays SHA-pinned.
+that the fallback smoke step is the spec block and that every action stays SHA-pinned. It also checks
+the m0 §20 labels: every `runs-on` value is a §20 label, the `check` matrix is exactly the four labels
+in order, `fmt`, `docs` and `deny` run on `ubuntu-26.04`, and no workflow uses a `-latest` label.

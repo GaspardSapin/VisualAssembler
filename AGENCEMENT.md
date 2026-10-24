@@ -211,8 +211,10 @@ VisualAssembler/
 │   │   └── README.md                   # Report list, naming and reproduction
 │   ├── specs/                          # Normative specifications (Architect role)
 │   │   ├── architecture.md             # Durable architecture: crate map, rules R1-R8, policies, support tiers, renderer policy
-│   │   ├── m0-foundations.md           # M0 file-level spec; precedence section 19 > 18 > 17 > body
+│   │   ├── m0-foundations.md           # M0 file-level spec; precedence section 20 > 19 > 18 > 17 > body
 │   │   ├── m1-core-isa-lexer.md        # M1 file-level spec; section 12 ratifications win over the body
+│   │   ├── m2-assembler.md             # M2 file-level spec: assembler, disassembler, va asm and va disasm; section 14 merges its waves with M4
+│   │   ├── m4-editor-shell.md          # M4 file-level spec: editor, workspace, GUI shell and bench; section 14 merges its waves with M2
 │   │   └── README.md                   # How to read the specs (precedence, superseded index)
 │   └── README.md                       # Documentation index
 ├── scripts/                            # Documentation tooling and git hooks
@@ -268,4 +270,4 @@ VisualAssembler/
 └── SECURITY.md                         # Protections in place and their limitations (Security agent)
 ```
 
-_261 entries · 0 to annotate._
+_263 entries · 0 to annotate._
