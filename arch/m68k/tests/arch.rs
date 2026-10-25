@@ -1,12 +1,13 @@
 //! Tests for `src/arch.rs` and `src/registers.rs` (m1-core-isa-lexer.md §3.6, §9.1): the 68000
 //! seen through `va_core::arch::Architecture` — its id, the lexer and tables it hands out (every
-//! keyword and every spelling lexes as its kind), its diagnostic codes, its register file and
-//! the fields of SR.
+//! keyword and every spelling lexes as its kind), its diagnostic codes (the lexer's, then the
+//! assembler's, m2-assembler.md §7.1), the assembler and disassembler it provides (m2 §3.4), its
+//! register file and the fields of SR.
 #![allow(clippy::unwrap_used)]
 
 use std::collections::BTreeSet;
 
-use va_arch_m68k::{M68K, M68k, isa, syntax};
+use va_arch_m68k::{M68K, M68k, asm, isa, syntax};
 use va_core::arch::Architecture;
 use va_core::regs::{RegId, RegisterGroup};
 use va_core::syntax::{KeywordKind, LineState, Token, TokenKind};
@@ -47,16 +48,28 @@ fn it_hands_out_the_crate_lexer_and_tables() {
 }
 
 #[test]
-fn diagnostic_codes_are_the_lexer_codes() {
+fn diagnostic_codes_are_the_lexer_then_the_assembler_codes() {
     let codes = M68K.diagnostic_codes();
-    assert_eq!(codes, &syntax::DIAG_CODES[..]);
-    assert_eq!(codes.len(), 11);
+    assert_eq!(
+        codes.len(),
+        syntax::DIAG_CODES.len() + asm::codes::ASM_DIAG_CODES.len()
+    );
+    assert_eq!(&codes[..11], &syntax::DIAG_CODES[..], "the 11 lexer codes");
+    assert_eq!(&codes[11..], &asm::codes::ASM_DIAG_CODES[..]);
     let unique: BTreeSet<_> = codes.iter().collect();
     assert_eq!(unique.len(), codes.len(), "duplicate code");
-    for code in codes {
+    for (index, code) in codes.iter().enumerate() {
         assert!(code.is_valid(), "{code:?} is not kebab-case");
-        assert!(code.0.starts_with("lex-"), "{code:?}");
+        let prefix = if index < 11 { "lex-" } else { "asm-" };
+        assert!(code.0.starts_with(prefix), "{code:?}: expected {prefix}");
     }
+}
+
+/// Only checks that both are provided: `assemble` and `decode` are not called here (m2 §15.3 G1).
+#[test]
+fn the_assembler_and_the_disassembler_are_provided() {
+    assert!(M68K.assembler().is_some());
+    assert!(M68K.disassembler().is_some());
 }
 
 #[test]

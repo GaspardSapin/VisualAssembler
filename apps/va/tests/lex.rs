@@ -11,8 +11,7 @@ use std::process::{Command, Output, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use serde_json::Value;
-use va_arch_m68k::M68K;
-use va_core::arch::Architecture as _;
+use va_arch_m68k::{M68K, syntax};
 use va_core::diag::DiagArg;
 use va_core::source::MAX_SOURCE_BYTES;
 use va_workspace::i18n::{Lang, Localizer};
@@ -321,8 +320,9 @@ fn real_comments_exit_zero() {
     assert_eq!(document["summary"]["errors"], 0);
 }
 
-/// `errors.asm` produces every diagnostic code of the CPU, exits 1 in both modes, and the text
-/// mode prints one GNU-style line per diagnostic, prefixed with the path as given.
+/// `errors.asm` produces every lexer diagnostic code (`va lex` only lexes, so it never produces
+/// an `asm-*` code), exits 1 in both modes, and the text mode prints one GNU-style line per
+/// diagnostic, prefixed with the path as given.
 #[test]
 fn errors_fixture_reports_every_code() {
     let path = fixture("errors", "asm");
@@ -336,7 +336,7 @@ fn errors_fixture_reports_every_code() {
         .iter()
         .map(|diagnostic| diagnostic["code"].as_str().unwrap())
         .collect();
-    let expected: BTreeSet<&str> = M68K.diagnostic_codes().iter().map(|code| code.0).collect();
+    let expected: BTreeSet<&str> = syntax::DIAG_CODES.iter().map(|code| code.0).collect();
     assert_eq!(codes, expected);
     for diagnostic in diagnostics {
         let blocking = diagnostic["code"] != "lex-operands-in-comment";
