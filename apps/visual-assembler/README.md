@@ -10,7 +10,7 @@ package may depend on it (rule R7).
 ## Contents
 | Entry | Type | Purpose |
 |-------|------|---------|
-| `Cargo.toml` | manifest | Features `renderer-glow` and `renderer-wgpu`, **both default**: that is the shipped binary. Single-renderer builds still compile (`cargo xtask ci` steps 3 and 3b lint them) but are neither shipped nor benchmarked. Dependencies `eframe`, `clap`, `serde`, `serde_json`, `raw-window-handle`; `windows-sys` on Windows; `libc` and `winit` on Linux; dev-dependency `egui_kittest` |
+| `Cargo.toml` | manifest | Features `renderer-glow` and `renderer-wgpu`, **both default**: that is the shipped binary. Single-renderer builds still compile (`cargo xtask ci` steps 3 and 3b lint them) but are neither shipped nor benchmarked. Feature `arch-m68k` (default since M4 WP0) adds `va-arch-m68k`. Dependencies `eframe`, `clap`, `serde`, `serde_json`, `raw-window-handle`, and since M4 WP0 `va-core`, `va-editor`, `va-ui`, `va-workspace`; `windows-sys` and (M4) `rfd` on Windows; `libc` and `winit` on Linux; dev-dependency `egui_kittest` |
 | `src/` | folder | Library, binary, command line, renderer selection, window and bench. See its README. |
 | `tests/` | folder | Headless tests, the ignored display tests of the renderer fallback, and the list of what is not automated. See its README. |
 
@@ -71,7 +71,10 @@ need a display and a human (see `tests/README.md`). The G2 visual checklist is i
 `docs/perf/M0-backend.md` §4, and the G2 launches of the shipped binary are listed in its §11.8.
 
 ## Dependencies
-- Internal: none in M0 (allowed: every `crates/*` and `arch/*` package; never `va` or `xtask`).
+- Internal: declared since M4 WP0 (commit `b4e7aae`): `va-core`, `va-editor`, `va-ui`,
+  `va-workspace`, and `va-arch-m68k` behind the default feature `arch-m68k`. The code does not use
+  them yet: WP-G wires the shell, the architecture registry and the native dialogs (`rfd`) in
+  wave 2 (m4 §6). Allowed: every `crates/*` and `arch/*` package; never `va` or `xtask`.
 - External: see `DEPENDANCE.md`; platform support in `IMPORT.md`.
 
 ## Tests / usage

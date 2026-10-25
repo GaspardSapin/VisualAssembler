@@ -35,6 +35,11 @@ What "yes" rests on (2026-10-16; details in `docs/perf/M0-backend.md`, §11 for 
   `raw::get_html`, and `5f45f9b` locks 5.4.3 (`SECURITY.md`, M1-S10).
 - **ARM64**: `visual-assembler` and `va` cross-built for `aarch64-unknown-linux-gnu` from WSL, again
   on 2026-10-16 with the §19 tree (compiled only). No cross-build of the M1 tree is recorded.
+- **M4 wave 1** (2026-10-24 to 2026-10-25; ropey, regex, toml, sys-locale, rfd, egui direct, the
+  font): the WP0 scaffold builds on Windows 11 x64: `cargo test` of `va-editor`, `va-workspace` and
+  `va-ui`, and `cargo build -p visual-assembler`, passed there on 2026-10-25. The stubs are
+  `todo!()`, so none of these crates' code runs yet: every new cell below is "compiled only" at
+  most. The wave-1 commits are not pushed, so no CI run and no WSL run covers them yet.
 - macOS and Apple Silicon are a non-goal: never built, never claimed. No NVIDIA or Intel GPU was
   tested. No crate here uses GPU compute (ROCm/CUDA: n/a).
 
@@ -83,7 +88,9 @@ What "yes" rests on (2026-10-16; details in `docs/perf/M0-backend.md`, §11 for 
 - **Hardware**: x86-64 yes · ARM64 yes (CI, pre-§19) · Apple Silicon unverified · Intel Mac
   unverified · GPU n/a
 - **OS**: Windows yes · Linux yes · macOS unverified
-- **Notes**: feature `derive`. TOML files (M4) will reuse it.
+- **Notes**: feature `derive`. Since M4 WP0, `va-workspace` declares it too, for the TOML files with
+  `toml` (settings, keybindings, project, session, backup index); it uses it from wave 2 (WP-B,
+  WP-C).
 
 ### serde_json
 - **License**: MIT OR Apache-2.0
@@ -179,7 +186,9 @@ What "yes" rests on (2026-10-16; details in `docs/perf/M0-backend.md`, §11 for 
 ### egui_kittest
 - **License**: MIT OR Apache-2.0
 - **Used for**: headless UI tests that query the AccessKit tree; no window, no GPU.
-- **Used in**: `apps/visual-assembler/tests/spike.rs` (dev-dependency)
+- **Used in**: `apps/visual-assembler/tests/spike.rs` (dev-dependency); since M4 WP0 also a
+  dev-dependency of `va-ui`, in `crates/va-ui/tests/support/mod.rs` (the harness helpers; no
+  `va-ui` test target includes it yet)
 - **Hardware**: x86-64 yes · ARM64 yes (CI, pre-§19) · Apple Silicon unverified · Intel Mac
   unverified · GPU n/a (used without its `wgpu` and `snapshot` features)
 - **OS**: Windows yes · Linux yes · macOS unverified
@@ -195,6 +204,105 @@ What "yes" rests on (2026-10-16; details in `docs/perf/M0-backend.md`, §11 for 
   cross-built) · Apple Silicon unverified · Intel Mac unverified · GPU n/a
 - **OS**: Windows yes · Linux yes · macOS unverified
 - **Notes**: developer tooling only; never in a shipped binary.
+
+### ropey
+- **License**: MIT
+- **Used for**: the document text of the editor: a rope with O(log n) edits and line lookups, whose
+  line breaks are LF, CRLF and lone CR (`cr_lines`), and O(1) clones for the worker threads
+  (m4-editor-shell.md §3.1).
+- **Used in**: `crates/va-editor/src/lib.rs` (module `text`: `Text` wraps a `ropey::Rope`)
+- **Hardware**: x86-64 compiled only (Windows 11 x64; WP0 stubs, no code runs yet) · ARM64
+  unverified · Apple Silicon unverified · Intel Mac unverified · GPU n/a
+- **OS**: Windows compiled only · Linux unverified · macOS unverified
+- **Notes**: `=1.6.1`, default features off, features `simd` and `cr_lines`, so U+0085 and U+2028
+  are not line breaks and the line count equals `va_core::source::LineIndex` (exit criterion E3 of
+  M4). Pulls `str_indices` 0.4.4; `smallvec` was present. Approved by the user on 2026-10-24
+  (m4 §8.3).
+
+### regex
+- **License**: MIT OR Apache-2.0
+- **Used for**: regular-expression find and replace in the editor, with linear-time matching and
+  size limits (m4 §3.4), run on the `va-search` thread.
+- **Used in**: `crates/va-editor/src/lib.rs` (module `search`: the compiled query holds a
+  `regex::Regex`)
+- **Hardware**: x86-64 compiled only (Windows 11 x64) · ARM64 unverified · Apple Silicon
+  unverified · Intel Mac unverified · GPU n/a
+- **OS**: Windows compiled only · Linux unverified · macOS unverified
+- **Notes**: `=1.13.1`, default features off, features `std`, `perf`, `unicode-case`,
+  `unicode-perl`. Pulls `regex-automata` 0.4.18, `regex-syntax` 0.8.11 and `aho-corasick` 1.1.5
+  (Unlicense OR MIT); `memchr` was present. Approved by the user on 2026-10-24 (m4 §8.3).
+
+### toml
+- **License**: MIT OR Apache-2.0
+- **Used for**: reading, with spans for precise problem positions, `settings.toml`,
+  `keybindings.toml`, `.visualasm/project.toml`, `session.toml` and the backup index, and writing
+  the session (m4 §4.2–§4.8).
+- **Used in**: `crates/va-workspace/src/config/mod.rs` (`Project::reserved` keeps the reserved
+  tables as `toml::Table`); the parsers and the session writer arrive with WP-B and WP-C.
+- **Hardware**: x86-64 compiled only (Windows 11 x64) · ARM64 unverified · Apple Silicon
+  unverified · Intel Mac unverified · GPU n/a
+- **OS**: Windows compiled only · Linux unverified · macOS unverified
+- **Notes**: `=1.1.8`, default features off, features `std`, `parse`, `display`, `serde`. Already
+  in the lock through `egui_kittest` (dev); since M4 WP0 a normal dependency of `va-workspace`, so
+  **`va` ships it too** (with `toml_parser`, `toml_datetime`, `toml_writer`, `serde_spanned` and
+  `winnow`), although `va` reads no TOML: `cargo tree -p va -e normal` shows it on 2026-10-25
+  (ratified in m4 §15.1 M6). Approved by the user on 2026-10-24 (m4 §8.3).
+
+### sys-locale
+- **License**: MIT OR Apache-2.0
+- **Used for**: the user's Windows UI language when the UI language is `auto`
+  (`system_ui_language`, m4 §4.6), without an `unsafe` allow-list entry in our code.
+- **Used in**: declared by `crates/va-workspace/Cargo.toml` for Windows only; WP-D calls it from
+  `crates/va-workspace/src/i18n/system.rs` (not written yet).
+- **Hardware**: x86-64 compiled only (Windows 11 x64) · ARM64 unverified · GPU n/a
+- **OS**: Windows compiled only · Linux n/a (not a dependency there) · macOS n/a
+- **Notes**: `=0.3.2`, no dependency of its own (its own FFI declarations). Being a normal
+  dependency of `va-workspace`, **`va.exe` links it too** on Windows (`cargo tree -p va -e normal`,
+  2026-10-25; m4 §15.1 M6), though `va`'s `resolve_lang` keeps the M1 rules and never calls it.
+  Approved by the user on 2026-10-24 (m4 §8.3).
+
+### rfd
+- **License**: MIT
+- **Used for**: native Windows open and save dialogs, and the message box that reports a startup
+  failure when the GUI has no console (m4 §6.4, §6.6).
+- **Used in**: declared by `apps/visual-assembler/Cargo.toml` for Windows only; WP-G calls it from
+  `apps/visual-assembler/src/host.rs` (`rfd::FileDialog` on a short-lived `va-dialog` thread) and
+  from the startup-failure path (`rfd::MessageDialog`), neither written yet.
+- **Hardware**: x86-64 compiled only (Windows 11 x64) · ARM64 unverified · GPU n/a
+- **OS**: Windows compiled only · Linux n/a (not a dependency; the built-in path prompt is used) ·
+  macOS n/a
+- **Notes**: `=0.17.2`, default features off (no XDG portal, no Wayland code). Adds only itself:
+  windows-sys 0.61.2, raw-window-handle and log were present. Approved by the user on 2026-10-24
+  (m4 §8.3).
+
+### egui (direct)
+- **License**: MIT OR Apache-2.0
+- **Used for**: the widgets of `va-ui` (editor view, shell, themes, fonts), built on egui alone,
+  never eframe (rule R3).
+- **Used in**: `crates/va-ui/src/editor/mod.rs`, `crates/va-ui/src/shell/mod.rs`,
+  `crates/va-ui/src/theme.rs`, `crates/va-ui/src/fonts.rs`; `crates/va-ui/tests/support/mod.rs`
+- **Hardware**: as eframe (the same 0.36.2 already runs in the M0 window); the direct use is
+  compiled only (Windows 11 x64)
+- **OS**: Windows compiled only for `va-ui` · Linux unverified · macOS unverified
+- **Notes**: `=0.36.2`, default features; the version eframe pulls, so no new package. With
+  `egui_kittest` it is one of the two GUI crates `va-ui` may use. Approved by the user on
+  2026-10-24 (m4 §8.3).
+
+---
+
+## Embedded assets
+
+### JetBrains Mono 2.304 Regular (font)
+- **License**: OFL-1.1 (`assets/fonts/OFL.txt`)
+- **Used for**: the code font of the editor, family `va-code`, before egui's monospace and emoji
+  fonts (m4 §5.5, architecture §9.6).
+- **Used in**: `crates/va-ui/src/fonts.rs` (`EMBEDDED_CODE_FONT` by `include_bytes!`,
+  `EMBEDDED_FONT_LICENSE` by `include_str!`); files in `assets/fonts/`
+- **Hardware**: n/a (data) · **OS**: every OS (data); compiled into `va-ui` on Windows 11 x64;
+  not rendered yet (`font_definitions` is a WP-E stub)
+- **Notes**: Regular TTF only, 273,900 bytes, copied unmodified from `JetBrainsMono-2.304.zip`
+  (downloaded 2026-10-24 with the user's approval, m4 §8.4). Source URL and SHA-256 hashes in
+  `assets/fonts/README.md`. Not a crate, so cargo-deny does not see it.
 
 ---
 
@@ -280,5 +388,12 @@ they decide GPU, window-system and accessibility support.
 | anyhow | MIT OR Apache-2.0 | yes | yes | yes (CI) | unverified | n/a |
 | fluent-bundle | Apache-2.0 OR MIT | yes | yes (WSL) | yes (CI) | unverified | n/a |
 | unic-langid | MIT OR Apache-2.0 | yes | yes (WSL) | yes (CI) | unverified | n/a |
+| ropey | MIT | compiled only | unverified | unverified | unverified | n/a |
+| regex | MIT OR Apache-2.0 | compiled only | unverified | unverified | unverified | n/a |
+| toml | MIT OR Apache-2.0 | compiled only (also in `va`) | unverified | unverified | unverified | n/a |
+| sys-locale | MIT OR Apache-2.0 | compiled only (also in `va.exe`) | n/a | unverified (Windows ARM64) | n/a | n/a |
+| rfd | MIT | compiled only | n/a | unverified (Windows ARM64) | n/a | n/a |
+| egui (direct, `va-ui`) | MIT OR Apache-2.0 | compiled only | unverified | unverified | unverified | n/a |
+| JetBrains Mono 2.304 (font) | OFL-1.1 | compiled in, not rendered yet | unverified | unverified | unverified | n/a |
 | wgpu | MIT OR Apache-2.0 | yes (DX12) | limited (WSLg X11 only) | compiled only (Linux), unverified (Windows) | unverified | AMD iGPU yes, NVIDIA unverified |
 | glow | MIT OR Apache-2.0 OR Zlib | yes | yes (WSLg) | compiled only (Linux), unverified (Windows) | unverified | AMD iGPU yes, llvmpipe yes |

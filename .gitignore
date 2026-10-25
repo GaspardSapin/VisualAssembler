@@ -40,6 +40,9 @@ Thumbs.db
 data/local/
 logs/
 
+# Temporary agent worktrees
+.claude/worktrees/
+
 # Rust / project specific
 **/*.rs.bk
 *.profraw

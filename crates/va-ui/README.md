@@ -1,26 +1,37 @@
 # crates/va-ui
 
 ## Purpose
-Package `va-ui`. egui widgets and panels of the IDE: editor view, gutter, tabs, palette, registers, memory, problems. Depends on `egui` only, never on `eframe`, `winit` or `wgpu` (rule R3).
+Package `va-ui`. egui widgets and panels of the IDE (m4-editor-shell.md §5): the editor view, the
+shell (tabs, explorer, palette, find bar, status bar), themes and fonts; registers, memory and
+problems panels in later milestones. Depends on `egui` only, never on `eframe`, `winit` or `wgpu`
+(rule R3); CPU specifics arrive only as `&dyn Architecture` (rule R2).
 
-**M0 skeleton:** no logic yet; the first content arrives in M4.
+**M4 WP0 scaffold (wave 1, commit `b4e7aae`); implemented in wave 2 by WP-E (editor, theme, fonts)
+and WP-F (shell).** Every module holds its frozen types and signatures with `todo!()` bodies: any
+call panics. Final already: the data types, the font constants and the embedded font
+(`assets/fonts/`).
 
 ## Contents
 | Entry | Type | Purpose |
 |-------|------|---------|
-| `Cargo.toml` | manifest | Package template of m0-foundations.md §3.6: workspace version, edition, licence and lints; no dependency in M0 |
-| `src/` | folder | Crate sources. See its README. |
+| `Cargo.toml` | manifest | Dependencies `egui`, `va-core`, `va-editor`, `va-workspace`; dev-dependency `egui_kittest` (all `workspace = true`, m4 §8.2) |
+| `src/` | folder | Crate sources: `editor/`, `shell/`, `theme.rs`, `fonts.rs`. See its README. |
+| `tests/` | folder | The headless kittest suite: only the shared `support/` module so far. See its README. |
 
 ## Entry points
-- `src/lib.rs`: the crate documentation, which states the responsibility and the allowed internal dependencies.
+- `src/lib.rs`: the shell API of m4 §5.1, re-exported at the crate root (`Shell`, `ShellConfig`,
+  `ShellHost`, …), which `visual-assembler` calls (WP-G).
 
 ## Dependencies
-- Internal (allowed): `va-core`, `va-editor`, `va-lang`, `va-debug`, `va-workspace`. Declared only when first used (m0-foundations.md §3.6).
-- External: none in M0. Planned (m0-foundations.md §13.3): `egui`. `egui` and `egui_kittest` are the only GUI crates `va-ui` may use. Every addition goes through the Architect, an exact
-  pin in the root `[workspace.dependencies]`, `DEPENDANCE.md` and `IMPORT.md`.
+- Internal (allowed): `va-core`, `va-editor`, `va-lang`, `va-debug`, `va-workspace`. Declared now:
+  `va-core`, `va-editor`, `va-workspace`.
+- External: `egui` 0.36.2, a direct dependency since M4 (the same version eframe pulls), and the
+  dev-dependency `egui_kittest` 0.36.2. These are the only GUI crates `va-ui` may use. Every
+  addition goes through the Architect, an exact pin in the root `[workspace.dependencies]`,
+  `DEPENDANCE.md` and `IMPORT.md`.
 
 ## Tests / usage
 ```bash
 cargo test -p va-ui
 ```
-In M0 this runs no test. The `tests/` folder appears with the first test (M4).
+In the scaffold this builds the crate and runs no test: there is no test target yet.

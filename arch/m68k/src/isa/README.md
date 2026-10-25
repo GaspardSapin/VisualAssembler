@@ -5,7 +5,8 @@ The 68000 instruction tables (m1-core-isa-lexer.md §4): every accepted spelling
 (operands, sizes, addressing modes, flag effects, privilege), opword encodings and cycle counts,
 plus the CPU-agnostic view `M68kIsa` that `va isa` (M1) and hover (M5) read. The tables are
 hand-written `static`/`const` Rust data checked by `arch/m68k/tests/isa/` (§4.2). This folder holds
-no prose: documentation text lives in `arch/m68k/locales/`. It does not lex, assemble or execute.
+no prose: documentation text lives in `arch/m68k/locales/`. It does not lex, assemble or execute;
+from M2 its operand placement table (`fields.rs`) serves the assembler and the disassembler.
 
 ## Contents
 | Entry | Type | Purpose |
@@ -17,13 +18,15 @@ no prose: documentation text lives in `arch/m68k/locales/`. It does not lex, ass
 | `encoding.rs` | module | `Encoding` (fixed bits, size and EA fields, extra rule) and `Form::matches` over a 16-bit opword |
 | `timing.rs` | module | `TimingRow`, `Outcome`, `Unit`, `EA_TIME`, the MOVE matrices `MOVE_BW`/`MOVE_L`, and `cycles()` |
 | `view.rs` | module | `M68kIsa`, the `va_core::isa::InstructionSet` implementation (`describe`, `spellings`, `ea_timing`) |
+| `fields.rs` | module | M2 (m2-assembler.md §4.9, frozen): `Place`, where each operand of a form goes in the instruction words, and `places(entry, form)`, the table that the encoder and the disassembler both read. WP0 scaffold: `places` is a `todo!()` stub; WP-C writes the table on day 1 of wave 2, with `arch/m68k/tests/isa/fields.rs` |
 | `table_arith.rs` | table | ADD, SUB, CMP families, MULS/MULU, DIVS/DIVU, NEG/NEGX, CLR, EXT, TST, ABCD/SBCD/NBCD, CHK |
 | `table_logic.rs` | table | AND, OR, EOR families (with CCR and SR forms), NOT, shifts and rotates, bit operations, TAS, Scc |
 | `table_move.rs` | table | MOVE (with CCR, SR and USP forms), MOVEA, MOVEM, MOVEP, MOVEQ, EXG, SWAP, LEA, PEA, LINK, UNLK |
 | `table_flow.rs` | table | Bcc, BRA, BSR, DBcc, JMP, JSR, RTE, RTR, RTS, TRAP, TRAPV, NOP, RESET, STOP, ILLEGAL |
 
 ## Entry points
-- `mod.rs`: `INSTRUCTIONS`, `SPELLINGS`, `spelling_info` (used by the lexer for `takes_operands`).
+- `mod.rs`: `INSTRUCTIONS`, `SPELLINGS`, `spelling_info` (used by the lexer for `takes_operands`),
+  and the public `fields` module.
 - `view.rs`: `M68kIsa::describe(spelling, size)`, what `va isa` prints.
 - `timing.rs`: `cycles(form, size, modes, outcome, n)`.
 

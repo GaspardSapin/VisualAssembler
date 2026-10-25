@@ -4,12 +4,15 @@
 VisualAssembler is a native, offline Rust IDE for students learning assembly; V1 is the Motorola 68000
 end to end (edit, assemble, run, debug). GUI `visual-assembler` (egui/eframe), headless CLI `va`,
 task runner `cargo xtask`. CPU-agnostic crates in `crates/`, one crate per CPU in `arch/`.
-Current milestones: **M2 ∥ M4**, specified and starting (`docs/specs/m2-assembler.md`,
-`docs/specs/m4-editor-shell.md`; read §14 of either first, the merged wave order). M1 (core contracts,
-68000 ISA tables, lexer, `va lex`/`va isa`) stays done (audited, QA green, measured, pushed, CI green
-in run 40027188396). M0 (workspace, tooling, CI, measured window) is done. Still skeletons:
-`va-editor`, `va-lang`, `va-debug`, `va-ui`; the GUI is the M0 window.
+Current milestones: **M2 ∥ M4** (`docs/specs/m2-assembler.md`, `docs/specs/m4-editor-shell.md`;
+read §14 of either first, the merged wave order). Wave 1 is committed: M2 WP-A (`va-core` `asm`/
+`disasm`, implemented) and both WP0 scaffolds (frozen signatures, `todo!()` bodies); wave 2
+implements them. M1 (core contracts, 68000 ISA tables, lexer, `va lex`/`va isa`) stays done
+(audited, QA green, measured, pushed, CI green in run 40027188396). M0 is done. Still skeletons:
+`va-lang`, `va-debug`; the GUI is the M0 window.
 Specs: `docs/specs/architecture.md`, then the milestone specs.
+- `m2-assembler.md` and `m4-editor-shell.md`: **§15 (ratified wave-1 implementation) wins over the
+  body**.
 - `docs/specs/m1-core-isa-lexer.md`: **§12 (ratified implementation, fix-now rows R12-1…R12-4, QA
   round 1 in §12.8) wins over the body**.
 - `docs/specs/m0-foundations.md`: precedence **§20 > §19 > §18 > §17 > body (§0–§16)**. §18.8
@@ -26,6 +29,10 @@ Specs: `docs/specs/architecture.md`, then the milestone specs.
 - CLI and tooling: clap 4.6.7, serde 1.0.229, serde_json 1.0.151, anyhow 1.0.104 (xtask only).
 - Localization (M1): fluent-bundle 0.16.0 and unic-langid 0.9.6 in `va-workspace`; fluent-bundle is
   also a dev-dependency of `va-arch-m68k` (locale tests).
+- M4 (user-approved 2026-10-24, m4 §8.3): ropey 1.6.1 + regex 1.13.1 (`va-editor`), toml 1.1.8 +
+  serde + sys-locale 0.3.2 Windows-only (`va-workspace`, so `va` links toml and sys-locale too), egui
+  0.36.2 direct + dev egui_kittest (`va-ui`), rfd 0.17.2 Windows-only (`visual-assembler`); font
+  JetBrains Mono 2.304 Regular, OFL-1.1 (`assets/fonts/`, embedded by `va-ui`).
 - Tools: GNU make 4.4.1 (Git Bash on Windows), Python 3.11+ (`tomllib`), cargo-deny 0.20.2, git,
   GitHub Actions. `gh` lives at `C:/Program Files/GitHub CLI/gh.exe` (not on `PATH` in agent shells).
 - Licence: `MIT OR Apache-2.0`; every crate is `publish = false`.
@@ -46,6 +53,8 @@ Everything goes through the Makefile (`make -s help`); logic lives in `cargo xta
 | `make ci` | `cargo xtask ci`, 9 steps: step 0 build config, fmt, clippy ×4 (all features, glow only, wgpu only, `va --no-default-features`), layering + source scan, tests (workspace, then `va --no-default-features`; m1 §12.7 R12-4) |
 | `make bench SCENARIO=… RENDERER=… RUNS=…` | `cargo xtask bench` on the shipped binary, `RENDERER=auto\|glow\|wgpu\|all` (default `auto`; needs a display) |
 | `make bench-lexer` | release lexer bench on 100,000 lines, one `va.bench.lexer/1` line; budget median ≤ 50 ms (measured 7.157 ms, `docs/perf/2026-10-23-m1-lexer.md`) |
+| `make bench-asm` | release assembler bench, 5,000 and 100,000 lines (m2 §10.5). **Decided, not implemented yet**: "no test target" until M2 WP-H |
+| `make compare-a68k` | byte-for-byte a68k comparison, needs `VA_A68K_PATH`, never in CI (m2 §10.4). **Decided, not implemented yet**: "no test target" until M2 WP-H |
 | `make clean` | `cargo clean` |
 
 WSL: `wsl.exe -d Ubuntu -e bash -lc 'cd "/mnt/c/Users/sapin/Documents/Code Info/VisualAssembler" && export CARGO_TARGET_DIR=$HOME/.cache/visualassembler/target && <cmd>' 2>&1 | tr -d '\0'`.
@@ -68,6 +77,12 @@ Live layering check alone: `cargo test -p xtask --test layering -- --ignored liv
   A new dependency goes back to the Architect, then gets a `DEPENDANCE.md` line and an `IMPORT.md` entry.
 - **Lints (rule R8)**: every member has exactly `[lints] workspace = true` and `license.workspace = true`.
   No `rustfmt.toml`/`clippy.toml`. CI runs clippy with `-D warnings`, so every `warn` blocks.
+- **Stubs (m2 §15.1 W6, m4 §15.1 M3)**: a stub file carries `#![expect(unused_variables, clippy::todo,
+  …, reason = "WP0 stub: …")]` listing exactly the lints it triggers. Remove each lint in the commit
+  that stops it firing (else `unfulfilled_lint_expectations` fails CI) and the attribute with the
+  last `todo!()`; never `allow` instead. A new stub file carries its own expectation (a parent's
+  would absorb it). No merged test calls another package's `todo!()` (m2 §15.3 G1). Splitting a stub
+  module keeps its public paths: private files, `pub use` by name from `mod.rs` (m4 §15.1 M2).
 - **Layering (architecture §2, R1–R8)**: every library builds on `va-core`; `crates/*` never depend on `arch/*`;
   GUI crates only in `visual-assembler` (plus exactly `egui`, `egui_kittest` in `va-ui`); `va` never
   uses `va-ui`; `xtask` uses no workspace crate; apps and xtask are leaves. A new package needs a row
@@ -86,8 +101,10 @@ Live layering check alone: `cargo test -p xtask --test layering -- --ignored liv
   `va isa --list` (`va.isa/1`, `va.isa.list/1`; unknown spelling or size exits 1). Global
   `--lang en|fr` (`auto` is a usage error) > `VA_LANG` (`en|fr|auto`, invalid = warning) >
   `LC_ALL`/`LC_MESSAGES`/`LANG`. Input: UTF-8 only, ≤ 16 MiB per input, ≤ 64 KiB per line (longer =
-  one `lex-line-too-long` token); non-UTF-8, too large or unreadable input exits 3. The GUI's codes
-  differ (m0 §17.10, §19.4): 1 runtime I/O, 2 usage, 3 window or renderer, 4 bench watchdog.
+  one `lex-line-too-long` token); non-UTF-8, too large or unreadable input exits 3. `va asm`/`va
+  disasm` are WP0 shells until WP-G: exit 1 with a transitional `not-implemented` (not part of the
+  contract, m2 §15.1 W4). The GUI's codes differ (m0 §17.10, §19.4): 1 runtime I/O, 2 usage,
+  3 window or renderer, 4 bench watchdog.
 - **Commits**: `<type>(<scope>): <what changed since the previous step>`, one per completed step,
   **never co-signed by an AI tool** (no `Co-Authored-By`, no "Generated with", no robot emoji). The
   `commit-msg` hook and the CI `docs` job enforce it. Never change git config.
@@ -95,7 +112,8 @@ Live layering check alone: `cargo test -p xtask --test layering -- --ignored liv
   to the root, `make docs` exit 0 before closing a task. Every command written in a README has been run.
   Dot-folders and folders without a file of their own are exempt (`check_project_docs.py` skips
   them): `.cargo/`, `arch/m68k/fixtures/` and `arch/m68k/locales/` have no README, while
-  `.github/workflows/` has one. Behaviour that is decided but not implemented is marked as such.
+  `.github/workflows/` and the top-level `assets/` and `locales/` have one. Behaviour that is decided
+  but not implemented is marked as such; wave-2 developers write no README (m2/m4 §1).
 
 ## Architecture decisions
 - egui/eframe for the GUI, reactive mode (no continuous repaint) — light and testable headless with
@@ -125,8 +143,9 @@ Live layering check alone: `cargo test -p xtask --test layering -- --ignored liv
 - `.cargo/config.toml` must equal `CANONICAL_CARGO_CONFIG` in `xtask/src/ci.rs` (m0 §18.4).
 - CPU traits use dynamic dispatch (`dyn Architecture`), diagnostics are kebab-case codes rendered by
   Fluent (architecture §3, §5). 68000 emulation will use the `m68k` crate behind `Emulator` (M3).
-- `va-core` contracts are frozen since M1 (m1 §3): add items, never remove or rename a public one
-  without the Architect. `va-core` has no dependency and no prose (no `Display` on its errors).
+- `va-core` contracts are frozen since M1 (m1 §3), `asm`/`disasm` since M2 WP-A (m2 §3): add items,
+  never remove or rename a public one without the Architect. `va-core` has no dependency and no
+  prose (no `Display` on its errors).
 - 68000 ISA tables are hand-written static Rust data checked by tests (m1 §4.2), not a parsed data
   file or `build.rs`. Fixtures live in `arch/<cpu>/fixtures/<area>/` (depth 4), LF-only.
 - **Strict A68k dialect, user decision of 2026-10-17** (m1 §5.7): the operand field ends at the first
@@ -179,7 +198,8 @@ Live layering check alone: `cargo test -p xtask --test layering -- --ignored liv
 - Before the first commit, `check_project_docs.py` prints a `note:` (commits not checkable) and bench
   reports are named `…-nogit.json`.
 - `make docs` regenerates `AGENCEMENT.md`; a new file or folder appears there as `<!-- annotate -->`.
-  Replace it with a one-line note (no `#` inside it) before closing the task.
+  Replace it with a one-line note (no `#` inside it) before closing the task. Agent worktrees live in
+  the gitignored `.claude/worktrees/`, so the docs check never sees them.
 - **Any new `va` text output that carries outside text** (source text, file names, arguments,
   environment values) must go through `report::terminal_safe`, or `report::terminal_safe_json` for a
   JSON string printed on a text line (Security M1-S1/S3/S4/S8/S9). `--json` documents stay raw.

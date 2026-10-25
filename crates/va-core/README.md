@@ -9,8 +9,11 @@ have no `Display`, and `name()`/`id()` methods return identifiers, never prose.
 
 **M1 (implemented, frozen):** `source`, `diag`, `syntax`, `isa`, `regs`, `image` and `arch` with its
 M1 methods. Frozen means implementations may add items but never remove or rename a public one; a
-change goes back to the Architect. **Not defined yet:** the M2/M3 contracts of m1 §3.7 (assembler,
-disassembler, emulator, I/O profiles).
+change goes back to the Architect. **M2 (implemented, frozen; WP-A, commit `e5e9221`):** `asm` (the
+`Assembler` trait, `SourceProvider`, options, limits, output, `CancelToken`, `MemorySources`),
+`disasm` (the `Disassembler` trait, `DecodedInsn`, `FlowKind`) and the provided methods
+`Architecture::assembler`/`disassembler`, which default to `None` (m2-assembler.md §3).
+**Not defined yet:** the M3 contracts of m1 §3.7 (emulator, I/O profiles).
 
 ## Contents
 | Entry | Type | Purpose |
@@ -22,6 +25,8 @@ disassembler, emulator, I/O profiles).
 ## Entry points
 - `src/arch.rs` (`Architecture`), then `src/syntax.rs` (`SyntaxProvider`) and `src/isa.rs`
   (`InstructionSet`): the three traits a CPU crate implements in M1.
+- `src/asm.rs` (`Assembler`, `SourceProvider`) and `src/disasm.rs` (`Disassembler`): what a CPU
+  crate offers from M2, through `Architecture::assembler`/`disassembler`.
 
 ## Dependencies
 - Internal (allowed): none.

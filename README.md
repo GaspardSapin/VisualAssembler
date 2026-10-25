@@ -31,7 +31,13 @@ gets its spec in `docs/specs/` when it starts.
 
 Specifications: `docs/specs/architecture.md` (durable), `docs/specs/m0-foundations.md` (M0) and
 `docs/specs/m1-core-isa-lexer.md` (M1). `docs/specs/m2-assembler.md` (M2) and
-`docs/specs/m4-editor-shell.md` (M4) run in parallel; they are specified, not implemented yet.
+`docs/specs/m4-editor-shell.md` (M4) run in parallel and are **in progress, not usable yet**.
+Wave 1 is in: the M2 contracts of `va-core` (assembler and disassembler traits, implemented and
+frozen), and the scaffolds of both milestones, compiling modules with their frozen signatures and
+`todo!()` bodies (`arch/m68k/src/{asm,disasm}/`, `va-editor`, `va-ui`, the M4 parts of
+`va-workspace`, the M4 dependencies, the embedded font in `assets/fonts/`, the UI resources in
+`locales/`). `va asm` and `va disasm` parse their command line, then exit 1 with "not implemented
+yet". Wave 2 implements the stubs (m2 §1, m4 §1).
 Measurements: `docs/perf/M0-backend.md` and `docs/perf/2026-10-23-m1-lexer.md`.
 
 ## Platform support
@@ -170,6 +176,8 @@ Quick CLI check: `cargo run -p va -- info --json` (see [The `va` command line](#
 | `clean` | `cargo clean` |
 | `bench` | `cargo xtask bench $(SCENARIO) --renderer $(RENDERER)` (defaults `all` and `auto`), e.g. `make bench SCENARIO=startup RUNS=3`. It measures the shipped binary. |
 | `bench-lexer` | `cargo test -p va-arch-m68k --release --test syntax_bench -- --ignored --nocapture`: lexer throughput on 100,000 generated lines, one `va.bench.lexer/1` JSON line. Measure on mains power. |
+| `bench-asm` | `cargo test -p va-arch-m68k --release --test asm_bench -- --ignored --nocapture`: assembler throughput on 5,000 and 100,000 generated lines (M2, m2 §10.5). **Decided, not implemented yet** (m2 §15.3 G3): `tests/asm_bench.rs` arrives with M2 WP-H; until then cargo stops with "no test target named `asm_bench`". |
+| `compare-a68k` | `cargo test -p va-arch-m68k --test a68k -- --ignored --nocapture`: byte-for-byte comparison with a68k, needs `VA_A68K_PATH`, local only, never in CI (M2, m2 §10.4). **Decided, not implemented yet** (m2 §15.3 G3): `tests/a68k.rs` arrives with M2 WP-H; until then cargo stops with "no test target named `a68k`". |
 | `ci` | `cargo xtask ci`, 9 steps: build-configuration check, fmt, clippy (all features, glow only, wgpu only, then `va` without any CPU), layering and source checks, tests (workspace, then `va` without any CPU) |
 
 Never set `RUSTFLAGS` (not even empty): it silently replaces the static-CRT flags of
@@ -180,6 +188,9 @@ Never set `RUSTFLAGS` (not even empty): it silently replaces the static-CRT flag
 ```text
 va [--json] [--lang en|fr] info | lex <FILE|-> | isa <MNEMONIC[.SIZE]> | isa --list
 ```
+
+`va asm` and `va disasm` (M2) are already in the grammar, but only as shells that exit 1 with
+"not implemented yet" (`apps/va/README.md`).
 
 ```bash
 cargo run -p va -- lex arch/m68k/fixtures/lex/basic.asm   # tokens on stdout, diagnostics on stderr
@@ -370,6 +381,8 @@ On Windows x64 this prints the two warnings, then a bench line with `"renderer":
 | `crates/` | CPU-agnostic library crates (`va-core`, `va-editor`, `va-lang`, `va-debug`, `va-workspace`, `va-ui`) |
 | `arch/` | One crate per CPU: `m68k` (`va-arch-m68k`) |
 | `xtask/` | Rust task runner behind `make` |
+| `locales/` | Architecture-independent Fluent resources of the UI, `en/` and `fr/` (M4; headers only so far) |
+| `assets/` | Embedded data: `fonts/` holds JetBrains Mono 2.304 Regular and its OFL 1.1 licence (M4) |
 | `bench/` | Bench outputs (gitignored `results/`) |
 | `docs/` | `specs/` (architecture, milestone specs) and `perf/` (measurement reports) |
 | `scripts/` | Documentation checks and `git-hooks/` |
@@ -377,8 +390,9 @@ On Windows x64 this prints the two warnings, then a bench line with `"renderer":
 | `.cargo/` | `config.toml` (xtask alias, static CRT, aarch64 linker) and `deny.toml` (cargo-deny policy) |
 
 Every folder has a README, except the dot-folder `.cargo/`, whose two files are described in the table
-above, and the folders that hold only sub-folders (`arch/m68k/fixtures/`, `arch/m68k/locales/`),
-which their parent README describes. `scripts/check_project_docs.py` skips folders whose name starts
+above, and the nested folders that hold only sub-folders (`arch/m68k/fixtures/`, `arch/m68k/locales/`),
+which their parent README describes. Top-level folders keep a README even when they hold only
+sub-folders (`apps/`, `arch/`, `assets/`, `crates/`, `locales/`, …). `scripts/check_project_docs.py` skips folders whose name starts
 with a dot and folders without a file of their own (see `scripts/README.md`). Pilot files at the root: `CLAUDE.md` (working rules for contributors and
 agents), `AGENCEMENT.md` (annotated tree), `DEPENDANCE.md` and `IMPORT.md` (dependencies, licences,
 platform support), `SECURITY.md` (protections actually in place and their limits).

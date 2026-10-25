@@ -9,7 +9,7 @@ to end by spawning the binary.
 | Entry | Type | Purpose |
 |-------|------|---------|
 | `main.rs` | binary root | Parses with `Cli::try_parse`, runs the subcommand, maps every outcome to an exit code. clap's usage errors go to stderr through `report::terminal_safe`. |
-| `cli.rs` | module | clap derive grammar: `Cli` (global `--json` and `--lang en\|fr`, `bin_name = "va"`) and the `Command` enum (`Info`, `Lex`, `Isa`) |
+| `cli.rs` | module | clap derive grammar: `Cli` (global `--json` and `--lang en\|fr`, `bin_name = "va"`), the `Command` enum (`Info`, `Lex`, `Isa`; M2 `Asm`, `Disasm`), and the M2 argument types `AsmArgs`, `DisasmArgs` and `ImageFormat` (`srec`, `bin`), whose fields WP-G reads |
 | `arch_registry.rs` | module | `architectures()` and `default_architecture()`: `va_arch_m68k::M68K` when the feature `arch-m68k` is on (default), none otherwise |
 | `input.rs` | module | Reads the `va lex` input (file or stdin `-`) through `Read::take(16 MiB + 1)`, then `SourceText::from_bytes`; errors `read-failed`, `input-too-large`, `input-not-utf8` |
 | `report.rs` | module | Exit-code constants, `Outcome`, `ErrorCode`, `CommandError`, `report_failure` (the `error:` line and the `va.error/1` document), `english_io`, `terminal_safe`, `terminal_safe_json` |
@@ -26,7 +26,7 @@ Exit codes (m0-foundations.md §5, amended by §17.10; m1-core-isa-lexer.md §7.
 | Code | Meaning |
 |------|---------|
 | 0 | Success, including `--help` and `--version` (printed on stdout); `va lex` without error diagnostic |
-| 1 | The command ran and found problems: `va lex` found an error diagnostic, blocking or not (the result document is printed, not `va.error/1`); `isa-unknown-mnemonic`, `isa-size-not-accepted` |
+| 1 | The command ran and found problems: `va lex` found an error diagnostic, blocking or not (the result document is printed, not `va.error/1`); `isa-unknown-mnemonic`, `isa-size-not-accepted`; `not-implemented` from the M2 shells `va asm` and `va disasm` (transitional until WP-G: no `ErrorCode`, not part of the CLI contract, pinned by no test; m2 §15.1 W4) |
 | 2 | Usage error: missing subcommand, unknown flag, bad value (`--lang auto` included), `isa` with both or neither of `MNEMONIC` and `--list`. clap's message goes to stderr. |
 | 3 | I/O or environment error: `read-failed`, `input-too-large`, `input-not-utf8`, `no-architecture` (built without `arch-*`), `locale-invalid` (embedded resources fail to load: a build defect); stdout cannot be written (no `va.error/1` document then); stderr cannot be written while `va lex` prints diagnostics in text mode |
 | 101 | Panic. Always a bug. |

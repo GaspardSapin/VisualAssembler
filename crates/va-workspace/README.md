@@ -1,32 +1,42 @@
 # crates/va-workspace
 
 ## Purpose
-Package `va-workspace`. Project model and tree, settings and keybindings TOML, session and hot-exit
-backups, file watching, Fluent loading and rendering (architecture §5 and §6). No UI.
+Package `va-workspace`. Project model, settings and keybindings TOML, session and hot-exit backups,
+Fluent loading and rendering (architecture §5 and §6; m4-editor-shell.md §4). No UI; it knows
+nothing of ropey or egui: text crosses its API as `&str` or as a writer closure.
 
-**M1 (implemented):** the `i18n` module only: language selection (`--lang`, `VA_LANG`, locale
-variables) and the Fluent localizer that renders diagnostics and instruction documentation
-(m1-core-isa-lexer.md §6.2). `va` uses it. **Not implemented yet:** project, settings, keybindings,
-session, backup and watch modules (M4).
+**M1 (implemented):** the `i18n` module: language selection (`--lang`, `VA_LANG`, locale variables)
+and the Fluent localizer that renders diagnostics and instruction documentation
+(m1-core-isa-lexer.md §6.2). `va` uses it. **M4 WP0 scaffold (wave 1, commits `b4e7aae` and
+`570afb1`); implemented in wave 2 by WP-B, WP-C and WP-D:** `paths`, `config` and `persist` hold
+their frozen types and signatures with `todo!()` bodies; the settings and session types, their
+defaults and the default `settings.toml` are final. The UI additions to `i18n` (`ui.rs`,
+`system.rs`: the Windows UI language, `ui.language`) arrive with WP-D. File watching is deferred
+(architecture §4; `notify` was rejected for M4, m4 §8.3).
 
 ## Contents
 | Entry | Type | Purpose |
 |-------|------|---------|
-| `Cargo.toml` | manifest | Dependencies `va-core`, `fluent-bundle`, `unic-langid` (all `workspace = true`, m1 §8) |
+| `Cargo.toml` | manifest | Dependencies `va-core`, `fluent-bundle`, `unic-langid` (m1 §8), `serde`, `toml`, and `sys-locale` on Windows only (m4 §8.2); all `workspace = true` |
 | `src/` | folder | Crate sources. See its README. |
 | `tests/` | folder | One test file per source module. See its README. |
 
 ## Entry points
 - `src/i18n/mod.rs`: `resolve_lang` and `Localizer`.
+- `src/config/mod.rs` (`parse_settings`, `DEFAULT_SETTINGS_TOML`) and `src/persist/mod.rs`
+  (`IoWorker`, `write_atomic`): M4, stubs until wave 2.
 
 ## Dependencies
 - Internal (allowed): `va-core`.
-- External: `fluent-bundle` 0.16.0 and `unic-langid` 0.9.6 (`DEPENDANCE.md`, `IMPORT.md`).
-  Planned (m0-foundations.md §13.3): `toml`, `directories`, `notify` in M4; `directories` and
-  `notify` need per-crate licence exceptions (§9). Every addition goes through the Architect, an
-  exact pin in the root `[workspace.dependencies]`, `DEPENDANCE.md` and `IMPORT.md`.
+- External: `fluent-bundle` 0.16.0 and `unic-langid` 0.9.6 (M1); `toml` 1.1.8 and `serde` 1.0.229
+  for the config, session and backup files, and `sys-locale` 0.3.2 for the Windows UI language
+  (M4, approved by the user on 2026-10-24, m4 §8.3). `toml` makes `va` link the TOML crates too,
+  although `va` reads no TOML. See `DEPENDANCE.md` and `IMPORT.md`. Every addition goes through
+  the Architect, an exact pin in the root `[workspace.dependencies]`, `DEPENDANCE.md` and
+  `IMPORT.md`.
 
 ## Tests / usage
 ```bash
 cargo test -p va-workspace
 ```
+In the M4 scaffold this runs the M1 `i18n` tests only (32 tests on 2026-10-25).

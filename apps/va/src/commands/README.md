@@ -4,12 +4,14 @@
 One module per `va` subcommand. A subcommand does its work, writes its output on stdout and returns
 `Result<Outcome, CommandError>`. Parsing lives in `../cli.rs`; turning an outcome or an error into
 an exit code and an `error: ` line lives in `../main.rs` and `../report.rs`. M1 has `info`, `lex`
-and `isa`; `asm`, `run`, `debug`, `symbols` and `hover` arrive in M2–M5, one file each.
+and `isa`. `asm` and `disasm` (M2) are shells in `mod.rs` that exit 1 with `not-implemented` until
+WP-G adds `asm.rs` and `disasm.rs` in wave 2; `run`, `debug`, `symbols` and `hover` arrive in
+M3–M5, one file each.
 
 ## Contents
 | Entry | Type | Purpose |
 |-------|------|---------|
-| `mod.rs` | module | `run(&Cli)` dispatcher; `Session::open`, which resolves the language (with the `VA_LANG` warning), picks the default architecture (`no-architecture` otherwise) and builds the `Localizer` (`locale-invalid` otherwise) |
+| `mod.rs` | module | `run(&Cli)` dispatcher; `Session::open`, which resolves the language (with the `VA_LANG` warning), picks the default architecture (`no-architecture` otherwise) and builds the `Localizer` (`locale-invalid` otherwise); `not_implemented`, the WP0 shell of `va asm` and `va disasm` (stderr line, `va.error/1` with `--json`, exit 1, no input read), which leaves with WP-G |
 | `info.rs` | module | `va info`: version, target OS and arch, registered CPU architectures; human text and the `va.info/1` line. Reads no language variable. |
 | `lex.rs` | module | `va lex <FILE\|->`: lexes every line, renders the diagnostics; text mode (tokens on stdout, GNU-style diagnostics on stderr) or the `va.lex/1` document, streamed, with the diagnostics from a second identical lexing pass |
 | `isa.rs` | module | `va isa <MNEMONIC[.SIZE]>` (`va.isa/1`) and `va isa --list` (`va.isa.list/1`); suggestions within edit distance 2 for an unknown spelling |

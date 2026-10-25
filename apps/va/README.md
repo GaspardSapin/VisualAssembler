@@ -6,11 +6,18 @@ reaches every feature without a window (architecture goal G5). It never depends 
 (rule R4), so it builds and runs on headless machines.
 
 **M1 (implemented):** `info`, `lex` and `isa` (m1-core-isa-lexer.md §7), with the global flags
-`--json` and `--lang en|fr`. **Not implemented yet:** `asm`, `run`, `debug --script` (M2–M3),
-`symbols` and `hover` (M5).
+`--json` and `--lang en|fr`. **M2 (shells only):** `asm` and `disasm` parse their full grammar
+(m2-assembler.md §8.1), then exit 1 with `error: va asm is not implemented yet (m2-assembler.md,
+work package WP-G)` (and the `va.error/1` document, code `not-implemented`, with `--json`), without
+reading any input. That code is transitional and not part of the CLI contract (m2 §15.1 W4); WP-G
+removes it when it implements the commands in wave 2. **Not implemented yet:** `run`,
+`debug --script` (M3), `symbols` and `hover` (M5).
 
 ```text
 va [--json] [--lang en|fr] info | lex <FILE|-> | isa <MNEMONIC[.SIZE]> | isa --list
+va [--json] [--lang en|fr] asm <FILE|-> [-o <OUT|->] [--format srec|bin] [--listing[=<PATH>]]
+                                        [--map[=<PATH>]] [-I <DIR>]... [--no-opt]   (shell, exits 1)
+va [--json] disasm <FILE|-> [--format srec|bin] [--org <ADDR>]                     (shell, exits 1)
 ```
 
 - `va lex <FILE|->` lexes a 68000 source (`-` = stdin) with the A68k-dialect lexer. Text mode prints
@@ -23,6 +30,9 @@ va [--json] [--lang en|fr] info | lex <FILE|-> | isa <MNEMONIC[.SIZE]> | isa --l
   flags and cycle counts (`va.isa/1`). `va isa --list` lists the 126 spellings (`va.isa.list/1`).
   An unknown spelling exits 1 with up to three suggestions; a size the instruction rejects exits 1.
 - `va info` prints the version, target and registered CPUs (`va.info/1`).
+- `va asm` will assemble a source into S-records (default `<FILE stem>.hex`) or a binary, with an
+  optional listing and source map; `va disasm` will disassemble S-records or a binary
+  (m2-assembler.md §8; decided, not implemented).
 
 ## Contents
 | Entry | Type | Purpose |
@@ -78,8 +88,13 @@ cargo run -p va -- lex arch/m68k/fixtures/lex/basic.asm
 printf ' dc.b 1, 2, 3\n' | cargo run -p va -- lex -
 cargo run -p va -- --lang fr isa move.l
 cargo run -p va -- isa --list
+cargo run -p va -- asm arch/m68k/fixtures/lex/basic.asm
+cargo run -p va -- --json disasm arch/m68k/fixtures/lex/basic.asm
 make build        # release binary: target/release/va (va.exe on Windows)
 ```
+The two M2 lines show the shells: each prints `error: va <command> is not implemented yet
+(m2-assembler.md, work package WP-G)` on stderr (the `--json` one also prints the `va.error/1`
+document on stdout) and exits 1.
 The `--no-default-features` run builds `va` without any CPU: `va lex` and `va isa` then exit 3 with
 `no-architecture` (`cargo xtask ci` runs it, m1 §12.7). The `printf` line prints
 `-:1:10: error[lex-operands-in-comment]: a68k will ignore “2, 3”: the operands end at the first
