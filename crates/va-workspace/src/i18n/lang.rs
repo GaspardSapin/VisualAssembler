@@ -1,14 +1,15 @@
 //! Language selection (m1-core-isa-lexer.md §6.2, architecture §5): the shipped languages and
-//! the M1 precedence `--lang` > `VA_LANG` > `auto`.
+//! the M1 precedence `--lang` > `VA_LANG` > `auto`, used by the CLI.
 //!
-//! M1 `auto` reads only `LC_ALL`, `LC_MESSAGES` and `LANG`. The Windows UI language and the
-//! `ui.language` setting arrive in M4.
+//! M1 `auto` reads only `LC_ALL`, `LC_MESSAGES` and `LANG`. The GUI's precedence, which adds
+//! the `ui.language` setting and the Windows UI language, is `resolve_ui_lang` (`ui.rs`,
+//! m4-editor-shell.md §4.6); [`resolve_lang`] keeps the M1 rule.
 
 /// The environment variable that overrides `auto` (m1 §6.2).
-const VA_LANG: &str = "VA_LANG";
+pub(super) const VA_LANG: &str = "VA_LANG";
 
 /// The `VA_LANG` value that asks for the `auto` resolution explicitly.
-const AUTO: &str = "auto";
+pub(super) const AUTO: &str = "auto";
 
 /// The locale variables read by `auto`, highest priority first; the first non-empty one decides.
 const LOCALE_VARIABLES: [&str; 3] = ["LC_ALL", "LC_MESSAGES", "LANG"];
@@ -54,8 +55,14 @@ pub enum LangSource {
     Environment,
     /// `auto` found no usable locale: no locale variable is set and non-empty, or the first
     /// non-empty one names another language (e.g. `de_DE.UTF-8`, `C`, `POSIX`), so English
-    /// applies.
+    /// applies. In the GUI also when no variable is set and the system UI language is unknown or
+    /// another language (m4-editor-shell.md §4.6).
     Default,
+    /// The `ui.language` setting (`en` or `fr`), GUI only (m4-editor-shell.md §4.6).
+    Setting,
+    /// GUI `auto` with no locale variable set: the user's UI language on Windows names a
+    /// shipped language (it starts with `fr` or `en`, e.g. `fr-FR`; m4-editor-shell.md §4.6).
+    System,
 }
 
 /// The language to use, why, and the `VA_LANG` value that was rejected on the way, if any.
@@ -110,12 +117,28 @@ pub fn resolve_lang(flag: Option<Lang>, var: &dyn Fn(&str) -> Option<String>) ->
 
 /// The M1 `auto` resolution from the locale variables.
 fn auto_lang(var: &dyn Fn(&str) -> Option<String>) -> (Lang, LangSource) {
-    let locale = LOCALE_VARIABLES
+    match locale_variable(var) {
+        Some(value) => locale_lang(&value, LangSource::Environment),
+        None => (Lang::En, LangSource::Default),
+    }
+}
+
+/// The value of the first of `LC_ALL`, `LC_MESSAGES`, `LANG` that is set and non-empty, read in
+/// that order and no further (m1 §6.2).
+pub(super) fn locale_variable(var: &dyn Fn(&str) -> Option<String>) -> Option<String> {
+    LOCALE_VARIABLES
         .into_iter()
-        .find_map(|name| var(name).filter(|value| !value.is_empty()));
-    match locale {
-        Some(value) if value.starts_with(Lang::Fr.code()) => (Lang::Fr, LangSource::Environment),
-        Some(value) if value.starts_with(Lang::En.code()) => (Lang::En, LangSource::Environment),
-        _ => (Lang::En, LangSource::Default),
+        .find_map(|name| var(name).filter(|value| !value.is_empty()))
+}
+
+/// The language a locale value names: `fr…` gives French and `en…` English, both with
+/// `source`; any other value gives English with [`LangSource::Default`].
+pub(super) fn locale_lang(value: &str, source: LangSource) -> (Lang, LangSource) {
+    if value.starts_with(Lang::Fr.code()) {
+        (Lang::Fr, source)
+    } else if value.starts_with(Lang::En.code()) {
+        (Lang::En, source)
+    } else {
+        (Lang::En, LangSource::Default)
     }
 }
