@@ -1,8 +1,8 @@
 //! Tests for `src/arch.rs` and `src/registers.rs` (m1-core-isa-lexer.md §3.6, §9.1): the 68000
 //! seen through `va_core::arch::Architecture` — its id, the lexer and tables it hands out (every
-//! keyword and every spelling lexes as its kind), its diagnostic codes (the lexer's, then the
-//! assembler's, m2-assembler.md §7.1), the assembler and disassembler it provides (m2 §3.4), its
-//! register file and the fields of SR.
+//! keyword and every spelling lexes as its kind, and mnemonics and directives carry their doc
+//! ids), its diagnostic codes (the lexer's, then the assembler's, m2-assembler.md §7.1), the
+//! assembler and disassembler it provides (m2 §3.4), its register file and the fields of SR.
 #![allow(clippy::unwrap_used)]
 
 use std::collections::BTreeSet;
@@ -290,9 +290,36 @@ fn every_spelling_lexes_as_a_mnemonic_with_each_accepted_suffix() {
 }
 
 #[test]
+fn directive_keywords_have_their_doc_ids() {
+    let directives: Vec<_> = M68K
+        .syntax()
+        .keywords()
+        .iter()
+        .filter(|keyword| keyword.kind == KeywordKind::Directive)
+        .collect();
+    assert_eq!(directives.len(), 49);
+    for keyword in directives {
+        let stem = match keyword.name {
+            "=" => "equals".to_owned(),
+            name => name.to_ascii_lowercase(),
+        };
+        let expected = format!("isa-m68k-dir-{stem}");
+        assert_eq!(keyword.doc_id, Some(expected.as_str()), "{}", keyword.name);
+    }
+}
+
+#[test]
+fn only_mnemonics_and_directives_have_doc_ids() {
+    for keyword in M68K.syntax().keywords() {
+        let documented = matches!(keyword.kind, KeywordKind::Mnemonic | KeywordKind::Directive);
+        assert_eq!(keyword.doc_id.is_some(), documented, "{keyword:?}");
+    }
+}
+
+#[test]
 fn locale_resources_exist_for_english_and_french() {
-    assert_eq!(M68K.locale_resources("en").len(), 2);
-    assert_eq!(M68K.locale_resources("fr").len(), 2);
+    assert_eq!(M68K.locale_resources("en").len(), 3);
+    assert_eq!(M68K.locale_resources("fr").len(), 3);
     assert_ne!(M68K.locale_resources("en"), M68K.locale_resources("fr"));
     assert!(M68K.locale_resources("de").is_empty());
 }

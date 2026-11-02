@@ -1,7 +1,8 @@
 //! The embedded Fluent resources of the 68000 (m1-core-isa-lexer.md §6.1, m2-assembler.md §7.1):
-//! instruction documentation (`isa.ftl`) and the messages of every diagnostic code
-//! (`diagnostics.ftl`: the lexer's `diag-lex-*`, then the assembler's `diag-asm-*`), in English
-//! and French.
+//! instruction documentation (`isa.ftl`), the messages of every diagnostic code
+//! (`diagnostics.ftl`: the lexer's `diag-lex-*`, then the assembler's `diag-asm-*`) and the
+//! directive documentation (`directives.ftl`, `isa-m68k-dir-*`, the doc ids of the directive
+//! keywords), in English and French.
 //!
 //! The `.ftl` sources live in `arch/m68k/locales/<lang>/` and are compiled into the crate with
 //! `include_str!`, so the apps need no file at run time. This module never parses or renders
@@ -11,16 +12,18 @@
 //! every id the CPU can reference and formats each diagnostic with those arguments (m1 §6.3,
 //! m2 §15.2 W1).
 
-/// The English resources, in load order: instruction docs, then diagnostics.
-static EN: [&str; 2] = [
+/// The English resources, in load order: instruction docs, diagnostics, directive docs.
+static EN: [&str; 3] = [
     include_str!("../locales/en/isa.ftl"),
     include_str!("../locales/en/diagnostics.ftl"),
+    include_str!("../locales/en/directives.ftl"),
 ];
 
 /// The French resources, in the same order as [`EN`].
-static FR: [&str; 2] = [
+static FR: [&str; 3] = [
     include_str!("../locales/fr/isa.ftl"),
     include_str!("../locales/fr/diagnostics.ftl"),
+    include_str!("../locales/fr/directives.ftl"),
 ];
 
 /// Returns the resources of language `lang` (`"en"` or `"fr"`, exactly as `Lang::code` spells

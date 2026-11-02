@@ -225,7 +225,7 @@ fn keyword_list_has_the_spec_counts() {
         assert_eq!(keyword.name, keyword.name.to_ascii_uppercase());
         assert_eq!(
             keyword.doc_id.is_some(),
-            keyword.kind == KeywordKind::Mnemonic,
+            matches!(keyword.kind, KeywordKind::Mnemonic | KeywordKind::Directive),
             "{keyword:?}"
         );
     }

@@ -1,9 +1,10 @@
-//! Tests for `src/locales.rs` and `locales/{en,fr}/{isa,diagnostics}.ftl` (m1-core-isa-lexer.md
-//! §6.1, §6.3, exit criterion E5; m2-assembler.md §7, §15.2 W1): both languages parse, document
-//! every id the 68000 can reference (read from the real tables through `M68K`) with the required
-//! attributes, have the same id and attribute sets, hold no unreferenced id, format without
-//! resolver error with the arguments of each diagnostic (built by hand as `DiagArg`s, as the
-//! localizer receives them), and keep the style rules of §6.1.
+//! Tests for `src/locales.rs` and `locales/{en,fr}/{isa,diagnostics,directives}.ftl`
+//! (m1-core-isa-lexer.md §6.1, §6.3 and its exit criterion E5; m2-assembler.md §7, §15.2 W1 and
+//! its exit criterion E5): both languages parse, document every id the 68000 can reference (read
+//! from the real tables and the keyword list through `M68K`) with the required attributes, have
+//! the same id and attribute sets, hold no unreferenced id, format without resolver error with
+//! the arguments of each diagnostic (built by hand as `DiagArg`s, as the localizer receives
+//! them), and keep the style rules of §6.1.
 #![allow(clippy::unwrap_used)]
 
 use std::collections::btree_map::Entry;
@@ -21,12 +22,13 @@ use va_core::arch::Architecture;
 use va_core::asm::PathRefusal;
 use va_core::diag::{DiagArg, DiagCode};
 use va_core::isa::FlagEffect;
+use va_core::syntax::KeywordKind;
 
 /// The languages the 68000 documents.
 const LANGS: [&str; 2] = ["en", "fr"];
 
 /// The resources of one language, in the order `locale_resources` returns them.
-const RESOURCE_NAMES: [&str; 2] = ["isa.ftl", "diagnostics.ftl"];
+const RESOURCE_NAMES: [&str; 3] = ["isa.ftl", "diagnostics.ftl", "directives.ftl"];
 
 /// The values of `$cause` for the operands-in-comment messages (m1 §5.7).
 const CAUSES: [&str; 3] = ["after-comma", "inside-expression", "operand-list"];
@@ -320,6 +322,8 @@ enum Expect {
     },
     /// A condition, outcome or unit phrase: a value and no attribute.
     Phrase,
+    /// A directive (m2 §7.1): a one-line summary and `.details`, nothing else.
+    Directive,
     /// A diagnostic message: its arguments and exactly its attributes.
     Diagnostic(&'static Signature),
 }
@@ -430,8 +434,8 @@ fn reference(ids: &mut BTreeMap<String, Expect>, id: String, expect: Expect) {
 }
 
 /// Collects every id the 68000 can reference (m1 §6.3 step 3): for each spelling,
-/// `describe(spelling, None)` gives the entry, condition, outcome and unit ids, and
-/// `diagnostic_codes()` gives `diag-<code>`.
+/// `describe(spelling, None)` gives the entry, condition, outcome and unit ids, each directive
+/// keyword its doc id (m2 §7.1), and `diagnostic_codes()` gives `diag-<code>`.
 fn referenced_ids() -> BTreeMap<String, Expect> {
     let arch: &dyn Architecture = &M68K;
     let isa = arch.instruction_set();
@@ -464,6 +468,14 @@ fn referenced_ids() -> BTreeMap<String, Expect> {
             }
         }
     }
+    for keyword in arch.syntax().keywords() {
+        if keyword.kind == KeywordKind::Directive {
+            let id = keyword
+                .doc_id
+                .unwrap_or_else(|| panic!("directive {} has no doc id", keyword.name));
+            reference(&mut ids, id.to_owned(), Expect::Directive);
+        }
+    }
     for code in arch.diagnostic_codes() {
         reference(
             &mut ids,
@@ -486,6 +498,7 @@ fn attribute_problem(expect: Expect, attributes: &BTreeSet<String>) -> Option<St
             wanted
         }
         Expect::Phrase => BTreeSet::new(),
+        Expect::Directive => BTreeSet::from(["details"]),
         Expect::Diagnostic(signature) => signature.attributes.iter().copied().collect(),
     };
     (names != wanted).then(|| format!("attributes {names:?}, expected exactly {wanted:?}"))
@@ -528,7 +541,7 @@ fn fluent_args(args: &[(&'static str, DiagArg)]) -> FluentArgs<'static> {
 /// every combination of the sample values of its variables for a diagnostic.
 fn sample_args(expect: Expect) -> Vec<Option<FluentArgs<'static>>> {
     match expect {
-        Expect::Entry { .. } | Expect::Phrase => vec![None],
+        Expect::Entry { .. } | Expect::Phrase | Expect::Directive => vec![None],
         Expect::Diagnostic(signature) => combinations(signature.vars)
             .iter()
             .map(|args| Some(fluent_args(args)))
@@ -700,7 +713,7 @@ fn every_resource_parses_and_lists_its_ids() {
 #[test]
 fn only_en_and_fr_have_resources() {
     for lang in LANGS {
-        assert_eq!(M68K.locale_resources(lang).len(), 2, "{lang}");
+        assert_eq!(M68K.locale_resources(lang).len(), 3, "{lang}");
     }
     for lang in ["", "de", "en-US", "english"] {
         assert!(M68K.locale_resources(lang).is_empty(), "{lang:?}");
@@ -717,6 +730,7 @@ fn referenced_ids_have_the_expected_counts() {
         .count();
     assert_eq!(entries, 74, "documentation entries (m1 §4.1)");
     assert_eq!(count("isa-m68k-cond-"), 16, "conditions (m1 §4.1)");
+    assert_eq!(count("isa-m68k-dir-"), 49, "directives (m1 §5.3, m2 §7.1)");
     assert_eq!(count("diag-lex-"), 11, "lexer diagnostics (m1 §5.4)");
     assert_eq!(count("diag-asm-"), 50, "assembler diagnostics (m2 §7.2)");
     assert_eq!(count("diag-asm-related-"), 5, "related notes (m2 §7.2)");

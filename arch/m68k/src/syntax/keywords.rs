@@ -25,57 +25,58 @@ pub(crate) enum OperandPolicy {
 }
 
 /// The A68k 2.71.F3w directive table (§5.3): 49 uppercase spellings in ASCII order, each with
-/// its operand policy.
-static DIRECTIVES: [(&str, OperandPolicy); 49] = [
-    ("=", OperandPolicy::Operands),
-    ("BSS", OperandPolicy::None),
-    ("CNOP", OperandPolicy::Operands),
-    ("CODE", OperandPolicy::None),
-    ("CSEG", OperandPolicy::None),
-    ("DATA", OperandPolicy::None),
-    ("DC", OperandPolicy::Operands),
-    ("DCB", OperandPolicy::Operands),
-    ("DS", OperandPolicy::Operands),
-    ("DSEG", OperandPolicy::None),
-    ("END", OperandPolicy::Operands),
-    ("ENDC", OperandPolicy::None),
-    ("ENDIF", OperandPolicy::None),
-    ("ENDM", OperandPolicy::None),
-    ("EQU", OperandPolicy::Operands),
-    ("EQUR", OperandPolicy::Operands),
-    ("EVEN", OperandPolicy::None),
-    ("FAR", OperandPolicy::None),
-    ("IDNT", OperandPolicy::Operands),
-    ("IFC", OperandPolicy::Operands),
-    ("IFD", OperandPolicy::Operands),
-    ("IFEQ", OperandPolicy::Operands),
-    ("IFGE", OperandPolicy::Operands),
-    ("IFGT", OperandPolicy::Operands),
-    ("IFLE", OperandPolicy::Operands),
-    ("IFLT", OperandPolicy::Operands),
-    ("IFNC", OperandPolicy::Operands),
-    ("IFND", OperandPolicy::Operands),
-    ("IFNE", OperandPolicy::Operands),
-    ("INCBIN", OperandPolicy::Path),
-    ("INCLUDE", OperandPolicy::Path),
-    ("LIST", OperandPolicy::None),
-    ("MACRO", OperandPolicy::None),
-    ("MEXIT", OperandPolicy::None),
-    ("NEAR", OperandPolicy::Operands),
-    ("NOL", OperandPolicy::None),
-    ("NOLIST", OperandPolicy::None),
-    ("ORG", OperandPolicy::Operands),
-    ("PAGE", OperandPolicy::None),
-    ("PUBLIC", OperandPolicy::Operands),
-    ("REG", OperandPolicy::Operands),
-    ("RORG", OperandPolicy::Operands),
-    ("SECTION", OperandPolicy::Operands),
-    ("SET", OperandPolicy::Operands),
-    ("SPC", OperandPolicy::Operands),
-    ("TITLE", OperandPolicy::Operands),
-    ("TTL", OperandPolicy::Operands),
-    ("XDEF", OperandPolicy::Operands),
-    ("XREF", OperandPolicy::Operands),
+/// its operand policy and its doc id, the Fluent message `isa-m68k-dir-<name>` in lowercase
+/// (`=` is `isa-m68k-dir-equals`) of `locales/{en,fr}/directives.ftl` (m2-assembler.md §7.1).
+static DIRECTIVES: [(&str, OperandPolicy, &str); 49] = [
+    ("=", OperandPolicy::Operands, "isa-m68k-dir-equals"),
+    ("BSS", OperandPolicy::None, "isa-m68k-dir-bss"),
+    ("CNOP", OperandPolicy::Operands, "isa-m68k-dir-cnop"),
+    ("CODE", OperandPolicy::None, "isa-m68k-dir-code"),
+    ("CSEG", OperandPolicy::None, "isa-m68k-dir-cseg"),
+    ("DATA", OperandPolicy::None, "isa-m68k-dir-data"),
+    ("DC", OperandPolicy::Operands, "isa-m68k-dir-dc"),
+    ("DCB", OperandPolicy::Operands, "isa-m68k-dir-dcb"),
+    ("DS", OperandPolicy::Operands, "isa-m68k-dir-ds"),
+    ("DSEG", OperandPolicy::None, "isa-m68k-dir-dseg"),
+    ("END", OperandPolicy::Operands, "isa-m68k-dir-end"),
+    ("ENDC", OperandPolicy::None, "isa-m68k-dir-endc"),
+    ("ENDIF", OperandPolicy::None, "isa-m68k-dir-endif"),
+    ("ENDM", OperandPolicy::None, "isa-m68k-dir-endm"),
+    ("EQU", OperandPolicy::Operands, "isa-m68k-dir-equ"),
+    ("EQUR", OperandPolicy::Operands, "isa-m68k-dir-equr"),
+    ("EVEN", OperandPolicy::None, "isa-m68k-dir-even"),
+    ("FAR", OperandPolicy::None, "isa-m68k-dir-far"),
+    ("IDNT", OperandPolicy::Operands, "isa-m68k-dir-idnt"),
+    ("IFC", OperandPolicy::Operands, "isa-m68k-dir-ifc"),
+    ("IFD", OperandPolicy::Operands, "isa-m68k-dir-ifd"),
+    ("IFEQ", OperandPolicy::Operands, "isa-m68k-dir-ifeq"),
+    ("IFGE", OperandPolicy::Operands, "isa-m68k-dir-ifge"),
+    ("IFGT", OperandPolicy::Operands, "isa-m68k-dir-ifgt"),
+    ("IFLE", OperandPolicy::Operands, "isa-m68k-dir-ifle"),
+    ("IFLT", OperandPolicy::Operands, "isa-m68k-dir-iflt"),
+    ("IFNC", OperandPolicy::Operands, "isa-m68k-dir-ifnc"),
+    ("IFND", OperandPolicy::Operands, "isa-m68k-dir-ifnd"),
+    ("IFNE", OperandPolicy::Operands, "isa-m68k-dir-ifne"),
+    ("INCBIN", OperandPolicy::Path, "isa-m68k-dir-incbin"),
+    ("INCLUDE", OperandPolicy::Path, "isa-m68k-dir-include"),
+    ("LIST", OperandPolicy::None, "isa-m68k-dir-list"),
+    ("MACRO", OperandPolicy::None, "isa-m68k-dir-macro"),
+    ("MEXIT", OperandPolicy::None, "isa-m68k-dir-mexit"),
+    ("NEAR", OperandPolicy::Operands, "isa-m68k-dir-near"),
+    ("NOL", OperandPolicy::None, "isa-m68k-dir-nol"),
+    ("NOLIST", OperandPolicy::None, "isa-m68k-dir-nolist"),
+    ("ORG", OperandPolicy::Operands, "isa-m68k-dir-org"),
+    ("PAGE", OperandPolicy::None, "isa-m68k-dir-page"),
+    ("PUBLIC", OperandPolicy::Operands, "isa-m68k-dir-public"),
+    ("REG", OperandPolicy::Operands, "isa-m68k-dir-reg"),
+    ("RORG", OperandPolicy::Operands, "isa-m68k-dir-rorg"),
+    ("SECTION", OperandPolicy::Operands, "isa-m68k-dir-section"),
+    ("SET", OperandPolicy::Operands, "isa-m68k-dir-set"),
+    ("SPC", OperandPolicy::Operands, "isa-m68k-dir-spc"),
+    ("TITLE", OperandPolicy::Operands, "isa-m68k-dir-title"),
+    ("TTL", OperandPolicy::Operands, "isa-m68k-dir-ttl"),
+    ("XDEF", OperandPolicy::Operands, "isa-m68k-dir-xdef"),
+    ("XREF", OperandPolicy::Operands, "isa-m68k-dir-xref"),
 ];
 
 /// Length of the longest directive spelling (`INCLUDE`, `SECTION`).
@@ -104,10 +105,10 @@ pub(crate) fn directive(name: &str) -> Option<OperandPolicy> {
         return None;
     }
     DIRECTIVES
-        .binary_search_by(|(entry, _)| cmp_folded(entry, name))
+        .binary_search_by(|(entry, _, _)| cmp_folded(entry, name))
         .ok()
         .and_then(|index| DIRECTIVES.get(index))
-        .map(|&(_, policy)| policy)
+        .map(|&(_, policy, _)| policy)
 }
 
 /// Returns the operand policy of the mnemonic spelled `name` (any case), or `None` if `name`
@@ -143,7 +144,7 @@ pub(crate) fn is_register(word: &[u8]) -> bool {
 }
 
 /// Returns the keyword list of the dialect (§5.3): the 126 mnemonics in `SPELLINGS` order with
-/// their doc id, the 49 directives (no doc id until M2), the 21 registers and the 4 size
+/// their doc id, the 49 directives with theirs (m2 §7.1), the 21 registers and the 4 size
 /// suffixes. Built once, on first use.
 pub(crate) fn keywords() -> &'static [KeywordInfo] {
     static KEYWORDS: OnceLock<Vec<KeywordInfo>> = OnceLock::new();
@@ -153,10 +154,10 @@ pub(crate) fn keywords() -> &'static [KeywordInfo] {
             kind: KeywordKind::Mnemonic,
             doc_id: spelling_info(name).map(|info| info.doc_id),
         });
-        let directives = DIRECTIVES.iter().map(|&(name, _)| KeywordInfo {
+        let directives = DIRECTIVES.iter().map(|&(name, _, doc_id)| KeywordInfo {
             name,
             kind: KeywordKind::Directive,
-            doc_id: None,
+            doc_id: Some(doc_id),
         });
         let registers = REGISTERS.iter().map(|&name| KeywordInfo {
             name,
