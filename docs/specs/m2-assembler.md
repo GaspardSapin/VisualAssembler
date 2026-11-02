@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Ready for development. User decisions Q1–Q2 of 2026-10-24 are recorded in §13.3; the architecture amendments of §3.1 are ratified in `architecture.md` (2026-10-24); the merged wave order with M4 is §14; the wave-1 implementation (WP-A `e5e9221`, WP0 `c500c74`) is ratified in §15 (2026-10-25), which wins over the body |
+| Status | Ready for development. User decisions Q1–Q2 of 2026-10-24 are recorded in §13.3; the architecture amendments of §3.1 are ratified in `architecture.md` (2026-10-24); the merged wave order with M4 is §14; the wave-1 implementation (WP-A `e5e9221`, WP0 `c500c74`) is ratified in §15 (2026-10-25), which wins over the body; wave-2 batch A (WP-B, WP-C, WP-F) is ratified in §16 (2026-11-02), which wins over §15 and the body |
 | Owner | Architect role |
 | Date | 2026-10-24 |
 | Depends on | `architecture.md` (R1–R8, §3, §4 T3, §5, §6 atomic writes, §8, §9.5); `m1-core-isa-lexer.md` (§3 frozen `va-core`, §3.7 M2 signatures as amended by §3.1 below, §4 ISA tables, §5 lexer and §5.7, §6.2 Localizer, §7 CLI, §12) |
@@ -532,6 +532,8 @@ and every PC-relative operand.
 
 ### 5.2 Text (`format.rs`) — reassembles to the same bytes with `optimize = false`
 
+Amended by §16.2 (the 120 immediate opwords of C8, absolute short, LINK, non-canonical words).
+
 Lowercase canonical spelling (`dbf` is written `dbra`), explicit size whenever the form is sized
 (`bra.s`, `bra.w`, `addq.w`, `move.w`), one space, operands joined by `,`. Numbers: immediates
 `#$` + 2/4/8 hex digits by size; MOVEQ, ADDQ/SUBQ, shift counts, TRAP vectors and bit numbers in
@@ -555,6 +557,7 @@ the CLI prints `dc.w $XXXX`.
 | Diagnostics | 1,000, then one note | `asm-too-many-diagnostics` |
 | Listing text | 64 MiB | `listing truncated` |
 | Relaxation sweeps | 16 (each O(statements)) | remaining branches stay `.W` |
+| Expression nesting (§16.1 P5) | 32 nested parentheses; a tree at most 256 levels deep (a chain of `n` binary operators is `n` levels) | `asm-bad-expression`; bounds the stack of parse, eval, clone and drop |
 
 Resulting output bounds of `va asm`: image ≤ 16 MiB; S-record ≤ 2.9 × image + 30 bytes ≈ 47 MiB;
 binary ≤ 16 MiB; listing ≤ 64 MiB; map ≤ ~60 MB (1,000,000 entries); stderr ≤ ~1 MB (1,000
@@ -853,7 +856,8 @@ S-record lines are stored without CR; `output.rs` asserts the CRLF separately.
    pattern (d16 `$0102`, index word `D1.W`/disp 2, imm `.B $0012` `.W $1234` `.L $12345678`,
    abs.W `$1234`, abs.L `$00012345`, branch word `$0102`, MOVEM mask `$0102`, STOP/LINK `$2700`),
    decode at `$1000`, assemble the text (`ORG $1000`, `optimize = false`), compare words; odd
-   short-branch targets are accepted with `asm-odd-branch-target`.
+   short-branch targets are accepted with `asm-odd-branch-target`. The 120 immediate opwords
+   of §16.2 C8 compare against their immediate-instruction words instead.
 2. **Fixtures:** every code-only fixture (`asm/modes`, `asm-opt/*`) with both option sets: its
    image disassembles and reassembles (no-opt) to the same image.
 
@@ -1020,6 +1024,9 @@ write; everything else is read-only for it.
 | 4 | Performance | M2, M4 | `docs/perf/<date>-m2-assembler.md`, `docs/perf/<date>-m4-editor.md`, `docs/perf/README.md` (one milestone at a time) | the milestone's QA |
 | 5 | WP-I docs | M2, M4 | READMEs, `CLAUDE.md`, `AGENCEMENT.md`, `DEPENDANCE.md`, `IMPORT.md` (one milestone at a time) | the milestone's waves 3–4 |
 
+- **Wave 2 runs in three batches (§16.7, m4 §16.4).** A (merged): M2 WP-B, WP-C, WP-F; M4
+  WP-A, WP-B, WP-D. B: M2 FX-1 (first), WP-D, WP-E, WP-G; M4 WP-C, WP-E, WP-H. C: M2 WP-H
+  (after D); M4 WP-F, then WP-G. G1 (§15.3) still orders the cross-package tests.
 - Waves 3–5 run per milestone: the first milestone to finish wave 2 may enter wave 3 while the
   other is still in wave 2, because wave-2 packages never write the files of waves 3–5. The same
   phase of the two milestones never runs at the same time: `SECURITY.md`, `docs/perf/README.md`,
@@ -1177,3 +1184,149 @@ always holds the `AsmOptions` it assembled with, which carries both).
 One change, mirrored in §14.1 and m4 §14.1: the **WP0 follow-up** (W1 step 1) lands before wave
 2. Inside wave 2: `asm/codes.rs` moves from WP-D to WP-F; WP-F's codes commit is atomic; WP-D's
 coverage assertion merges after it; G1 orders the cross-package tests. M4's wave 2 is unchanged.
+
+## 16. Ratified wave-2 batch A (2026-11-02)
+
+Precedence: §16 > §15 > body. Source: the notes of WP-B (`8064d41`), WP-F (`525d619`,
+`6553939`) and WP-C (`50ad40d`), checked against the code at `6553939`.
+
+### 16.1 Ratified as implemented
+
+| # | Decision (the spec now says what the code does) |
+|---|---|
+| P1 | `<…>` opens a bracketed argument after a `MacroName` stem and after a stem holding a macro parameter; the brackets are also read in the trailing text of a macro call (R3). |
+| P2–P4 | `\|` is no operator (`asm-bad-expression`); numeric literals wider than 32 bits wrap like every value; a character constant of more than 4 UTF-8 bytes is `asm-string-too-long` (`size` `L`, `max` 4, `length` in bytes); `''` is `asm-bad-expression`. |
+| P5 | Depth limits: 32 nested parentheses, expression tree 256 levels → `asm-bad-expression` (added to §6.1; Security records them, §16.6). |
+| P6 | A lone quoted string is `Operand::Bytes` in every statement; WP-D turns it into a `DC.W`/`DC.L` value (§4.5) or a string (`IFC`, `INCLUDE`); elsewhere `select` refuses it (`asm-no-matching-form`). |
+| P7, P8 | A register-list range may cross from D to A (`d0-a7`); a descending range is `asm-bad-operand`. `(pc,d0)` is `asm-missing-displacement`; `(pc)` and an address followed by `.b`/`.s` are `asm-bad-operand`. |
+| P9, P10 | `asm-label-like-keyword` (emitted by `parse_line`) fires for a keyword with a size suffix, never with a colon, and for a bare `data`. `OpField::Macro::suffix` holds the letter without the dot. |
+| C1, C2 | The MOVEM mask word follows the opword. MOVEP's `d16(An)` goes through `Reg0`/`Reg9` with the `DispAn` slot (one extension word); `Place` is unchanged. |
+| C3 | `encode` evaluates expression leaves itself and sends every other expression to `expr::eval`; both give the same leaf values (wrap, `*`, `Known`/`Later`/`Unknown`). |
+| C5, C6 | `asm-short-branch-zero` carries no fix (WP-D adds it, §16.4 G9). Closest-failure ranking: size > mode > kind > count. The `asm-operand-count`/`asm-no-matching-form` paths inside `encode` that name `entry.name` are unreachable when WP-D gives `encode` the operands that `select`/`optimize` returned with that choice, which it must. |
+| C9 | The corpus (1,526 lines) writes an explicit size on every sized form. A line a68k refuses is an E7 mismatch, fixed toward a68k (F1). |
+| F1 | **Ratified.** The one assertion changed in `arch/m68k/tests/syntax/robustness.rs::keyword_list_has_the_spec_counts` allows directive doc ids: the M1 "mnemonics only" rule expired with §7.1. That line is added to WP-F's scope after the fact. |
+| F2 | **Ratified, none struck.** The 25 `.help` lines beyond §7.2 (`unsupported-directive` with a `name` selector, `bad-operand`, `bad-expression`, `operand-count`, `register-size-suffix`, `value-out-of-range`, `odd-branch-target`, `undefined-symbol`, `duplicate-symbol`, `reserved-name`, `label-required`, `division-by-zero`, `address-overflow`, `overlap`, `string-too-long`, `text-after-end`, `unbalanced-conditional`, `unbalanced-macro`, `macro-param-outside`, `expansion-limit`, `include-too-deep`, `include-cycle`, `include-failed`, `too-many-diagnostics`, `phase-error`): each checked; accurate, in our own words, full sentences. |
+| F3 | **Ratified.** The wording changes (16 MiB / 16 Mio, the French grammar of `operand-count`, `negative-count` and `unbalanced-*`, the "Accepted …" notes, `d8(PC,Xn)` in `register-size-suffix`, "ordinary label, EQU, SET or =" in `undefined-local-label`, …). From now on the `.ftl` files are the normative text; §7.2 keeps the codes, arguments, severities and blocking flags. |
+
+### 16.2 Decided for WP-E (disassembler and round trip)
+
+**C8 — the 120 immediate opwords.** ADD, SUB, CMP, AND and OR have a form `<ea>,Dn` whose EA
+may be `#imm` (`D03C`/`D07C`/`D0BC` plus `n << 9`, and likewise `9…`, `B…`, `C…`, `8…`: 5
+entries × 3 sizes × D0–D7 = 120 opwords). Selection always picks ADDI, SUBI, CMPI, ANDI, ORI
+there (§4.10, as a68k), so no text reassembles to them. **Decision:** the disassembler prints
+them as what they are (`add.w #$1234,d0`) and the round trip compares them with their immediate
+counterpart, which has the same result, flags and length (cycle counts differ; M3 times the
+decoded instruction). In `tests/roundtrip.rs`, for an opword whose decoded entry is one of the
+five, form `<ea>,Dn`, EA mode `#imm`: the reassembled words equal the decoded words except word
+0, which is `I | size | n` with `I` = `$0600` ADDI, `$0400` SUBI, `$0C00` CMPI, `$0200` ANDI,
+`$0000` ORI, size bits 7–6 (`.B` `$00`, `.W` `$40`, `.L` `$80`) and `n` (bits 2–0, EA mode 0)
+the original Dn.
+The test selects them by that rule, not by a hand list, and asserts there are 120. Every other
+matching opword keeps the exact comparison. *Rejected:* comparing decoded semantics (no
+executable model before M3); a `dc.w` text for them (unreadable, and the M6 debugger must show
+the operation).
+
+**§5.2 text, completed (gaps).**
+- Absolute short with bit 15 set prints sign-extended on 8 digits, `($FFFF8000).w`, which the
+  encoder accepts (§4.10); below `$8000` it stays `($1234).w`.
+- LINK's displacement prints in signed decimal (`link a6,#-16`): the encoder takes −32768…32767.
+  STOP and the SR forms keep `#$XXXX`, the CCR forms `#$XX`.
+- MOVEP prints `d16(An)` from its `Reg0`/`Reg9` place and extension word (C2).
+- **Non-canonical words** (arbitrary input; outside both round trips, whose patterns are
+  canonical): the high byte of a `.B` immediate word and bits 10–8 of a brief index word are
+  ignored, as the 68000 does, so the text reassembles to the canonical words. A MOVEM mask of 0
+  has no A68k spelling: `decode` returns `Ok` with the full length (opword, mask, EA extension
+  words), `flow` `Sequential`, no `target` and the text `dc.w` of all those words
+  (`dc.w $4C90,$0000`), which reassembles to the same bytes. An absolute long address or a
+  branch or PC-relative target outside `$000000`–`$FFFFFF` is printed as §5.2 says and then does
+  not reassemble (`asm-value-out-of-range`). `decode` never panics and never returns `Illegal`
+  for an opword some form matches (§15.1 A3).
+
+**What WP-E reads from `isa/fields.rs`:** `Place` and `places(entry, form)`, one place per
+operand in source order, with the word order of the module documentation (opword; the `RegMask`
+word first; then the extension words in operand order; `Reg0`/`Reg9` of a `DispAn` slot take one
+`d16` word; `Imm` one word for `.B`/`.W`, two for `.L`; `ImmByte` the low byte; `Disp8`/`Disp16`
+relative to the opword address + 2; `Quick9` 0 = 8). From the rest of `isa`: `INSTRUCTIONS`,
+`Form::{matches, encoding, operands, sizes}`, `Instruction::family` with `CONDITIONS`,
+`Mode::fields`, `Size::letter`, the canonical spellings (`dbf` written `dbra`).
+
+**Corpus join (gap: WP-C has finished).** WP-E adds a third round trip to `tests/roundtrip.rs`,
+which includes the corpus with `#[path = "asm/corpus.rs"] mod corpus;` (as WP-H, §15.3 G2): the
+program of `corpus::lines(false)` assembles (WP-D's `assemble`, no-opt) and each instruction
+decodes with `len` = its encoded length and a text that reassembles to the same words (its 15
+immediate lines select ADDI…ORI, so no C8 case arises). WP-E may update the sentence of
+`corpus.rs`'s module documentation that announces this join; nothing else of that file changes.
+
+### 16.3 Argument formats (C7 vs F4, decided) and fix package FX-1
+
+One convention per argument; the message adds the punctuation, and the rendered text must read
+well in `en` and `fr`.
+
+| Argument | Convention | Rendered (en) |
+|---|---|---|
+| `mnemonic` | spelling as written, uppercase, no suffix (`BEQ`, `DBRA`) | “CHK has no .L form” |
+| `size` | one uppercase letter, no dot: `B` `W` `L` `S`; on a branch the size used (`.B` written = `S`, `.L` = `W`) | “too far for a .S branch”, “MOVE.W” |
+| `allowed` (sizes) | each size with its dot, joined by `", "` (`.B, .W, .L`); **`none`** when no form takes a size, a selector of the `.note` | “Accepted sizes: .W.” / “NOP takes no size suffix.” |
+| `mode` | `Mode::notation` (`An`, `#imm`, `xxx.L`) | “does not accept the mode #imm here” |
+| `allowed` (modes) | notations joined by `", "`, then `<list>` / `<label>` | “Modes accepted here: Dn, (An).” |
+| `forms` | slot notations joined by `","` per form, forms joined by `"; "` | “Accepted forms: Dn,Dn; An,An; Dn,An.” |
+| `value`, `min`, `max` | decimal with `-`; for an address check, the address format | “300 does not fit here (allowed: -128 to 127)” |
+| `address`, `target` | `$` + uppercase hex, **at least 6 digits** (`$001001`, `$FFFFFF`, `$1000000`) | “the target $001001 is at an odd address” |
+| `distance` | `Int`, the **magnitude** in bytes of `target − (opword address + 2)` | “the target is 129 bytes away” |
+| `name` | a directive or keyword uppercase (also the selector for `ELSE`/`REPT`/`OPT`, `EQUR`…); a symbol or macro as written | — |
+| counts | `count`, `expected`, `found`, `limit`, `bytes`, `length`, `max` are `Int` | — |
+
+**FX-1 (fix-now; small fix package, one commit; merges first in batch B, before WP-D blesses any
+fixture or golden that records arguments):**
+- `arch/m68k/src/asm/encode.rs`: in `Closest::into_problem`, `"-"` → `"none"`; `address_text`
+  → `format!("${:06X}", value & 0xFFFF_FFFF)`; `branch_out_of_range` passes
+  `DiagArg::Int(distance.abs())`; the module documentation says so.
+- `arch/m68k/tests/asm/encode.rs`: `text("-")` → `text("none")` (NOP `.W`); `DiagArg::Int(-129)`
+  → `DiagArg::Int(129)` (BEQ backward).
+- `arch/m68k/locales/en/diagnostics.ftl`, `diag-asm-size-not-allowed`:
+  `.note = { $allowed -> [none] { $mnemonic } takes no size suffix. *[other] Accepted sizes: { $allowed }. }`;
+  `fr`: `[none] { $mnemonic } ne prend pas de suffixe de taille. *[other] Tailles acceptées : { $allowed }.`
+- `arch/m68k/src/asm/codes.rs`: the documentation of `ASM_SIZE_NOT_ALLOWED` (`allowed` = `none`
+  when no size), of `ASM_BRANCH_OUT_OF_RANGE` (`size` = the branch size used, `S` or `W`) and the
+  address format (at least 6 hex digits) in the module text.
+- `arch/m68k/tests/locales.rs`: the `asm-size-not-allowed` row also formats `allowed = none` in
+  both languages.
+
+### 16.4 Decided for WP-D (driver glue)
+
+| # | Rule |
+|---|---|
+| G1 | **Lexer problems.** WP-D reports each assembled line's lexer diagnostics once, from `SyntaxProvider::line_diagnostics` (§4.3), and drops every `Problem` of `parse_operand`/`parse_expr` whose code starts with `lex-` (an exact repeat); the operand still counts as failed. `parse_line` returns none. |
+| G2 | **Undefined uses.** Pass 1 answers `Unknown` for every symbol not defined yet; `asm-undefined-symbol`/`-local-label` come from pass 2 only. WP-D's pass-2 scope records every `Undefined` lookup; before `encode`, WP-D evaluates each expression of the statement with `expr::eval` (which looks up every symbol, left to right, even after a failure) and reports one diagnostic per recorded use, in range order; the `Problem` that `eval`/`encode` returns for such a use is dropped. Such a statement is not encoded and keeps its pass-1 length (§4.13). |
+| G3 | **Suggestions.** WP-D fills `count`/`suggestions` with a crate-private helper in its files (`va isa`'s lives in `apps/va`): the m1 §12.7 order (edit distance ≤ 2, then longest common prefix, then name; at most 3; joined by `", "`). Candidates: for a symbol, the non-local symbols and macro names of the whole program, compared byte for byte (case-sensitive); for `asm-unknown-operation`, the 126 spellings (compared uppercase) and the macro names. Local labels get none. |
+| G4 | **Poisoned.** If WP-D's scope answered `Poisoned` during an `eval` or `encode` call, the returned `Problem` is that use (it wins, §4.2 `eval`) and nothing is reported for it; recorded `Undefined` uses of the statement are still reported (G2). |
+| G5 | **Ranges.** `asm-division-by-zero` comes with an empty range at 0: WP-D sets the evaluated operand's range. A `select` problem with an empty range (no operand) points at the operation field. |
+| G6 | **Optimize order.** Pass 1, per instruction: parse the operands, `select`, then if `options.optimize` `optimize(&choice, &ops, &pass1_scope, generic)` (on `Some`, take its choice and operands and record the id), then `length`. Relaxable branches never go through `optimize`: layout chooses `.S`/`.W` (`short-branch`). Pass 2: from the kept `select` result, call `optimize` again with the pass-2 scope; keep its result iff its `length` equals the pass-1 length (so the same-length `.W` `lea` rule sees later values, §12.2), else encode the pass-1 choice and report `asm-phase-error` (`name` = the first operand symbol whose pass-1 and pass-2 values differ). Then `encode` at the final address. A `movem-move` result whose entry is MOVE adds `asm-movem-single` (rule in `optimize.rs`). |
+| G7 | **Generic flag.** `generic = false` iff the canonical spelling written is one of ADDA ADDI ADDQ SUBA SUBI SUBQ CMPA CMPI CMPM ANDI ORI EORI MOVEA MOVEQ (the `also_accepts` targets plus ADDQ, SUBQ and MOVEQ: the list of `corpus.rs`'s generic variant); every other spelling is generic (JMP, LEA, BTST, TST, Bcc, … get the operand rules). |
+| G8 | **C4, ratified: odd branch target.** `encode` returning `Err(p)` with `p.code == ASM_ODD_BRANCH_TARGET` is a success: the words are complete and appended. Every other `Err` appended nothing. WP-D tests the code (never `out.len()`), keeps the words and reports `p` as a non-blocking warning over its range. An error found later in the same instruction wins (nothing appended, no warning). *Rejected:* a second public `encode` or a warning out-parameter (the §4.2 signature is frozen; one encoding path). |
+| G9 | **Short-branch fix.** For `asm-short-branch-zero` WP-D adds `fix = (range of the ".s" suffix in the operation field, "")`. `\0` is `OpField::Macro::suffix` uppercased, `W` when absent (P10). |
+| G10 | **Day-1 commit.** WP-D's first commit gives `srec.rs` the §15.2 W3 shape (`SrecError { line, reason: SrecReason }`, `SrecReason::id`) and `listing.rs` the W5 signature (`options: &AsmOptions`), bodies still `todo!()` under the W6 rule, so WP-G codes against the final types. |
+
+### 16.5 APIs batch B builds on (all exist with a decided shape)
+
+| WP | Frozen items (file: item) |
+|---|---|
+| WP-D | `asm/parser.rs`: `parse_line`, `Line`, `OpField`, `Problem`; `asm/operand.rs`: `parse_operand`, `Operand`, `Ea`, `Xn`, `Spanned`; `asm/expr.rs`: `parse_expr`, `eval`, `Expr`, `SymRef`, `UnOp`, `BinOp`, `Scope`, `Lookup`, `Value`; `asm/encode.rs`: `select`, `length`, `encode`, `Choice`; `asm/optimize.rs`: `optimize`; `asm/codes.rs`: the 50 constants, `ASM_DIAG_CODES`; `syntax::lex_line`, `M68kSyntax::line_diagnostics` (M1); `isa::{instruction_of, spelling_info, SPELLINGS}`; `va_core::asm` (§3.2); its own `asm/mod.rs::assemble` (W2), `srec.rs` (W3), `listing.rs::render_listing` (W5) |
+| WP-E | `va_core::disasm` (§3.3, §15.1 A3); `isa/fields.rs` (§4.9, §16.2); the `isa` tables (M1); `syntax::lex_line`; for `roundtrip.rs`, after WP-D: `asm::assemble`, `va_core::asm::MemorySources`, `corpus::lines` |
+| WP-G | `asm::assemble`, `srec::{to_srec, parse_srec, to_binary, SrecError, SrecReason}`, `listing::render_listing`; `va_core::asm::{AsmOptions, AsmLimits, AssembleInput, SourceProvider, IncludeError, PathRefusal, CancelToken}`, `va_core::disasm`; `M68K.assembler()`/`disassembler()`; `va_workspace::{Lang, LangChoice, resolve_lang, Localizer::{for_architecture, message, render}, RenderedDiagnostic}` (§14.2) |
+| WP-H (batch C) | `asm::assemble`, `MemorySources`, `srec::parse_srec`, `corpus::lines(bool)` |
+
+### 16.6 For Security (wave 3)
+
+P5's depth limits (the stack bound of the expression code; part of M1-S5's re-rating, E9). The
+disassembler's handling of arbitrary bytes (§16.2: no panic, no `Illegal` for a matching opword,
+`dc.w` for an empty MOVEM mask). Nothing else in batch A adds a limit, an `unsafe` block, a
+network API or an allow-list entry.
+
+### 16.7 Batch-B order
+
+FX-1 first (disjoint files: `encode.rs`, `codes.rs`, the two `diagnostics.ftl` and their two
+tests; no batch-B package owns them). Then WP-D, WP-E and WP-G in parallel: WP-D's day-1 commit
+(G10) before WP-G reads `srec`/`listing`; WP-E's `roundtrip.rs` and corpus join after WP-D's
+`assemble`; WP-G's `asm`/`disasm` tests after D and E (§15.3 G1). WP-H follows in batch C, after
+D. Mirrored in §14.1 and m4 §16.4.

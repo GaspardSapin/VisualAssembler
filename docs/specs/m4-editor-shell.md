@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Ready for development. The new dependencies, the font download and the UX defaults were approved by the user on 2026-10-24 (§8.3, §8.4, §13); the architecture amendments this spec needs are ratified in `architecture.md` (2026-10-24); the merged wave order with M2 is §14. The settings types of §4.3 and the session types of §4.7 were frozen on 2026-10-24 after WP0 (WP0 follow-up, §1). The wave-1 implementation (WP0 `b4e7aae`, follow-up `570afb1`) is ratified in §15 (2026-10-25), which wins over the body |
+| Status | Ready for development. The new dependencies, the font download and the UX defaults were approved by the user on 2026-10-24 (§8.3, §8.4, §13); the architecture amendments this spec needs are ratified in `architecture.md` (2026-10-24); the merged wave order with M2 is §14. The settings types of §4.3 and the session types of §4.7 were frozen on 2026-10-24 after WP0 (WP0 follow-up, §1). The wave-1 implementation (WP0 `b4e7aae`, follow-up `570afb1`) is ratified in §15 (2026-10-25), which wins over the body; wave-2 batch A (WP-A, WP-B, WP-D) is ratified in §16 (2026-11-02), which wins over §15 and the body |
 | Owner | Architect role |
 | Date | 2026-10-24 |
 | Depends on | `architecture.md` (§2 R1–R8, §4 T1–T6, §5, §6, §7, §9.6, §9.8); `m0-foundations.md` §4, §6, §17.10, §19 (renderer, fallback, bench v2); `m1-core-isa-lexer.md` §3 (frozen `va-core`), §5 (lexer), §6.2 (Localizer) |
@@ -1343,6 +1343,8 @@ for it.
 | 4 | Performance | M2, M4 | `docs/perf/<date>-m2-assembler.md`, `docs/perf/<date>-m4-editor.md`, `docs/perf/README.md` (one milestone at a time) | the milestone's QA |
 | 5 | WP-I docs | M2, M4 | READMEs, `CLAUDE.md`, `AGENCEMENT.md`, `DEPENDANCE.md`, `IMPORT.md` (one milestone at a time) | the milestone's waves 3–4 |
 
+- **Wave 2 runs in three batches (§16.4, m2 §16.7).** A (merged): M2 WP-B, WP-C, WP-F; M4 WP-A, WP-B, WP-D. B: M2 FX-1 (first),
+  WP-D, WP-E, WP-G; M4 WP-C, WP-E, WP-H. C: M2 WP-H (after D); M4 WP-F, then WP-G. m2 §15.3 G1 still orders the cross-package tests.
 - Waves 3–5 run per milestone: the first milestone to finish wave 2 may enter wave 3 while the other is still in wave 2, because
   wave-2 packages never write the files of waves 3–5. The same phase of the two milestones never runs at the same time:
   `SECURITY.md`, `docs/perf/README.md`, `CLAUDE.md`, `AGENCEMENT.md`, the root and `crates/`/`apps/` READMEs are shared.
@@ -1390,3 +1392,48 @@ and its follow-up (`570afb1`), checked against the code at `c500c74`.
   `locale_resources` returns.
 - **Cross-package tests inside M4 follow m2 §15.3 G1:** no merged test calls a `todo!()` of another package. WP-E's and WP-F's tests
   that need a real `Document` merge after WP-A's implementation of what they call; until then they use the stub-free parts or wait.
+
+## 16. Ratified wave-2 batch A (2026-11-02)
+
+Precedence: §16 > §15 > body. Source: the notes of WP-D (`1966bd7`), WP-A (`7324608`) and WP-B (`1cf9729`), checked against the code
+at `6553939`. Nothing here is fix-now: batch A needs no code change before batch B.
+
+### 16.1 `va-editor` (WP-A)
+
+| # | Decision |
+|---|---|
+| A1 | **Ratified (gap filled).** `Document::mark_saved_at(&Snapshot) -> bool` implements §5.7's "marked saved at the snapshot's revision": edits made since keep the document dirty, undoing back to the snapshot's content makes it clean, and it closes the undo group only when the snapshot is the current revision. It knows the last 256 revisions; for an older one it returns `false` and changes nothing. **WP-F** calls it after a successful save; on `false` the tab stays dirty and keeps its backup (never data loss). |
+| A2 | **Ratified.** `Document::new` is O(n) (it measures the widest line), which §3.3's O(n) list now includes. **WP-F** builds the whole `Document` on `va-io` with the text (§5.7 open, restore, reload) and sends it to the UI thread; `Document: Send + Sync` is pinned by `tests/document.rs`. |
+| A3 | **Ratified** as extra public helpers (allowed by the frozen-block rule): `Text::{is_empty, is_char_boundary}` and `Display`, `Eq`, `Default`; `Encoding::ALL`/`from_id`, `LineEnding::ALL`/`from_id`; `Selection::{new, is_reversed}`; `Selections::as_slice`; `Change::is_noop`; `Document::{can_undo, can_redo, add_caret, mark_saved_at}`. WP-E uses `add_caret` for Alt+click (§5.6). |
+| A4 | **Ratified** (silent-spec choices): a line break inside inserted or pasted text becomes the document's line ending; an `edit` whose result would pass `MAX_DOCUMENT_BYTES` and grows the text is refused (returns `false`); a different encoding or line ending makes the document dirty; `mark_saved` closes the undo group; `DuplicateLines` inserts the copy above, so the selections end on the lower copy (VS Code's Shift+Alt+Down); Ctrl+D matches case-sensitively, whole words when the selection came from its own word expansion; `find_from` forward = first match starting at or after `from`, backward = last match ending at or before it, wrapping once; nest-limit errors are told from other syntax errors by recompiling (`TooBig`); `\p{Greek}` and other script classes are `Invalid` (the approved `regex` features have no script tables). **Gaps, WP-F:** F3 passes the primary selection's end (Shift+F3 its start), so the current match is not found again; Replace all refuses (notice, nothing changed) a result whose `len_bytes()` passes `MAX_DOCUMENT_BYTES`, since `replace_text` does not check it. |
+
+### 16.2 `va-workspace` i18n (WP-D) and config (WP-B)
+
+| # | Decision |
+|---|---|
+| D1 | **Ratified.** `VA_LANG=auto` selects the `auto` resolution and skips `ui.language`. General rule: an environment variable set to `auto` is an explicit choice of the automatic rule, so the settings level below it is skipped. **WP-G** applies it to §6.3: `VA_RENDERER=auto` skips `render.renderer`. |
+| D2 | **Ratified.** The first non-empty of `LC_ALL`, `LC_MESSAGES`, `LANG` decides, as in M1: `LANG=C` or `de_DE` gives English (`Default`) and the system language is not asked. The system language is asked only when none is set and non-empty (the GUI started from Explorer or the Start menu). |
+| D3 | **Ratified.** A system tag follows M1's case-sensitive prefix rule: `fr…` French and `en…` English (source `System`), anything else English (`Default`); Windows returns lowercase language subtags (`fr-FR`). |
+| D4 | **Ratified.** `crates/va-ui/tests/locales.rs` keeps its own `REGISTRY` copy of the 44 commands of §5.12 and checks it against `shell/commands.rs` once that file exists. WP-F keeps its registry equal to §5.12 (a difference fails that test); a change of §5.12 goes back to the Architect. |
+| B1 | **Ratified.** `config/problems.rs` is tested through `tests/config_settings.rs` (§2 lists no `config_problems.rs`); the Documentarian says so in `tests/README.md`. |
+| B2 | **Ratified.** "Absolute" means absolute on the running OS (on Windows `/home/x` is not); every `os` other than `windows` uses the Linux rows; each variable is read lazily, at most once; `Paths::portable` is true only when both folders come from the portable level. Extra helpers `Paths::{create_config_dir, create_data_dir, create_backups_dir}` (the last two `0o700` on Unix). **WP-C** creates folders only through them, before its first write (`try_lock_session` and `BackupStore::open` included). |
+| B3 | **Ratified.** `cfg-wrong-type` `expected` = a type id (`boolean`, `integer`, `number`, `string`, `array`, `table`, selectors of `config.ftl`); `cfg-invalid-value` `expected` = the accepted values joined by `", "`, or `font-file` / `file-name` (selectors); `cfg-out-of-range` `min`/`max` are `Int`; text taken from the file is cut to 64 chars plus `…`; a `schema_version` of `"1"` or `1.0` is another version (`cfg-schema-version`). |
+| B4 | **Ratified.** `is_reserved_chord` (extra helper) implements §4.4's list: the arrows, Home, End, PageUp, PageDown, Backspace, Delete without Alt; Enter, Escape, Tab without Ctrl and Alt (Shift+Tab included); Ctrl+C/X/V with any Shift/Alt, Ctrl+Insert, Shift+Insert. A reserved chord is `cfg-bad-key`. Every default of §5.12 stays bindable (Alt+Up, Ctrl+Alt+Up, Shift+Alt+Down, Ctrl+Tab are free). A missing or non-string `key`/`command` is `cfg-wrong-type` on the `[[binding]]`; an invalid `when` is `cfg-invalid-value` and the binding is global; removals apply before user additions. |
+| B5 | **Ratified.** `project.toml` paths are refused (`cfg-bad-path`) when empty, starting with `/` or `\` (UNC included), with a drive prefix, or with a `..` component, on every OS. Extra helper `project_arch_problem` builds the unknown-`arch` problem of §4.5 (WP-G calls it). The M5 GUI provider still applies m2 §6.2 on top (colon, device names, symlink escape). |
+| B6, B7 | `data_folders_are_private_on_unix` has not run yet: QA runs it under WSL (E1). The `cargo fmt -p va-workspace` run in the shared checkout rewrote only WP-B's files and CI is green: no action; wave-2 packages keep their own worktrees (§14.1). |
+
+### 16.3 APIs batch B builds on (all exist with a decided shape)
+
+| WP | Frozen items it reads (file: item) |
+|---|---|
+| WP-C persist | `va-workspace/src/paths.rs`: `Paths` and its six path accessors, `create_data_dir`, `create_backups_dir` (B2); `config::ThemeKind` (§4.3); the §4.7–§4.8 items it owns in `persist/mod.rs` (stubs, split under §15.1 M2) |
+| WP-E view | `va-editor` (§3): `Document` (+ `add_caret`), `Text`, `display_col`, `byte_at_display_col`, `Selection`, `Selections`, `EditCommand`, `Motion`, `EditOptions`, `is_word_char`; `va-core::syntax::{SyntaxProvider, Token, TokenKind, LineState}`; `va_workspace::config::KEY_NAMES` (fonts test); the stubs it owns: `editor/mod.rs` (§5.2), `theme.rs` (§5.4), `fonts.rs` (§5.5), `tests/support/mod.rs` |
+| WP-H bench | §7 only: `xtask` stays free of workspace crates; `generate.rs` (§7.1) is new; the GUI side of `va.bench.run/3` is WP-G's (batch C) |
+
+### 16.4 Batch-B order and Security
+
+- **Order.** M4 WP-C, WP-E and WP-H run in parallel in batch B; all their inputs are merged (WP-A for WP-E's tests, m2 §15.3 G1).
+  WP-F (needs WP-C and WP-E) and then WP-G run in batch C. Mirrored in §14.1 and m2 §16.7.
+- **For Security (wave 3):** B2 (`0o700` data and backup folders; portable only when both folders are portable), B5 (project path
+  refusals on every OS, S4-1), A4 (the 16 MiB cap of `edit` and WP-F's Replace-all check), B3 (64-char excerpts in problem
+  arguments). No new `unsafe`, network API or allow-list entry in batch A.
