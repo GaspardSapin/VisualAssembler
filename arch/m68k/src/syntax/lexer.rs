@@ -11,6 +11,14 @@
 //! **A `\r` or `\n` inside a line** (API misuse: callers pass line contents without terminator)
 //! is an `Invalid(lex-unexpected-char)` token, one per run of such bytes. The text after it is
 //! lexed as the start of a new line, the way `va_core::source::lines` would have split it.
+//!
+//! **Bracketed macro arguments** (m2-assembler.md §4.3): in the operand field of a macro call (an
+//! operation lexed as `MacroName`, or a stem holding macro parameters), a `<` at the start of an
+//! argument (the field start or right after a `,`) opens a group that ends at the next `>` on the
+//! line part. The group, brackets and any whitespace or `;` inside included, is one `String`
+//! token (a68k: `name <4(a0,d0)>,d1`, `name <1 2>`); without a `>`, the `<` starts an
+//! `Invalid(lex-unterminated-string)` token to the end of the line part. Everywhere else `<` keeps
+//! its M1 rules (`<<` operator, else a rejected char).
 
 use va_core::source::{MAX_LINE_BYTES, TextRange};
 use va_core::syntax::{Token, TokenKind};
@@ -73,10 +81,13 @@ enum Rest {
     /// A path operand (`INCLUDE`, `INCBIN`).
     Path,
     /// Operands. `checked` enables the §5.7 rule on the trailing text; it is off after an
-    /// invalid operation field.
+    /// invalid operation field. `brackets` enables the bracketed macro arguments (m2 §4.3); it
+    /// is on after a macro call only.
     Operands {
         /// Whether the §5.7 rule applies to the trailing text.
         checked: bool,
+        /// Whether a `<` at the start of an argument opens a bracketed argument.
+        brackets: bool,
     },
 }
 
@@ -184,12 +195,12 @@ impl Lexer<'_, '_> {
             Rest::Comment => self.comment(operand_start),
             Rest::Path => {
                 let stop = self.path(operand_start);
-                self.trailing(stop, None);
+                self.trailing(stop, None, false);
             }
-            Rest::Operands { checked } => {
+            Rest::Operands { checked, brackets } => {
                 let first_operand = self.out.len();
-                let stop = self.operands(operand_start);
-                self.trailing(stop, checked.then_some(first_operand));
+                let stop = self.operands(operand_start, brackets);
+                self.trailing(stop, checked.then_some(first_operand), brackets);
             }
         }
     }
@@ -285,12 +296,17 @@ impl Lexer<'_, '_> {
     /// then ID_CONT without `.`, macro parameters allowed) optionally followed by a suffix from
     /// its first `.` to the field end; anything else is one `Invalid(lex-bad-operation)` over the
     /// whole field (a68k: "No such op-code"). A plain stem is a `Mnemonic`, a `Directive` or a
-    /// `MacroName`; a stem holding macro parameters is `MacroName` and `MacroParam` pieces.
+    /// `MacroName`; a stem holding macro parameters is `MacroName` and `MacroParam` pieces. The
+    /// operands of a `MacroName` stem and of a stem holding parameters (a macro call, or a body
+    /// line whose expansion may be one) may hold bracketed arguments (m2 §4.3).
     fn operation(&mut self, start: usize, stop: usize) -> Rest {
         let bytes = self.bytes;
         if stop - start == 1 && bytes[start] == b'=' {
             self.push(TokenKind::Directive, start, stop);
-            return Rest::Operands { checked: true };
+            return Rest::Operands {
+                checked: true,
+                brackets: false,
+            };
         }
         let first = bytes[start];
         let starts_stem =
@@ -312,11 +328,17 @@ impl Lexer<'_, '_> {
         }
         if !starts_stem || (stem_end < stop && bytes[stem_end] != b'.') {
             self.push(TokenKind::Invalid(LEX_BAD_OPERATION), start, stop);
-            return Rest::Operands { checked: false };
+            return Rest::Operands {
+                checked: false,
+                brackets: false,
+            };
         }
         let rest = if has_param {
             self.param_stem(start, stem_end);
-            Rest::Operands { checked: true }
+            Rest::Operands {
+                checked: true,
+                brackets: true,
+            }
         } else {
             let stem = self.line.get(start..stem_end).unwrap_or("");
             if let Some(policy) = keywords::mnemonic(stem) {
@@ -327,7 +349,10 @@ impl Lexer<'_, '_> {
                 rest_of(policy)
             } else {
                 self.push(TokenKind::MacroName, start, stem_end);
-                Rest::Operands { checked: true }
+                Rest::Operands {
+                    checked: true,
+                    brackets: true,
+                }
             }
         };
         if stem_end < stop {
@@ -395,8 +420,9 @@ impl Lexer<'_, '_> {
 
     /// Lexes an operand field from `start` to the first unquoted whitespace or `;` (§5.2
     /// operand rows), and returns where it stopped (the end of the line after an unterminated
-    /// string).
-    fn operands(&mut self, start: usize) -> usize {
+    /// string). With `brackets`, a `<` at the start of an argument opens a bracketed argument
+    /// (m2 §4.3, see the module documentation).
+    fn operands(&mut self, start: usize, brackets: bool) -> usize {
         let (bytes, end) = (self.bytes, self.end);
         let first_token = self.out.len();
         let mut at = start;
@@ -408,6 +434,12 @@ impl Lexer<'_, '_> {
                     Some(closed) => (TokenKind::String, closed),
                     None => (TokenKind::Invalid(LEX_UNTERMINATED_STRING), end),
                 },
+                b'<' if brackets && self.argument_starts(first_token) => {
+                    match bracket_end(bytes, at, end) {
+                        Some(closed) => (TokenKind::String, closed),
+                        None => (TokenKind::Invalid(LEX_UNTERMINATED_STRING), end),
+                    }
+                }
                 b'$' | b'%' | b'@' | b'0'..=b'9' => number(bytes, at, end),
                 b'\\' => backslash(bytes, at, end),
                 b'+' | b'-' | b'*' | b'/' | b'~' | b'&' | b'!' | b'|' => {
@@ -437,6 +469,16 @@ impl Lexer<'_, '_> {
             at = token_end;
         }
         at
+    }
+
+    /// Tells whether the next operand token starts an argument: it is the first token of the
+    /// field (whose tokens start at `first_token`) or it follows a `,`.
+    fn argument_starts(&self, first_token: usize) -> bool {
+        self.out.len() == first_token
+            || self.out.last().is_some_and(|previous| {
+                previous.kind == TokenKind::Punctuation
+                    && self.bytes.get(previous.range.start as usize) == Some(&b',')
+            })
     }
 
     /// Tells whether the `.` at `at` is an operand size suffix: `.B .W .L .S` right after a `)`
@@ -475,8 +517,9 @@ impl Lexer<'_, '_> {
     /// Lexes what follows a path or operand field that stopped at `at` (§5.2 last row, §5.7):
     /// a `;` comment, or whitespace then the trailing text T as a `Comment`, or as a
     /// `SuspectComment` when `operands_from` (the index of the first operand token) is given
-    /// and a §5.7 rule fires.
-    fn trailing(&mut self, at: usize, operands_from: Option<usize>) {
+    /// and a §5.7 rule fires. `brackets` is the operand field's bracket mode, which rule R3
+    /// uses when it lexes the first word of the text.
+    fn trailing(&mut self, at: usize, operands_from: Option<usize>, brackets: bool) {
         let (bytes, end) = (self.bytes, self.end);
         if at >= end {
             return;
@@ -488,7 +531,7 @@ impl Lexer<'_, '_> {
         let text = skip_ws(bytes, at, end);
         let suspect = text < end
             && bytes[text] != b';'
-            && operands_from.is_some_and(|first| self.rule_fires(first, text));
+            && operands_from.is_some_and(|first| self.rule_fires(first, text, brackets));
         self.push(TokenKind::Whitespace, at, text);
         if text >= end {
             return;
@@ -516,15 +559,16 @@ impl Lexer<'_, '_> {
     }
 
     /// Tells whether a §5.7 rule fires for the operand tokens `out[first..]` and the trailing
-    /// text starting at `text`. R3 lexes the first word of the text with the operand rules,
-    /// inspects its tokens and removes them again.
-    fn rule_fires(&mut self, first: usize, text: usize) -> bool {
+    /// text starting at `text`. R3 lexes the first word of the text with the operand rules (and
+    /// the bracket mode `brackets` of the operand field), inspects its tokens and removes them
+    /// again.
+    fn rule_fires(&mut self, first: usize, text: usize, brackets: bool) -> bool {
         let operands = self.out.get(first..).unwrap_or(&[]);
         if spacing::dangling_or_joiner(self.bytes, operands, text).is_some() {
             return true;
         }
         let mark = self.out.len();
-        self.operands(text);
+        self.operands(text, brackets);
         let fires = spacing::is_operand_list(self.bytes, self.out.get(mark..).unwrap_or(&[]));
         self.out.truncate(mark);
         fires
@@ -540,11 +584,25 @@ fn skip_digits(bytes: &[u8], from: usize, stop: usize) -> usize {
     at
 }
 
+/// Returns the end of the bracketed macro argument whose `<` is at `start`: one past the next
+/// `>` before `end`, or `None` when the line part has no `>` after it (m2 §4.3).
+fn bracket_end(bytes: &[u8], start: usize, end: usize) -> Option<usize> {
+    let after = start + 1;
+    bytes
+        .get(after..end)?
+        .iter()
+        .position(|&byte| byte == b'>')
+        .map(|offset| after + offset + 1)
+}
+
 /// Maps the operand policy of a keyword to what the lexer expects after it.
 fn rest_of(policy: OperandPolicy) -> Rest {
     match policy {
         OperandPolicy::None => Rest::Comment,
         OperandPolicy::Path => Rest::Path,
-        OperandPolicy::Operands => Rest::Operands { checked: true },
+        OperandPolicy::Operands => Rest::Operands {
+            checked: true,
+            brackets: false,
+        },
     }
 }

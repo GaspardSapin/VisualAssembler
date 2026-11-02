@@ -598,6 +598,239 @@ fn macro_parameters_in_every_field() {
     check("; \\1", &[(COMMENT, "; \\1")]);
 }
 
+/// m2-assembler.md §4.3: in the operands of a macro call, a `<` at the start of an argument
+/// opens a group that ends at the next `>`; the group, whitespace and `;` included, is one
+/// `String` token (a68k accepts `name <4(a0,d0)>,d1` and `name <1 2>`).
+#[test]
+fn bracketed_macro_arguments_are_one_string() {
+    check(
+        "\tname\t<4(a0,d0)>,d1",
+        &[
+            (WS, "\t"),
+            (MACRO, "name"),
+            (WS, "\t"),
+            (STR, "<4(a0,d0)>"),
+            (PUNCT, ","),
+            (REG, "d1"),
+        ],
+    );
+    check(
+        "\tname\t<1 2>",
+        &[(WS, "\t"), (MACRO, "name"), (WS, "\t"), (STR, "<1 2>")],
+    );
+    check(
+        "\tswap2.w\td0,<a;b>\tc",
+        &[
+            (WS, "\t"),
+            (MACRO, "swap2"),
+            (SIZE, ".w"),
+            (WS, "\t"),
+            (REG, "d0"),
+            (PUNCT, ","),
+            (STR, "<a;b>"),
+            (WS, "\t"),
+            (COMMENT, "c"),
+        ],
+    );
+    check(
+        "\tname\t,<x>,<<1>",
+        &[
+            (WS, "\t"),
+            (MACRO, "name"),
+            (WS, "\t"),
+            (PUNCT, ","),
+            (STR, "<x>"),
+            (PUNCT, ","),
+            (STR, "<<1>"),
+        ],
+    );
+    check(
+        "\tname\t<>",
+        &[(WS, "\t"), (MACRO, "name"), (WS, "\t"), (STR, "<>")],
+    );
+    // The group ends at the next `>`, quotes or not; the rest is lexed as usual.
+    check(
+        "\tname\t<a>b,<c>",
+        &[
+            (WS, "\t"),
+            (MACRO, "name"),
+            (WS, "\t"),
+            (STR, "<a>"),
+            (SYM, "b"),
+            (PUNCT, ","),
+            (STR, "<c>"),
+        ],
+    );
+    // Lines inside a macro body: a stem holding parameters, a label before the call.
+    check(
+        "\tb\\1\t<x y>",
+        &[
+            (WS, "\t"),
+            (MACRO, "b"),
+            (PARAM, "\\1"),
+            (WS, "\t"),
+            (STR, "<x y>"),
+        ],
+    );
+    check(
+        "\t\\1\t<x y>,\\2",
+        &[
+            (WS, "\t"),
+            (PARAM, "\\1"),
+            (WS, "\t"),
+            (STR, "<x y>"),
+            (PUNCT, ","),
+            (PARAM, "\\2"),
+        ],
+    );
+    check(
+        "lab\tname\t<a b> done",
+        &[
+            (LABEL, "lab"),
+            (WS, "\t"),
+            (MACRO, "name"),
+            (WS, "\t"),
+            (STR, "<a b>"),
+            (WS, " "),
+            (COMMENT, "done"),
+        ],
+    );
+}
+
+#[test]
+fn an_unclosed_bracket_runs_to_the_end_of_the_line() {
+    check(
+        "\tname\t<1 2 ; c",
+        &[
+            (WS, "\t"),
+            (MACRO, "name"),
+            (WS, "\t"),
+            (invalid(LEX_UNTERMINATED_STRING), "<1 2 ; c"),
+        ],
+    );
+    check(
+        "\tname\td0,<x",
+        &[
+            (WS, "\t"),
+            (MACRO, "name"),
+            (WS, "\t"),
+            (REG, "d0"),
+            (PUNCT, ","),
+            (invalid(LEX_UNTERMINATED_STRING), "<x"),
+        ],
+    );
+    let found = diagnostics("\tname\t<1 2", 40);
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert_eq!(found[0].code, LEX_UNTERMINATED_STRING);
+    assert!(found[0].blocking);
+    assert_eq!(found[0].span.range, TextRange::new(46, 50));
+    assert_eq!(found[0].args, [("text", DiagArg::Str("<1 2".to_owned()))]);
+}
+
+/// Outside the start of a macro argument, and in the operands of instructions and directives,
+/// `<` keeps its M1 rules: `<<` is an operator, a lone `<` or `>` a rejected char.
+#[test]
+fn angle_brackets_keep_their_m1_rules_elsewhere() {
+    check(
+        "\tname\td0<1>",
+        &[
+            (WS, "\t"),
+            (MACRO, "name"),
+            (WS, "\t"),
+            (REG, "d0"),
+            (invalid(LEX_UNEXPECTED_CHAR), "<"),
+            (NUM, "1"),
+            (invalid(LEX_UNEXPECTED_CHAR), ">"),
+        ],
+    );
+    check(
+        "\tname\t(<1>)",
+        &[
+            (WS, "\t"),
+            (MACRO, "name"),
+            (WS, "\t"),
+            (PUNCT, "("),
+            (invalid(LEX_UNEXPECTED_CHAR), "<"),
+            (NUM, "1"),
+            (invalid(LEX_UNEXPECTED_CHAR), ">"),
+            (PUNCT, ")"),
+        ],
+    );
+    check(
+        "\tmove.l\t<1>,d0",
+        &[
+            (WS, "\t"),
+            (MNEMONIC, "move"),
+            (SIZE, ".l"),
+            (WS, "\t"),
+            (invalid(LEX_UNEXPECTED_CHAR), "<"),
+            (NUM, "1"),
+            (invalid(LEX_UNEXPECTED_CHAR), ">"),
+            (PUNCT, ","),
+            (REG, "d0"),
+        ],
+    );
+    check_operands("<<2", &[(OP, "<<"), (NUM, "2")]);
+    check(
+        "x = <1 2>",
+        &[
+            (LABEL, "x"),
+            (WS, " "),
+            (DIRECTIVE, "="),
+            (WS, " "),
+            (invalid(LEX_UNEXPECTED_CHAR), "<"),
+            (NUM, "1"),
+            (WS, " "),
+            (COMMENT, "2>"),
+        ],
+    );
+    // After an invalid operation field, no bracket either.
+    check(
+        "\tmac+x\t<1 2>",
+        &[
+            (WS, "\t"),
+            (invalid(LEX_BAD_OPERATION), "mac+x"),
+            (WS, "\t"),
+            (invalid(LEX_UNEXPECTED_CHAR), "<"),
+            (NUM, "1"),
+            (WS, " "),
+            (COMMENT, "2>"),
+        ],
+    );
+}
+
+/// The §5.7 rules see a bracketed argument as one operand: its inner whitespace never ends the
+/// field, and rule R3 reads brackets in the trailing text of a macro call.
+#[test]
+fn bracketed_arguments_and_the_operands_in_comment_rules() {
+    assert!(!kinds_of("\tname\t<1, 2>").contains(&SUSPECT));
+    let row = SuspectRow {
+        line: "\tname\t1,2 <3 4>,5",
+        suspect: "<3 4>,5",
+        cause: "operand-list",
+        fix: None,
+    };
+    check_suspect_row(&row);
+    let row = SuspectRow {
+        line: " name <a>, <b c>",
+        suspect: "<b c>",
+        cause: "after-comma",
+        fix: Some(("<b c>", " name <a>,<b c>")),
+    };
+    check_suspect_row(&row);
+    check(
+        "\tname\td0 <x>",
+        &[
+            (WS, "\t"),
+            (MACRO, "name"),
+            (WS, "\t"),
+            (REG, "d0"),
+            (WS, " "),
+            (COMMENT, "<x>"),
+        ],
+    );
+}
+
 #[test]
 fn bad_backslash() {
     check_operands("\\%", &[(invalid(LEX_BAD_BACKSLASH), "\\%")]);

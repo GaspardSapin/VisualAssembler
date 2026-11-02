@@ -19,3 +19,6 @@ lbl\@:	dbf	\1,lbl\@
 	rept	3
 	opt	x
 	dc.b	\@,\9
+	swap2	<4(a0,d0)>,d1
+	count	<1 2>	the space stays inside the argument
+	swap2.l	d0,<-(sp)>
