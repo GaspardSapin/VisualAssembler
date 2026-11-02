@@ -1,8 +1,10 @@
 //! Consistency tests of the 68000 instruction tables (`src/isa/`, m1-core-isa-lexer.md §4.7,
-//! exit criterion E4), run by `cargo test -p va-arch-m68k --test isa`.
+//! exit criterion E4) and of the operand placement table (`isa/fields.rs`, m2-assembler.md
+//! §4.9), run by `cargo test -p va-arch-m68k --test isa`.
 #![allow(clippy::unwrap_used)]
 
 mod encoding;
+mod fields;
 mod forms;
 mod spellings;
 mod timing;

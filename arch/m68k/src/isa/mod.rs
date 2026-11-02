@@ -7,6 +7,9 @@
 //! ([`spelling_info`], [`instruction_of`]). Each spelling resolves at compile time: a spelling
 //! that names no entry stops the build.
 //!
+//! [`fields`] (m2-assembler.md §4.9) adds where each operand of a form goes in the instruction
+//! words ([`Place`], [`places`]), the table the assembler and the disassembler share.
+//!
 //! Factual sources (§4.6; numbers, bit patterns and names only, every description in our own
 //! words): Motorola *M68000 Family Programmer's Reference Manual* (M68000PM/AD rev. 1, 1992) for
 //! the instruction list, sizes, addressing categories, condition codes, flag effects and opword
@@ -30,6 +33,7 @@ mod view;
 
 pub use conditions::{CONDITIONS, Condition};
 pub use encoding::{EaField, Encoding, FieldRule, SizeField};
+pub use fields::{Place, places};
 pub use model::{
     Family, Flags, Form, Instruction, Operand, QuickRange, Size, SizeSet, SpellingInfo,
 };
