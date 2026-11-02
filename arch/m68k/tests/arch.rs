@@ -51,6 +51,11 @@ fn it_hands_out_the_crate_lexer_and_tables() {
 fn diagnostic_codes_are_the_lexer_then_the_assembler_codes() {
     let codes = M68K.diagnostic_codes();
     assert_eq!(
+        asm::codes::ASM_DIAG_CODES.len(),
+        50,
+        "45 assembler codes and 5 related notes (m2 §7.2, §15.2 W1)"
+    );
+    assert_eq!(
         codes.len(),
         syntax::DIAG_CODES.len() + asm::codes::ASM_DIAG_CODES.len()
     );
