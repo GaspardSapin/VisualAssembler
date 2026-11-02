@@ -14,7 +14,7 @@ never stored here.
 | `labels.asm` / `labels.tokens` | fixture | Column-1, indented and local labels (`1$`, `\name`), `lab::` and `lab:::`, label errors |
 | `literals.asm` / `literals.tokens` | fixture | Numbers in every base, strings with doubled quotes, registers, operators, `INCLUDE`/`INCBIN` paths |
 | `comments.asm` / `comments.tokens` | fixture | Comment forms and every row of the §5.7 table (operand-like text after a space), tabs included |
-| `macros.asm` / `macros.tokens` | fixture | Macro definitions, parameters (`\0`–`\9`, `\@`) and calls |
+| `macros.asm` / `macros.tokens` | fixture | Macro definitions, parameters (`\0`–`\9`, `\@`) and calls, with bracketed arguments (`<4(a0,d0)>`, `<1 2>`, `<-(sp)>`; M2 WP-B re-blessed the pair) |
 | `errors.asm` / `errors.tokens` | fixture | One line per lexer error code, then one 65,542-byte line (`lex-line-too-long`); the `.tokens` file is about 67 KB |
 
 Token line format, whitespace tokens included:

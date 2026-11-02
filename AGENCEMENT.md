@@ -64,7 +64,7 @@ VisualAssembler/
 │   │   └── README.md                      # GUI role, command line, environment, exit codes, renderer policy, console notes
 │   └── README.md                          # The two apps and what they may depend on
 ├── arch/                                  # One crate per CPU (va-arch-<cpu>)
-│   ├── m68k/                              # Package va-arch-m68k: 68000 ISA tables, A68k lexer, registers, EN/FR docs (M1)
+│   ├── m68k/                              # Package va-arch-m68k: 68000 ISA tables, A68k lexer, registers, EN/FR docs (M1); assembler and disassembler (M2, in progress)
 │   │   ├── fixtures/                      # Golden files of the 68000 crate, one folder per area
 │   │   │   └── lex/                       # Lexer golden pairs: source .asm and expected .tokens (LF-only)
 │   │   │       ├── basic.asm              # Small complete program with every common field
@@ -77,32 +77,34 @@ VisualAssembler/
 │   │   │       ├── labels.tokens          # Expected tokens of labels.asm
 │   │   │       ├── literals.asm           # Numbers in every base, strings, registers, operators, include paths
 │   │   │       ├── literals.tokens        # Expected tokens of literals.asm
-│   │   │       ├── macros.asm             # Macro definitions, parameters and calls
+│   │   │       ├── macros.asm             # Macro definitions, parameters and calls, bracketed arguments included
 │   │   │       ├── macros.tokens          # Expected tokens of macros.asm
 │   │   │       └── README.md              # Fixture list, token line format, bless command
 │   │   ├── locales/                       # Fluent resources of the 68000, one folder per language
 │   │   │   ├── en/                        # English resources, also the fallback language
-│   │   │   │   ├── diagnostics.ftl        # The 11 lexer diagnostic messages, English
+│   │   │   │   ├── diagnostics.ftl        # The 61 diagnostic messages, English: 11 lexer, 50 assembler
+│   │   │   │   ├── directives.ftl         # The 49 directive docs isa-m68k-dir-*, English: summary and details
 │   │   │   │   ├── isa.ftl                # Instruction docs, English: 74 entries, 16 conditions, 8 outcomes, 4 units
 │   │   │   │   └── README.md              # Id scheme and editing rules (own words, no cycle numbers, parity with fr)
 │   │   │   └── fr/                        # French resources: the only place for French user-facing text
-│   │   │       ├── diagnostics.ftl        # The 11 lexer diagnostic messages, French
+│   │   │       ├── diagnostics.ftl        # The 61 diagnostic messages, French: same ids, attributes and variables as en
+│   │   │       ├── directives.ftl         # The 49 directive docs, French: same ids and attributes as en
 │   │   │       ├── isa.ftl                # Instruction docs, French: same ids and attributes as en
 │   │   │       └── README.md              # French text rules: own words, typography, parity with en
-│   │   ├── src/                           # va-arch-m68k sources: isa, syntax, architecture glue
-│   │   │   ├── asm/                       # Strict-A68k assembler (M2): front end, encoder, driver; WP0 scaffold, todo!() until wave 2
-│   │   │   │   ├── codes.rs               # One constant per asm-* diagnostic code; ASM_DIAG_CODES empty until the WP-F codes commit
+│   │   ├── src/                           # va-arch-m68k sources: isa, syntax, asm, disasm, architecture glue
+│   │   │   ├── asm/                       # Strict-A68k assembler (M2): front end and encoder done; driver still a WP0 scaffold (WP-D)
+│   │   │   │   ├── codes.rs               # One constant per asm-* diagnostic code with its arguments; ASM_DIAG_CODES (50)
 │   │   │   │   ├── directives.rs          # Directives (ORG, EQU, DC, DS, INCLUDE, END and the refused ones); doc-only stub, WP-D
-│   │   │   │   ├── encode.rs              # Choice, select, length, encode (frozen m2 §4.2); todo!() stub, WP-C
-│   │   │   │   ├── expr.rs                # Expr, Scope, Lookup, Value, parse_expr and eval (frozen m2 §4.2); todo!() stub, WP-B
+│   │   │   │   ├── encode.rs              # Choice, select, length, encode (frozen m2 §4.2): form selection, value ranges, words through isa fields
+│   │   │   │   ├── expr.rs                # Expr, Scope, Lookup, Value, parse_expr and eval (frozen m2 §4.2): 32-bit values, a68k precedence
 │   │   │   │   ├── layout.rs              # Location counter, alignment, branch relaxation sweeps; doc-only stub, WP-D
 │   │   │   │   ├── listing.rs             # render_listing, our own listing format (m2 §4.12); todo!() stub, WP-D
 │   │   │   │   ├── macros.rs              # MACRO and ENDM, parameters, NARG, MEXIT, IFxx and ENDC; doc-only stub, WP-D
 │   │   │   │   ├── mod.rs                 # M68kAssembler and assemble(input, cancel), the two-pass pipeline; todo!() stub, WP-D
-│   │   │   │   ├── operand.rs             # Ea, Xn, Operand, Spanned, parse_operand (frozen m2 §4.2); todo!() stub, WP-B
-│   │   │   │   ├── optimize.rs            # The a68k optimizations of m2 §4.10, generic spellings only; todo!() stub, WP-C
-│   │   │   │   ├── parser.rs              # Line fields (label, operation, operand field) and Problem; todo!() stub, WP-B
-│   │   │   │   ├── README.md              # Assembler module map, owners, frozen interfaces, stub lint rule
+│   │   │   │   ├── operand.rs             # Ea, Xn, Operand, Spanned, parse_operand (frozen m2 §4.2): every addressing mode, register lists, fixes
+│   │   │   │   ├── optimize.rs            # The a68k optimizations of m2 §4.10 (moveq, addq, lea, pc-relative and others), generic spellings only
+│   │   │   │   ├── parser.rs              # Line fields (label, operation, operand field) from the lexer tokens, and Problem (frozen m2 §4.2)
+│   │   │   │   ├── README.md              # Assembler module map, what is done, frozen interfaces, stub lint rule
 │   │   │   │   ├── srec.rs                # to_srec, parse_srec, to_binary, SrecError; todo!() stub, WP-D
 │   │   │   │   └── symbols.rs             # Symbol table, local blocks, pass values, references; doc-only stub, WP-D
 │   │   │   ├── disasm/                    # 68000 disassembler (M2) on the assembler tables; WP0 scaffold, WP-E
@@ -113,7 +115,7 @@ VisualAssembler/
 │   │   │   ├── isa/                       # 68000 instruction tables, encodings, cycle counts, CPU-agnostic view
 │   │   │   │   ├── conditions.rs          # The 16 condition codes of Bcc, DBcc and Scc with their flag tests
 │   │   │   │   ├── encoding.rs            # Opword encodings and Form::matches over a 16-bit word
-│   │   │   │   ├── fields.rs              # Place and places(entry, form), the operand placement table (m2 §4.9); stub, WP-C day 1
+│   │   │   │   ├── fields.rs              # Place and places(entry, form), the operand placement table read by the encoder and disassembler (m2 §4.9)
 │   │   │   │   ├── mod.rs                 # Catalogue: INSTRUCTIONS (74), SPELLINGS (126), spelling_info, instruction_of; declares fields
 │   │   │   │   ├── model.rs               # Frozen data model: Size, SizeSet, Operand, Flags, Form, Instruction
 │   │   │   │   ├── modes.rs               # Mode (12 EA modes) and ModeSet with the Motorola categories
@@ -126,32 +128,32 @@ VisualAssembler/
 │   │   │   │   └── view.rs                # M68kIsa: the va_core InstructionSet view (describe, spellings, ea_timing)
 │   │   │   ├── syntax/                    # A68k-dialect line lexer shared by the highlighter and the assembler
 │   │   │   │   ├── codes.rs               # The 11 lexer diagnostic codes and DIAG_CODES
-│   │   │   │   ├── keywords.rs            # 49 directives with operand policy, 21 registers, 4 size suffixes, keyword list
-│   │   │   │   ├── lexer.rs               # One-pass field lexer: label, operation, operands or path, trailing comment
+│   │   │   │   ├── keywords.rs            # 49 directives with operand policy and doc id, 21 registers, 4 size suffixes, keyword list
+│   │   │   │   ├── lexer.rs               # One-pass field lexer: label, operation, operands or path, trailing comment, bracketed macro arguments
 │   │   │   │   ├── literals.rs            # Character classes and scanners: identifiers, numbers, strings, backslashes
 │   │   │   │   ├── mod.rs                 # lex_line and M68kSyntax (SyntaxProvider, line_diagnostics)
 │   │   │   │   ├── README.md              # Strict A68k rule, operand-spacing error and fix, labels, codes, contract
 │   │   │   │   └── spacing.rs             # Operand-like text after a space: rules R1-R3, cause argument, quick fix
 │   │   │   ├── arch.rs                    # M68k and the M68K instance: the va_core Architecture of the 68000, with assembler and disassembler
 │   │   │   ├── lib.rs                     # Crate doc, public asm, disasm, isa and syntax modules, re-exports M68k and M68K
-│   │   │   ├── locales.rs                 # include_str of the en and fr .ftl resources
-│   │   │   ├── README.md                  # Module map of the 68000 crate, the M2 scaffold and the planned M3 layout
+│   │   │   ├── locales.rs                 # include_str of the en and fr resources: isa, diagnostics, directives
+│   │   │   ├── README.md                  # Module map of the 68000 crate, M2 progress and the planned M3 layout
 │   │   │   └── registers.rs               # Register file in panel order with stable RegIds and the SR fields
 │   │   ├── tests/                         # Integration tests mirroring src, the M2 asm and disasm targets, the ignored lexer bench
-│   │   │   ├── asm/                       # Test target asm (M2, E3): 12 empty modules for WP-B, WP-C and WP-D
-│   │   │   │   ├── corpus.rs              # Empty until WP-C: generated forms corpus, shared with the a68k comparison
+│   │   │   ├── asm/                       # Test target asm (M2, E3): WP-B and WP-C modules written, 7 WP-D modules still empty
+│   │   │   │   ├── corpus.rs              # Generated forms corpus: lexes, covers every form, encodes to its form; shared with the a68k comparison
 │   │   │   │   ├── diagnostics.rs         # Empty until WP-D: include limits, cancellation, ASM_DIAG_CODES coverage
 │   │   │   │   ├── directives.rs          # Empty until WP-D: every directive row, alignment, local blocks
-│   │   │   │   ├── encode.rs              # Empty until WP-C: golden opwords, form selection, every Place, MOVEM masks
-│   │   │   │   ├── expr.rs                # Empty until WP-B: precedence, 32-bit wrap, shifts, characters
+│   │   │   │   ├── encode.rs              # Golden opwords, form selection, every Place, MOVEM masks, value ranges, selection errors
+│   │   │   │   ├── expr.rs                # Precedence, 32-bit wrap, division, shifts, characters, location counter
 │   │   │   │   ├── fixtures.rs            # Empty until WP-D: golden fixtures of fixtures/asm*, VA_BLESS=1 rewrites
 │   │   │   │   ├── listing.rs             # Empty until WP-D: listing layout, truncation, size cap
 │   │   │   │   ├── macros.rs              # Empty until WP-D: macro parameters, NARG, MEXIT, IFxx, limits
 │   │   │   │   ├── main.rs                # Test root: the 12 module declarations, kept as WP0 wrote them
-│   │   │   │   ├── optimize.rs            # Empty until WP-C: every optimization rule on and off
+│   │   │   │   ├── optimize.rs            # Every optimization rule on and off, forward references of pass 1 and pass 2
 │   │   │   │   ├── output.rs              # Empty until WP-D: S-record text, parse_srec round trip, binary output
-│   │   │   │   ├── parser.rs              # Empty until WP-B: operand forms, rejections and their fixes
-│   │   │   │   ├── README.md              # What the asm target will cover, owner of each module
+│   │   │   │   ├── parser.rs              # Line fields, operand forms, rejections and their fixes, bracketed macro arguments
+│   │   │   │   ├── README.md              # What the asm target covers, owner and state of each module
 │   │   │   │   └── relax.rs               # Empty until WP-D: relaxation probes, CNOP regrowth, sweep cap
 │   │   │   ├── disasm/                    # Test target disasm (M2, E4): 3 empty modules for WP-E
 │   │   │   │   ├── decode.rs              # Empty until WP-E: golden decodes, Truncated, Illegal, all 65,536 words
@@ -159,8 +161,9 @@ VisualAssembler/
 │   │   │   │   ├── format.rs              # Empty until WP-E: canonical text, numbers, register lists, tokens
 │   │   │   │   ├── main.rs                # Test root: the module declarations, kept as WP0 wrote them
 │   │   │   │   └── README.md              # What the disasm target will cover
-│   │   │   ├── isa/                       # Test target isa: table consistency (exit criterion E4)
+│   │   │   ├── isa/                       # Test target isa: table consistency (exit criterion E4) and the M2 placement table
 │   │   │   │   ├── encoding.rs            # Opword uniqueness over 65,536 words, golden opwords, pinned VALID_OPWORDS
+│   │   │   │   ├── fields.rs              # Placement table: one row per form, places match operand kinds, fields partition the opword
 │   │   │   │   ├── forms.rs               # Sizes, operand counts, addressing categories, privilege, flag spot checks
 │   │   │   │   ├── main.rs                # Test root: module list and form helpers
 │   │   │   │   ├── README.md              # What the isa target checks; provisional values
@@ -175,12 +178,12 @@ VisualAssembler/
 │   │   │   │   ├── main.rs                # Test root: module list, shared helpers, token-kind short names
 │   │   │   │   ├── README.md              # What the syntax target checks and how to bless fixtures
 │   │   │   │   └── robustness.rs          # 64 KiB pathological lines in linear time, line limit, stray CR/LF/NUL
-│   │   │   ├── arch.rs                    # M68K through Architecture: id, keywords, spellings, codes, registers, SR fields
-│   │   │   ├── locales.rs                 # EN/FR resources parse, are complete and identical in ids, no orphan, style rules
+│   │   │   ├── arch.rs                    # M68K through Architecture: id, keywords and doc ids, spellings, lexer then assembler codes, registers
+│   │   │   ├── locales.rs                 # EN/FR isa, diagnostics and directives parse, are complete and identical, format with each code's arguments, style rules
 │   │   │   ├── README.md                  # Test targets of the 68000 crate and the bench command
 │   │   │   └── syntax_bench.rs            # Ignored lexer throughput bench, va.bench.lexer/1 line (make bench-lexer)
 │   │   ├── Cargo.toml                     # Depends on va-core; dev-dependency fluent-bundle
-│   │   └── README.md                      # 68000 crate role, M1 content, M2 scaffold, planned deps, a68k/d68k policy
+│   │   └── README.md                      # 68000 crate role, M1 content, M2 progress, planned deps, a68k/d68k policy
 │   └── README.md                          # How to add a CPU (architecture section 10.1)
 ├── assets/                                # Embedded data files (M4: fonts)
 │   ├── fonts/                             # JetBrains Mono 2.304 Regular and its OFL 1.1 licence
@@ -190,7 +193,7 @@ VisualAssembler/
 │   └── README.md                          # Asset rules: embedded at build time, third-party files recorded in DEPENDANCE and IMPORT
 ├── bench/                                 # Bench inputs and outputs (results/ and generated/ are gitignored)
 │   └── README.md                          # Report naming and how to produce one
-├── crates/                                # CPU-agnostic library crates (va-core and the va-workspace i18n implemented; M4 scaffolds; va-lang, va-debug skeletons)
+├── crates/                                # CPU-agnostic library crates (va-core, va-editor and most of va-workspace implemented; va-ui and persist scaffolds; va-lang, va-debug skeletons)
 │   ├── va-core/                           # Package va-core: frozen CPU-agnostic contracts (M1, M2)
 │   │   ├── src/                           # va-core sources, one module per contract
 │   │   │   ├── arch.rs                    # Architecture trait: id, syntax, instruction_set, registers, codes, locales; assembler and disassembler (default None)
@@ -222,12 +225,28 @@ VisualAssembler/
 │   │   │   └── README.md                  # Projected module layout
 │   │   ├── Cargo.toml                     # Package template; no dependency
 │   │   └── README.md                      # Role and allowed dependencies (va-core)
-│   ├── va-editor/                         # Package va-editor: text buffer, selections, undo, search (M4)
+│   ├── va-editor/                         # Package va-editor: text buffer, selections, undo, search (M4, implemented)
 │   │   ├── src/                           # va-editor sources
-│   │   │   ├── lib.rs                     # Seven inline modules with the frozen m4 §3 signatures; todo!() stubs until WP-A
-│   │   │   └── README.md                  # Module list, stub lint rule, file-split rule
+│   │   │   ├── document.rs                # Document: text, selections, history, revisions, dirty state, selection commands; O(1) Snapshot
+│   │   │   ├── edit.rs                    # Change, ChangeSet, EditCommand, Motion, EditOptions; multi-caret command planning
+│   │   │   ├── encoding.rs                # Encoding (UTF-8, BOM, forced Windows-1252), LineEnding, decode, encode_to, first_unencodable
+│   │   │   ├── history.rs                 # Undo grouping limits, EditKind and the grouped undo history
+│   │   │   ├── lib.rs                     # Crate doc and the seven pub mod declarations
+│   │   │   ├── README.md                  # Module map of the editor crate
+│   │   │   ├── search.rs                  # Query, Matcher, find_all, find_from, replace_all: line by line, linear-time regex, capped
+│   │   │   ├── selection.rs               # Selection and Selections: sorted, merged, primary selection, MAX_CARETS
+│   │   │   └── text.rs                    # Text over a ropey Rope (LF, CRLF, CR), 16 MiB cap, line queries, display columns
+│   │   ├── tests/                         # va-editor tests, one file per module (m4 section 10.1, exit criterion E3)
+│   │   │   ├── document.rs                # Revisions, snapshots, widest-line hint, dirty state, size limit, selection commands
+│   │   │   ├── edit.rs                    # Every edit command with one and three carets, motions, random multi-caret properties
+│   │   │   ├── encoding.rs                # Detection, BOM, binary and size checks, Windows-1252 table, encode_to, line endings
+│   │   │   ├── history.rs                 # Undo grouping with injected time, selections, dirty state, limits, random round trips
+│   │   │   ├── README.md                  # What each va-editor test file covers
+│   │   │   ├── search.rs                  # Literal, case, whole-word and regex search, limits, cancellation, wrap, replace_all
+│   │   │   ├── selection.rs               # Normalization, merging, primary selection, MAX_CARETS cap
+│   │   │   └── text.rs                    # Line index equal to LineIndex on 10,000 random texts, slices, display columns
 │   │   ├── Cargo.toml                     # Depends on ropey, regex, va-core
-│   │   └── README.md                      # Role, M4 scaffold status, ropey and regex
+│   │   └── README.md                      # Role, M4 status, ropey and regex
 │   ├── va-lang/                           # Package va-lang: language services, background assembly (M5)
 │   │   ├── src/                           # va-lang sources
 │   │   │   ├── lib.rs                     # Crate doc only (M0 skeleton)
@@ -246,36 +265,48 @@ VisualAssembler/
 │   │   │   ├── lib.rs                     # Crate doc, module declarations, re-export of the shell API
 │   │   │   ├── README.md                  # Module map and the stub lint rule
 │   │   │   └── theme.rs                   # Light and dark themes, token colours, WCAG contrast ratio; todo!() stubs, WP-E
-│   │   ├── tests/                         # Headless kittest suite of va-ui; only support/ so far
+│   │   ├── tests/                         # Headless kittest suite of va-ui; support/ and locales.rs so far
 │   │   │   ├── support/                   # Shared test code, included by each test file with mod support
 │   │   │   │   ├── mod.rs                 # FakeSyntax, FakeArch, document builders, harness helpers, temp_dir
 │   │   │   │   └── README.md              # What the support module provides and who owns it
-│   │   │   └── README.md                  # The planned test files of each work package
+│   │   │   ├── locales.rs                 # UI i18n completeness: referenced ui-* and cmd-* ids, en and fr parity, CPU collisions (E6)
+│   │   │   └── README.md                  # Test files written so far and those each work package adds
 │   │   ├── Cargo.toml                     # Depends on egui, va-core, va-editor, va-workspace; dev-dependency egui_kittest
 │   │   └── README.md                      # Role, M4 scaffold status, allowed dependencies (egui only)
-│   ├── va-workspace/                      # Package va-workspace: i18n in M1; paths, config, persist scaffolded for M4
+│   ├── va-workspace/                      # Package va-workspace: i18n (M1, GUI part M4), paths and config (M4); persist scaffolded
 │   │   ├── src/                           # va-workspace sources
-│   │   │   ├── config/                    # Config files and their problems (M4 scaffold, WP-B)
+│   │   │   ├── config/                    # Config files and their problems (M4 WP-B)
 │   │   │   │   ├── default_settings.toml  # Commented default settings.toml, embedded as DEFAULT_SETTINGS_TOML (m4 §4.3)
-│   │   │   │   ├── mod.rs                 # ConfigProblem, CONFIG_CODES, Settings types, keybindings, project; parsers are todo!() stubs
-│   │   │   │   └── README.md              # Config contents, final types, stub and split rules
-│   │   │   ├── i18n/                      # Language selection and the Fluent localizer
-│   │   │   │   ├── lang.rs                # Lang, LangSource, LangChoice, resolve_lang (--lang, VA_LANG, locale)
+│   │   │   │   ├── keybindings.rs         # KeyChord, When, Binding, KEY_NAMES, parse_chord, is_reserved_chord, parse_keybindings
+│   │   │   │   ├── mod.rs                 # Module doc and the pub use of every frozen config item
+│   │   │   │   ├── problems.rs            # MAX_CONFIG_BYTES, ConfigProblem, the 12 CONFIG_CODES, read_config_text, span helpers
+│   │   │   │   ├── project.rs             # PROJECT_FILE, Project, parse_project (paths inside the project), project_arch_problem
+│   │   │   │   ├── README.md              # Config contents, problem rules, file split
+│   │   │   │   └── settings.rs            # Settings types and enums, parse_settings key by key, DEFAULT_SETTINGS_TOML
+│   │   │   ├── i18n/                      # Language selection, the Fluent localizer, the GUI resources and precedence
+│   │   │   │   ├── lang.rs                # Lang, LangSource, LangChoice, resolve_lang (--lang, VA_LANG, locale), the CLI rule
 │   │   │   │   ├── localizer.rs           # Localizer: concurrent Fluent bundles, English fallback, render and message
 │   │   │   │   ├── mod.rs                 # Module doc and re-exports
-│   │   │   │   └── README.md              # Selection precedence, fallback and rendering rules
+│   │   │   │   ├── README.md              # CLI and GUI precedence, fallback and rendering rules
+│   │   │   │   ├── system.rs              # system_ui_language: first sys-locale entry on Windows, None elsewhere (GUI only)
+│   │   │   │   └── ui.rs                  # ui_resources (root .ftl embedded), Localizer::for_ui, resolve_ui_lang (GUI precedence)
 │   │   │   ├── persist/                   # I/O worker, atomic writes, session, lock, hot-exit backups (M4 scaffold, WP-C)
 │   │   │   │   ├── mod.rs                 # IoWorker, write_atomic, Session types, SessionLock, BackupStore; functions are todo!() stubs
 │   │   │   │   └── README.md              # Persistence contents and the WP-C rules
 │   │   │   ├── lib.rs                     # Crate doc and the config, i18n, paths and persist modules
-│   │   │   ├── paths.rs                   # Paths, PathInputs, resolve_paths (env, portable mode, OS folders); todo!() stub, WP-B
+│   │   │   ├── paths.rs                   # Paths, PathInputs, resolve_paths (env, portable mode, OS folders), folder creation
 │   │   │   └── README.md                  # Module map and the M4 layout
 │   │   ├── tests/                         # va-workspace tests, one file per module
+│   │   │   ├── config_keybindings.rs      # Chords, aliases, every KEY_NAMES entry, reserved keys, removals, replacement, when
+│   │   │   ├── config_project.rs          # Project keys, reserved tables kept raw, paths leaving the project, unknown arch
+│   │   │   ├── config_settings.rs         # Defaults, DEFAULT_SETTINGS_TOML checks, every key and problem, read limits, diag-cfg messages
 │   │   │   ├── i18n_lang.rs               # Lang codes and resolve_lang precedence with a fake environment
 │   │   │   ├── i18n_localizer.rs          # Fallback, missing ids, arguments, plurals, isolation marks, errors
+│   │   │   ├── i18n_ui.rs                 # resolve_ui_lang precedence, root resources, CONFIG_CODES coverage, for_ui with a fake CPU
+│   │   │   ├── paths.rs                   # Every folder level with a fake environment, warnings, folder creation in a temp folder
 │   │   │   └── README.md                  # What the va-workspace tests cover
 │   │   ├── Cargo.toml                     # Depends on va-core, fluent-bundle, unic-langid, serde, toml; sys-locale on Windows
-│   │   └── README.md                      # Role, M1 i18n, M4 scaffold, dependencies
+│   │   └── README.md                      # Role, M1 i18n, M4 status, dependencies
 │   └── README.md                          # Crate map, layering rules R1-R8 and their enforcement
 ├── docs/                                  # Specifications and measurement reports
 │   ├── perf/                              # Measurement reports (every performance claim cites one)
@@ -293,15 +324,15 @@ VisualAssembler/
 ├── locales/                               # UI Fluent resources of the IDE (M4), en and fr
 │   ├── en/                                # English UI resources, also the fallback
 │   │   ├── commands.ftl                   # cmd-* command titles; header only until WP-F
-│   │   ├── config.ftl                     # diag-cfg-* configuration problems; header only until WP-B
+│   │   ├── config.ftl                     # diag-cfg-* configuration problems: 12 messages with help
 │   │   ├── README.md                      # Files, id schemes and owners
 │   │   └── ui.ftl                         # ui-* shell text; header only until WP-F
 │   ├── fr/                                # French UI resources, same ids as en
 │   │   ├── commands.ftl                   # French cmd-* command titles; header only until WP-F
-│   │   ├── config.ftl                     # French diag-cfg-* configuration problems; header only until WP-B
+│   │   ├── config.ftl                     # French diag-cfg-* configuration problems: same 12 messages as en
 │   │   ├── README.md                      # French text rules and file owners
 │   │   └── ui.ftl                         # French ui-* shell text; header only until WP-F
-│   └── README.md                          # Id namespaces, en and fr parity rule, planned completeness tests
+│   └── README.md                          # Id namespaces, en and fr parity rule, completeness tests
 ├── scripts/                               # Documentation tooling and git hooks
 │   ├── git-hooks/                         # Git hooks installed by make hooks
 │   │   ├── commit-msg                     # Rejects commit messages that credit an AI tool (POSIX sh, LC_ALL=C)
@@ -355,4 +386,4 @@ VisualAssembler/
 └── SECURITY.md                            # Protections in place and their limitations (Security agent)
 ```
 
-_348 entries · 0 to annotate._
+_379 entries · 0 to annotate._

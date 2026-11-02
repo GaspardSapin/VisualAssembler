@@ -7,7 +7,7 @@ folder here plus one registration line per app; nothing in `crates/` changes (ar
 ## Contents
 | Entry | Type | Purpose |
 |-------|------|---------|
-| `m68k/` | folder | `va-arch-m68k`, Motorola 68000 support. In M1: instruction tables, A68k-dialect lexer, registers, EN/FR docs. M2 (in progress): the assembler and disassembler, scaffolded. See its README. |
+| `m68k/` | folder | `va-arch-m68k`, Motorola 68000 support. In M1: instruction tables, A68k-dialect lexer, registers, EN/FR docs. M2 (in progress): the assembler's front end, encoder and diagnostics are implemented, its driver and the disassembler are still scaffolded. See its README. |
 
 Candidate future folders: `z80/`, `mos6502/`, `riscv/`, `arm/`, `x86/`.
 

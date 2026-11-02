@@ -46,7 +46,7 @@ removes each lint in the commit that makes it stop firing and the attribute with
 ```bash
 cargo test -p va-workspace
 ```
-In the scaffold this runs only the M1 `i18n` tests. WP-C adds `tests/persist_atomic.rs`,
-`persist_session.rs`, `persist_backup.rs`, `persist_lock.rs` and `persist_kill.rs`, the kill test of
-exit criterion E4 (20 kills while writing backups, every restore gives one complete earlier
+No test covers `persist` yet; this runs the `i18n`, `paths` and `config` tests. WP-C adds
+`tests/persist_atomic.rs`, `persist_session.rs`, `persist_backup.rs`, `persist_lock.rs` and
+`persist_kill.rs`, the kill test of exit criterion E4 (20 kills while writing backups, every restore gives one complete earlier
 version; m4 §4.8, §10.1).

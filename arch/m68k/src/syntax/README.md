@@ -11,9 +11,9 @@ Those are M2's job.
 | Entry | Type | Purpose |
 |-------|------|---------|
 | `mod.rs` | module | `lex_line`, `M68kSyntax` (`keywords`, and `line_diagnostics`, which completes the §5.7 diagnostic), the re-exported codes |
-| `lexer.rs` | module | One forward pass over the line: label field, operation field, operand field (or path, or nothing, by the operation's policy) and trailing comment |
+| `lexer.rs` | module | One forward pass over the line: label field, operation field, operand field (or path, or nothing, by the operation's policy) and trailing comment; the bracketed arguments of a macro call (M2) |
 | `literals.rs` | module | Character classes and scanners: identifiers, numbers, quoted strings, backslash sequences, runs of rejected characters |
-| `keywords.rs` | module | The 49 directives with their operand policy, the 21 register names, the 4 size suffixes, and the keyword list. Mnemonics come from `../isa/`. |
+| `keywords.rs` | module | The 49 directives with their operand policy and doc id (`isa-m68k-dir-<name>`, `=` is `isa-m68k-dir-equals`; M2 WP-F), the 21 register names, the 4 size suffixes, and the keyword list. Mnemonics come from `../isa/`. |
 | `codes.rs` | module | The 11 diagnostic codes and `DIAG_CODES` |
 | `spacing.rs` | module | §5.7: the R1/R2/R3 rules that turn operand-like comment text into a `SuspectComment`, its `cause` argument and its quick fix |
 
@@ -41,6 +41,14 @@ R1 and R2 carry a quick fix that removes the spaces touching `,`, `#`, `(`, `)` 
 none. A comment that starts with `;` never fires, nor does a column-1 `*` line, nor the text after
 a keyword without operands (`rts d0, d1`). In the trailing text, a quote opens a string only if the
 line closes it. A real `; comment` therefore stays a plain comment.
+
+**Bracketed macro arguments** (m2-assembler.md §4.3, M2 WP-B, commit `8064d41`). In the operand
+field of a macro call (a `MacroName` operation, or a stem holding macro parameters), a `<` at the
+start of an argument (the field start or right after a `,`) opens a group that ends at the next
+`>`. The group, brackets, spaces and `;` included, is one `String` token, as a68k reads
+`name <4(a0,d0)>,d1` and `name <1 2>`; without a `>`, the `<` starts an
+`Invalid(lex-unterminated-string)` token to the end of the line part. Everywhere else `<` keeps
+its M1 rules (`<<` operator, else a rejected char). `TokenKind` is unchanged.
 
 **Labels.** A run of `:` after a label is one `Punctuation` token: `lab:`, `lab::`, `lab:::` and the
 indented `  other:: nop` are accepted, because a68k assembles them to the same object as `lab:`

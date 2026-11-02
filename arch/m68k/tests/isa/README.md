@@ -4,7 +4,9 @@
 Test target `isa`: the consistency tests of the 68000 instruction tables in `arch/m68k/src/isa/`
 (m1-core-isa-lexer.md §4.7, exit criterion E4). They check the tables against their own rules,
 against facts from the manuals, and against opwords and sizes observed with a68k 2.71.F3w. They are
-not an emulator test: that cross-check against the `m68k` crate arrives in M3.
+not an emulator test: that cross-check against the `m68k` crate arrives in M3. Since M2 WP-C
+(commit `50ad40d`) the target also checks the operand placement table `src/isa/fields.rs`
+(m2-assembler.md §4.9).
 
 ## Contents
 | Entry | Type | Purpose |
@@ -15,6 +17,7 @@ not an emulator test: that cross-check against the `m68k` crate arrives in M3.
 | `encoding.rs` | test | Field layout; over all 65,536 opwords at most one (form, condition) matches, and every form matches one; golden opwords from a68k listings and negative ones (68010+ and line A/F); the pinned count `VALID_OPWORDS = 45_816`, also broken down per opword line and per entry |
 | `timing.rs` | test | One timing row per (form, size, mode, outcome); even clocks and plausible bus counts; `EA_TIME` and MOVE-matrix spot checks; `cycles()` spot checks against the User's Manual §8 |
 | `view.rs` | test | `M68kIsa` as `va_core::isa::InstructionSet`: case-insensitive `describe`, branch size mapping, `SizeNotAccepted`/`Unknown`, flag names, mode notation, agreement of the rendered timing rows with `cycles()` |
+| `fields.rs` | test | M2 (m2 §4.9): one row of places per form with its operand count, also found for a copy of an entry; places that agree with the operand kinds; the free opword bits partitioned exactly by the register and data fields; every field value giving an opword the form matches; pinned rows; the golden opwords hold their registers in the placed fields |
 
 ## Entry points
 - `encoding.rs` for the opword uniqueness proof and the pinned count.

@@ -1,9 +1,10 @@
 # arch/m68k/locales/fr
 
 ## Purpose
-The French Fluent resources of the 68000 (m1-core-isa-lexer.md §6.1): instruction documentation and
-lexer diagnostics, shown with `--lang fr`, `VA_LANG=fr` or a French locale. `src/locales.rs` embeds
-them with `include_str!` and `M68K.locale_resources("fr")` returns them. **French user-facing text
+The French Fluent resources of the 68000 (m1-core-isa-lexer.md §6.1, m2-assembler.md §7.1):
+instruction documentation, the lexer and assembler diagnostics, and the directive documentation,
+shown with `--lang fr`, `VA_LANG=fr` or a French locale. `src/locales.rs` embeds the three files
+with `include_str!` and `M68K.locale_resources("fr")` returns them. **French user-facing text
 lives only in these `.ftl` files**: code, ids, comments and every other file stay English. The ids
 are the English kebab-case ids of `../en/`.
 
@@ -11,7 +12,8 @@ are the English kebab-case ids of `../en/`.
 | Entry | Type | Purpose |
 |-------|------|---------|
 | `isa.ftl` | Fluent resource | The same 102 ids and attributes as `../en/isa.ftl`: 74 instruction entries, 16 conditions, 8 outcomes, 4 units |
-| `diagnostics.ftl` | Fluent resource | The same 11 `diag-lex-<…>` messages as `../en/diagnostics.ftl`, with `$text` and, for `diag-lex-operands-in-comment`, `$cause` |
+| `diagnostics.ftl` | Fluent resource | The same 61 messages, attributes and variables as `../en/diagnostics.ftl`: the 11 `diag-lex-<…>` messages, with `$text` and, for `diag-lex-operands-in-comment`, `$cause`; the 50 `diag-asm-<…>` messages, with the variables listed in `arch/m68k/src/asm/codes.rs` |
+| `directives.ftl` | Fluent resource | The same 49 `isa-m68k-dir-<name>` messages and `.details` as `../en/directives.ftl`, with the vocabulary of `isa.ftl` |
 
 ## Entry points
 - `isa.ftl`, header comment: the French terminology used throughout (one term per notion) and the

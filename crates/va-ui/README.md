@@ -16,7 +16,7 @@ call panics. Final already: the data types, the font constants and the embedded 
 |-------|------|---------|
 | `Cargo.toml` | manifest | Dependencies `egui`, `va-core`, `va-editor`, `va-workspace`; dev-dependency `egui_kittest` (all `workspace = true`, m4 §8.2) |
 | `src/` | folder | Crate sources: `editor/`, `shell/`, `theme.rs`, `fonts.rs`. See its README. |
-| `tests/` | folder | The headless kittest suite: only the shared `support/` module so far. See its README. |
+| `tests/` | folder | The headless kittest suite: the shared `support/` module and `locales.rs` (UI i18n completeness, WP-D) so far. See its README. |
 
 ## Entry points
 - `src/lib.rs`: the shell API of m4 §5.1, re-exported at the crate root (`Shell`, `ShellConfig`,
@@ -34,4 +34,5 @@ call panics. Final already: the data types, the font constants and the embedded 
 ```bash
 cargo test -p va-ui
 ```
-In the scaffold this builds the crate and runs no test: there is no test target yet.
+This runs `tests/locales.rs` (7 tests on 2026-11-02, all passing), the only test target so far;
+the kittest files arrive with WP-E and WP-F.

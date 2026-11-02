@@ -6,9 +6,14 @@ end to end (edit, assemble, run, debug). GUI `visual-assembler` (egui/eframe), h
 task runner `cargo xtask`. CPU-agnostic crates in `crates/`, one crate per CPU in `arch/`.
 Current milestones: **M2 ∥ M4** (`docs/specs/m2-assembler.md`, `docs/specs/m4-editor-shell.md`;
 read §14 of either first, the merged wave order). Wave 1 is committed: M2 WP-A (`va-core` `asm`/
-`disasm`, implemented) and both WP0 scaffolds (frozen signatures, `todo!()` bodies); wave 2
-implements them. M1 (core contracts, 68000 ISA tables, lexer, `va lex`/`va isa`) stays done
-(audited, QA green, measured, pushed, CI green in run 40027188396). M0 is done. Still skeletons:
+`disasm`, implemented) and both WP0 scaffolds (frozen signatures, `todo!()` bodies). Wave 2 batch
+A is merged: M2 WP-B (parser, operand, expr), WP-C (`isa/fields.rs`, encode, optimize), WP-F
+(50 `asm-*` codes, `diagnostics.ftl`, `directives.ftl`); M4 WP-A (`va-editor`), WP-B (`paths`,
+`config`, `config.ftl`), WP-D (GUI i18n). Batch B is next: M2 WP-D (driver), WP-E (disasm), WP-G
+(`va asm`/`va disasm`), WP-H (a68k comparison, asm bench); M4 WP-C (`persist`), WP-E/WP-F
+(`va-ui`, `ui.ftl`, `commands.ftl`), WP-G (GUI wiring), WP-H (bench scenarios). M1 (core
+contracts, 68000 ISA tables, lexer, `va lex`/`va isa`) stays done (audited, QA green, measured,
+pushed, CI green in run 40027188396). M0 is done. Still skeletons:
 `va-lang`, `va-debug`; the GUI is the M0 window.
 Specs: `docs/specs/architecture.md`, then the milestone specs.
 - `m2-assembler.md` and `m4-editor-shell.md`: **§15 (ratified wave-1 implementation) wins over the

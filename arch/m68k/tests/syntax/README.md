@@ -11,7 +11,7 @@ the golden fixtures. The throughput bench is separate (`../syntax_bench.rs`).
 |-------|------|---------|
 | `main.rs` | test root | Declares the modules; shared helpers and short names for token kinds |
 | `kinds.rs` | test | A table of lines with their expected kinds: every `TokenKind` and every `lex-*` code is produced, over the table and the six fixtures; `DIAG_CODES` itself |
-| `fields.rs` | test | §5.1–§5.3: column-1 and indented labels, `lab::`, the operation field and its suffixes, operand policies, every operand rule, and each row of the §5.7 table with its `cause` and quick fix (including the no-op-fix and quote cases of §12.8) |
+| `fields.rs` | test | §5.1–§5.3: column-1 and indented labels, `lab::`, the operation field and its suffixes, operand policies, every operand rule, and each row of the §5.7 table with its `cause` and quick fix (including the no-op-fix and quote cases of §12.8); since M2 WP-B (commit `8064d41`), the bracketed macro arguments of m2 §4.3 (one `String` token, an unclosed `<` to the end of the line, `<` elsewhere unchanged, the §5.7 rules seeing a group as one operand) |
 | `coverage.rs` | test | Through `check_line_tokens`: every ASCII string of length ≤ 3 over 24 interesting chars, 100,000 deterministic pseudo-random lines, shuffled-order statelessness, `LineState::INITIAL`; the diagnostics of every line |
 | `robustness.rs` | test | 40 pathological 64 KiB lines in debug mode under 30 s (the CI guard against quadratic time), 64 KiB + 1 gives one `lex-line-too-long`, `\r`, `\n` and NUL inside a line, 4-byte UTF-8 chars, every keyword in mixed case |
 | `fixtures.rs` | test | Each `arch/m68k/fixtures/lex/<name>.asm` lexes to its `<name>.tokens`, byte for byte |

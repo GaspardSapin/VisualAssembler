@@ -5,12 +5,12 @@ The architecture-independent Fluent resources of the IDE (architecture §5, m4-e
 §4.6): shell text, command titles and configuration problems, one folder per language. They own
 the `ui-*`, `cmd-*` and `diag-cfg-*` ids and define no Fluent term. A CPU's own texts (its
 diagnostics and instruction docs) live in its crate, e.g. `arch/m68k/locales/`. `va-workspace`
-will embed these files with `include_str!` (`ui_resources`, WP-D) and `Localizer::for_ui` will load
+embeds these files with `include_str!` (`ui_resources`, M4 WP-D) and `Localizer::for_ui` loads
 them together with the CPU's resources, with English as the per-pattern fallback.
 
-**M4 scaffold (wave 1, commit `b4e7aae`).** Each `.ftl` file holds only its header comment; the
-messages are written in wave 2 (WP-B: `config.ftl`; WP-F: `ui.ftl`, `commands.ftl`), and nothing
-embeds the files yet (WP-D).
+**M4 wave 2 in progress.** `config.ftl` holds its 12 `diag-cfg-*` messages (WP-B, commit
+`1cf9729`). `ui.ftl` and `commands.ftl` still hold only their header comment; WP-F writes their
+messages. Nothing renders these texts yet: the GUI is wired by WP-G.
 
 ## Contents
 | Entry | Type | Purpose |
@@ -20,6 +20,7 @@ embeds the files yet (WP-D).
 
 ## Entry points
 - `en/ui.ftl`, header comment: the id scheme and the namespace rule.
+- `en/config.ftl`, header comment: the arguments of the `diag-cfg-*` messages.
 
 Rules for every edit:
 - Same ids and attributes in `en/` and `fr/`; add or rename an id in both folders in the same
@@ -31,12 +32,18 @@ Rules for every edit:
   them.
 
 ## Dependencies
-- Internal: embedded by `crates/va-workspace` (from WP-D); referenced by `crates/va-ui` and
-  `apps/visual-assembler`.
+- Internal: embedded by `crates/va-workspace` (`src/i18n/ui.rs`); referenced by `crates/va-ui`,
+  `apps/visual-assembler` and `va_workspace::config` (`CONFIG_CODES`).
 - External: none (Fluent format; `fluent-bundle` parses it in `va-workspace`).
 
 ## Tests / usage
-The completeness tests arrive in wave 2: `crates/va-workspace/tests/i18n_ui.rs` (every resource
-parses, equal `en`/`fr` id sets, every `CONFIG_CODES` entry covered) and
-`crates/va-ui/tests/locales.rs` (every id the UI code references exists in both languages, none is
-unused). Neither exists yet, so there is no command to run here.
+```bash
+cargo test -p va-workspace --test i18n_ui
+cargo test -p va-ui --test locales
+```
+The first checks that every resource parses, keeps its namespace and defines no term, that `en`
+and `fr` have the same ids and attributes, and that every `CONFIG_CODES` entry has its message;
+`config_settings.rs` also formats the `diag-cfg-*` messages. The second checks that every
+`ui-*`/`cmd-*` id the UI code references exists in both languages and none is unused (exit
+criterion E6). Both pass on today's header-only `ui.ftl` and `commands.ftl` and tighten as they
+fill. On 2026-11-02 they ran 24 and 7 tests, all passing.

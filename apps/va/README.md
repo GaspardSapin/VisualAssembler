@@ -54,8 +54,9 @@ Conventions for every subcommand (m0-foundations.md §5, m1 §7.5):
   "message":"…"}` on stdout plus the human line on stderr, unless stdout itself failed.
 - `--lang` takes `en` or `fr` (`--lang auto` is a usage error). Without it, `VA_LANG` (`en`, `fr`,
   `auto`) applies, then `LC_ALL`, `LC_MESSAGES`, `LANG`. An invalid `VA_LANG` prints
-  `warning: ignoring VA_LANG=<value> (expected en, fr or auto)` and is ignored. The Windows UI
-  language is not read before M4.
+  `warning: ignoring VA_LANG=<value> (expected en, fr or auto)` and is ignored. `va` keeps this
+  M1 rule and never reads the Windows UI language or the `ui.language` setting: only the GUI's
+  precedence adds them (m4-editor-shell.md §4.6).
 - **Text output escapes terminal controls; `--json` output keeps them raw.** Every human line that
   carries outside text (source text, file names, the query, `VA_LANG`, clap's usage errors) passes
   through `report::terminal_safe`, and token texts through `report::terminal_safe_json`. C0 and C1

@@ -1,23 +1,27 @@
 # crates/va-editor/src
 
 ## Purpose
-Sources of `va-editor` (m4-editor-shell.md §3). **WP0 scaffold (commit `b4e7aae`); implemented in
-wave 2 by WP-A.** Every module is inline in `lib.rs` and holds the frozen signatures of §3 with
-`todo!()` bodies, each under `#![expect(unused_variables, clippy::todo, …, reason = "WP0 stub: …")]`;
-`history` holds only constants and `EditKind`, which are final.
-WP-A moves each module into its own file (`text.rs`, `encoding.rs`, …) as it implements it, so
-that `lib.rs` ends with the crate doc and seven `pub mod` lines; the module paths
-(`va_editor::text::Text`, …) never change (m4 §15.1 M1). A listed lint that stops firing raises
-`unfulfilled_lint_expectations`, which CI denies: each lint goes in the commit that makes it stop
-firing, and the attribute with the last `todo!()` of its module (m4 §15.1 M3).
+Sources of `va-editor` (m4-editor-shell.md §3). **Implemented in wave 2 by WP-A (commit
+`7324608`).** Each module of the WP0 scaffold (commit `b4e7aae`) moved out of `lib.rs` into its
+own file with its bodies, and the stub expectations went with the last `todo!()`. `lib.rs` now
+holds the crate doc and seven `pub mod` lines; the module paths (`va_editor::text::Text`, …)
+never changed (m4 §15.1 M1).
 
 ## Contents
 | Entry | Type | Purpose |
 |-------|------|---------|
-| `lib.rs` | library root | Crate doc and seven inline modules: `text` (§3.1: `Text` over a `ropey::Rope` whose breaks are LF, CRLF and lone CR, `MAX_DOCUMENT_BYTES` = 16 MiB, display columns), `encoding` (§3.1: BOM, UTF-8 and Windows-1252 decoding, line endings), `selection` (§3.2: carets and selections), `edit` (§3.2: changes, edit commands, motions), `history` (§3.3: undo grouping limits and edit kinds), `document` (§3.3: text, selections, history, dirty state, snapshots), `search` (§3.4: literal and regex find/replace, line by line, with a match cap) |
+| `lib.rs` | library root | Crate doc (offsets in bytes, 0-based lines, time passed in) and the seven `pub mod` declarations |
+| `text.rs` | module | §3.1: `Text` over a `ropey::Rope` built with `cr_lines` only, so its breaks are LF, CRLF and lone CR and its line count equals `va_core::source::LineIndex`; `MAX_DOCUMENT_BYTES` = 16 MiB; line queries, slices, chunks, `write_to`, `widest_line_chars`; `display_col` and `byte_at_display_col` (tabs) |
+| `encoding.rs` | module | §3.1: `Encoding` (UTF-8, UTF-8 with BOM, Windows-1252 when forced, through a hand-written table of the bytes 0x80–0x9F), `LineEnding`, `DecodeError`, `decode`, `first_unencodable`, `encode_to`, `detect_line_ending` |
+| `selection.rs` | module | §3.2: `Selection` and `Selections`, never empty, sorted and merged, with a primary selection (the last added caret) and the `MAX_CARETS` cap; no box selection |
+| `edit.rs` | module | §3.2: `Change`, `ChangeSet`, `ChangeError`, `Assoc`, `EditCommand`, `Motion`, `EditOptions`, `is_word_char`; a command is planned as one sorted list of non-overlapping changes plus the landing place of every selection |
+| `history.rs` | module | §3.3: `UNDO_GROUP_MS`, `MAX_UNDO_GROUPS`, `MAX_UNDO_BYTES`, `EditKind`, and the crate-private undo history: groups of change sets with their inverses, merged by kind, caret position and time |
+| `document.rs` | module | §3.3: `Document` (text, selections, history, revision, dirty state against the saved content, encoding and line ending, widest-line hint, the selection commands) and `Snapshot`, an O(1) copy for workers |
+| `search.rs` | module | §3.4: `Query`, `QueryError`, `Matcher`, `Matches`, `find_all` (cancellable, capped at `MAX_MATCHES`), `find_from` (one wrap), `expand_replacement`, `replace_all`; line by line, linear-time regex bounded by `REGEX_SIZE_LIMIT` and `REGEX_NEST_LIMIT` |
 
 ## Entry points
-- `lib.rs`: `document::Document` and `search`.
+- `document.rs`: `Document::new`, `edit`, `move_carets`, `undo`, `redo`, `snapshot`.
+- `search.rs`: `Matcher` and the find and replace functions.
 
 ## Dependencies
 - Internal: `va-core` (`source::MAX_SOURCE_BYTES`; `LineIndex` is the reference line count).
@@ -27,4 +31,4 @@ firing, and the attribute with the last `todo!()` of its module (m4 §15.1 M3).
 ```bash
 cargo test -p va-editor
 ```
-Tests will live in `crates/va-editor/tests/`, never in `src/` (architecture §8).
+Tests live in `crates/va-editor/tests/`, never in `src/` (architecture §8); see its README.

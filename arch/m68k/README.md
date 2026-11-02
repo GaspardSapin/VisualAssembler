@@ -8,20 +8,25 @@ by the apps (`va` in M1); nothing in `crates/` may depend on it (rule R2).
 encodings, cycle counts), the A68k-dialect line lexer shared by the M4 highlighter and the M2
 assembler, the register file, the 11 lexer diagnostic codes, and the English and French instruction
 documentation (m1-core-isa-lexer.md §3.6, §4, §5, §6). **M2 (in progress):** the assembler and
-the disassembler are scaffolded (`src/asm/`, `src/disasm/`, `src/isa/fields.rs`, the `asm` and
-`disasm` test targets; commit `c500c74`) with `todo!()` bodies, implemented in wave 2 by WP-B to
-WP-H (m2-assembler.md §1). `M68K.assembler()` and `M68K.disassembler()` already return them, so
-calling either panics until then. **Not implemented yet:** the emulator adapter over the `m68k`
-crate and the I/O profiles (M3).
+the disassembler were scaffolded in wave 1b (`src/asm/`, `src/disasm/`, `src/isa/fields.rs`, the
+`asm` and `disasm` test targets; commit `c500c74`) and are implemented in wave 2 by WP-B to WP-H
+(m2-assembler.md §1). Done so far: the line, operand and expression parsers and the bracketed
+macro arguments of the lexer (WP-B), the operand placement table, form selection, encoding and
+the a68k optimizations (WP-C), and the 50 assembler diagnostic codes with their English and
+French messages plus the documentation of the 49 directives (WP-F). Still `todo!()` stubs: the
+assembler's driver (`asm::assemble`, listing, S-records; WP-D) and the disassembler (WP-E).
+`M68K.assembler()` and `M68K.disassembler()` already return them, so assembling or decoding
+panics until then. **Not implemented yet:** the emulator adapter over the `m68k` crate and the I/O
+profiles (M3).
 
 ## Contents
 | Entry | Type | Purpose |
 |-------|------|---------|
 | `Cargo.toml` | manifest | Depends on `va-core`; dev-dependency `fluent-bundle` for the locale tests (m1 §8) |
 | `src/` | folder | Crate sources: `isa/`, `syntax/`, the M2 scaffolds `asm/` and `disasm/`, the `M68K` architecture, registers, embedded locales. See its README. |
-| `locales/en/`, `locales/fr/` | folders | Fluent resources: instruction docs (`isa.ftl`) and lexer diagnostics (`diagnostics.ftl`), embedded at compile time. See their READMEs. |
+| `locales/en/`, `locales/fr/` | folders | Fluent resources: instruction docs (`isa.ftl`), the lexer and assembler diagnostics (`diagnostics.ftl`) and the directive docs (`directives.ftl`), embedded at compile time. See their READMEs. |
 | `fixtures/lex/` | folder | Golden `.asm`/`.tokens` pairs of the lexer. See its README. |
-| `tests/` | folder | Integration tests mirroring `src/`, the M2 `asm` and `disasm` targets (scaffold), and the ignored lexer bench. See its README. |
+| `tests/` | folder | Integration tests mirroring `src/`, the M2 `asm` target (WP-B and WP-C tests so far) and `disasm` target (scaffold), and the ignored lexer bench. See its README. |
 
 Projected: `fixtures/{asm,asm-opt,asm-inc,asm-diag,disasm}/` in M2 wave 2 (m2 §10.2); `src/emu/`,
 `src/io/` and `tests/{emu,io}/` in M3; `benches/` in M7 (m1 §2.2).
@@ -48,6 +53,8 @@ cargo test -p va-arch-m68k
 make bench-lexer
 ```
 The first runs the `arch`, `isa`, `locales` and `syntax` test targets (exit criteria E3 to E5),
-and the M2 `asm` and `disasm` targets, which hold no test yet.
+and the M2 `asm` and `disasm` targets. On 2026-11-02 it ran 210 tests, all passing: `arch` 13,
+`asm` 67, `isa` 49, `locales` 18, `syntax` 63; `disasm` holds no test yet, and the bench is
+ignored.
 `make bench-lexer` runs the ignored throughput bench in release; the measured median is 7.157 ms
 for 100,000 lines against a 50 ms budget (`docs/perf/2026-10-23-m1-lexer.md`).

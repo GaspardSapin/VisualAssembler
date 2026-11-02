@@ -36,8 +36,20 @@ Wave 1 is in: the M2 contracts of `va-core` (assembler and disassembler traits, 
 frozen), and the scaffolds of both milestones, compiling modules with their frozen signatures and
 `todo!()` bodies (`arch/m68k/src/{asm,disasm}/`, `va-editor`, `va-ui`, the M4 parts of
 `va-workspace`, the M4 dependencies, the embedded font in `assets/fonts/`, the UI resources in
-`locales/`). `va asm` and `va disasm` parse their command line, then exit 1 with "not implemented
-yet". Wave 2 implements the stubs (m2 §1, m4 §1).
+`locales/`). Wave 2 implements the stubs (m2 §1, m4 §1); its first batch is in:
+- M2: the assembler's line, operand and expression parsers with the lexer's bracketed macro
+  arguments (WP-B), the operand placement table, form selection, encoding and the a68k
+  optimizations (WP-C), and the 50 assembler diagnostic codes with their English and French
+  messages and the docs of the 49 directives (WP-F);
+- M4: the whole `va-editor` crate (WP-A), the config and data folders and the readers of
+  `settings.toml`, `keybindings.toml` and `project.toml` with their 12 `diag-cfg-*` messages
+  (WP-B), and the GUI localization in `va-workspace` (WP-D).
+
+Still stubs: the assembler's driver (WP-D) and the disassembler (WP-E) of M2, so `va asm` and
+`va disasm` still parse their command line, then exit 1 with "not implemented yet" (WP-G);
+M4's persistence (WP-C), the editor view, theme and fonts (WP-E) and the shell (WP-F) of `va-ui`,
+the GUI wiring (WP-G) and the bench scenarios (WP-H). The window is still the M0 one.
+
 Measurements: `docs/perf/M0-backend.md` and `docs/perf/2026-10-23-m1-lexer.md`.
 
 ## Platform support
@@ -207,7 +219,8 @@ cargo run -p va -- isa --list                              # the 126 spellings w
   counts. An unknown spelling exits 1 with suggestions (`va isa MOV` suggests `MOVE, MOVEA, MOVEM`).
 - **Language**: `--lang en|fr`, else `VA_LANG` (`en`, `fr` or `auto`), else `LC_ALL`, `LC_MESSAGES`,
   `LANG`. An invalid `VA_LANG` is ignored with a warning. Only diagnostics and instruction docs are
-  translated; CLI messages stay English. The Windows display language is read from M4 on, not yet.
+  translated; CLI messages stay English. `va` never reads the Windows display language: only the
+  GUI will (m4-editor-shell.md §4.6).
 - **`--json`** prints one document (`va.lex/1`, `va.isa/1`, `va.isa.list/1`, `va.info/1`), or
   `va.error/1` on failure.
 - **Input**: UTF-8 only, at most 16 MiB per file and 64 KiB per line. Invalid UTF-8, a larger file or
@@ -381,7 +394,7 @@ On Windows x64 this prints the two warnings, then a bench line with `"renderer":
 | `crates/` | CPU-agnostic library crates (`va-core`, `va-editor`, `va-lang`, `va-debug`, `va-workspace`, `va-ui`) |
 | `arch/` | One crate per CPU: `m68k` (`va-arch-m68k`) |
 | `xtask/` | Rust task runner behind `make` |
-| `locales/` | Architecture-independent Fluent resources of the UI, `en/` and `fr/` (M4; headers only so far) |
+| `locales/` | Architecture-independent Fluent resources of the UI, `en/` and `fr/` (M4; `config.ftl` written, `ui.ftl` and `commands.ftl` headers only so far) |
 | `assets/` | Embedded data: `fonts/` holds JetBrains Mono 2.304 Regular and its OFL 1.1 licence (M4) |
 | `bench/` | Bench outputs (gitignored `results/`) |
 | `docs/` | `specs/` (architecture, milestone specs) and `perf/` (measurement reports) |

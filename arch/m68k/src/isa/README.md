@@ -18,7 +18,7 @@ from M2 its operand placement table (`fields.rs`) serves the assembler and the d
 | `encoding.rs` | module | `Encoding` (fixed bits, size and EA fields, extra rule) and `Form::matches` over a 16-bit opword |
 | `timing.rs` | module | `TimingRow`, `Outcome`, `Unit`, `EA_TIME`, the MOVE matrices `MOVE_BW`/`MOVE_L`, and `cycles()` |
 | `view.rs` | module | `M68kIsa`, the `va_core::isa::InstructionSet` implementation (`describe`, `spellings`, `ea_timing`) |
-| `fields.rs` | module | M2 (m2-assembler.md §4.9, frozen): `Place`, where each operand of a form goes in the instruction words, and `places(entry, form)`, the table that the encoder and the disassembler both read. WP0 scaffold: `places` is a `todo!()` stub; WP-C writes the table on day 1 of wave 2, with `arch/m68k/tests/isa/fields.rs` |
+| `fields.rs` | module | M2 (m2-assembler.md §4.9, frozen; written by WP-C, commit `50ad40d`): `Place`, where each operand of a form goes in the instruction words (register fields, quick values, displacements, immediates, the MOVEM mask word right after the opword), and `places(entry, form)`, one explicit row per entry of `INSTRUCTIONS` with one place per operand. The encoder reads it today and the disassembler (WP-E) will, so they cannot disagree; a compile-time check proves that rows and entries agree in name, form count and operand counts |
 | `table_arith.rs` | table | ADD, SUB, CMP families, MULS/MULU, DIVS/DIVU, NEG/NEGX, CLR, EXT, TST, ABCD/SBCD/NBCD, CHK |
 | `table_logic.rs` | table | AND, OR, EOR families (with CCR and SR forms), NOT, shifts and rotates, bit operations, TAS, Scc |
 | `table_move.rs` | table | MOVE (with CCR, SR and USP forms), MOVEA, MOVEM, MOVEP, MOVEQ, EXG, SWAP, LEA, PEA, LINK, UNLK |
