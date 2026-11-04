@@ -3,6 +3,9 @@
 //!
 //! Each test file includes it with `mod support;` and uses what it needs. WP-E owns this file
 //! after WP0; the shell tests (WP-F) keep their own helpers in their `shell_*.rs` files.
+//!
+//! The editor tests (`editor_*.rs`) drive one [`EditorView`] over an [`EditorState`] through
+//! [`editor_harness`], which installs the code font on its first frame.
 #![allow(clippy::unwrap_used)]
 #![allow(
     dead_code,
@@ -13,6 +16,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
+use egui::{Event, Modifiers, PointerButton, Pos2, Rect};
 use egui_kittest::Harness;
 use va_core::arch::Architecture;
 use va_core::diag::DiagCode;
@@ -21,9 +25,13 @@ use va_core::regs::RegisterSpec;
 use va_core::source::TextRange;
 use va_core::syntax::{KeywordInfo, LineState, SyntaxProvider, Token, TokenKind};
 use va_editor::document::Document;
+use va_editor::edit::EditOptions;
 use va_editor::encoding::{Encoding, LineEnding};
 use va_editor::text::Text;
 use va_ui::ArchSupport;
+use va_ui::editor::{Decoration, EditorContext, EditorResponse, EditorStyle, EditorView};
+use va_ui::fonts;
+use va_ui::theme::Theme;
 
 // -------------------------------------------------------------------------------------------
 // Fake lexer and architecture
@@ -268,6 +276,159 @@ pub fn wait_until<S>(harness: &mut Harness<'_, S>, what: &str, mut done: impl Fn
         );
         std::thread::sleep(Duration::from_millis(2));
     }
+}
+
+/// Steps the harness `frames` times without new input (lets fonts and focus settle).
+pub fn settle<S>(harness: &mut Harness<'_, S>, frames: usize) {
+    for _ in 0..frames {
+        harness.step();
+    }
+}
+
+/// Queues a primary click at `pos` with `modifiers`: a move there, the press and the release,
+/// one frame each when stepped.
+pub fn click_at<S>(harness: &Harness<'_, S>, pos: Pos2, modifiers: Modifiers) {
+    harness.event(Event::PointerMoved(pos));
+    for pressed in [true, false] {
+        harness.event(Event::PointerButton {
+            pos,
+            button: PointerButton::Primary,
+            pressed,
+            modifiers,
+        });
+    }
+}
+
+// -------------------------------------------------------------------------------------------
+// Editor
+// -------------------------------------------------------------------------------------------
+
+/// Accessibility label of the editor under test (the file name of §5.2).
+pub const EDITOR_LABEL: &str = "main.asm";
+
+/// Size of the code font in the editor tests, in points.
+pub const CODE_FONT_SIZE: f32 = 14.0;
+
+/// Label of the button drawn above the editor when [`EditorState::other_widget`] is set.
+pub const OTHER_WIDGET_LABEL: &str = "other widget";
+
+/// The default editor style of the tests: the `va-code` font, tab width 8, numbers and the
+/// current-line background on, blink off.
+pub fn editor_style() -> EditorStyle {
+    EditorStyle {
+        font: fonts::code_font(CODE_FONT_SIZE),
+        tab_width: 8,
+        line_numbers: true,
+        highlight_current_line: true,
+        cursor_blink: false,
+        style_generation: 0,
+    }
+}
+
+/// Everything an editor test drives: the document, its view and what the frame needs.
+pub struct EditorState {
+    /// The document.
+    pub doc: Document,
+    /// The view under test.
+    pub view: EditorView,
+    /// The lexer, with its own call count.
+    pub syntax: FakeSyntax,
+    /// The colours.
+    pub theme: Theme,
+    /// The drawing options.
+    pub style: EditorStyle,
+    /// The edit options.
+    pub options: EditOptions,
+    /// Decorations to paint.
+    pub decorations: Vec<Decoration>,
+    /// Whether edits are refused.
+    pub read_only: bool,
+    /// Whether the first frame gives the editor the focus.
+    pub focus_on_start: bool,
+    /// Whether a button is drawn above the editor (focus tests).
+    pub other_widget: bool,
+    /// The response of the last frame.
+    pub last: Option<EditorResponse>,
+    /// Frames run so far.
+    pub frames: usize,
+}
+
+impl EditorState {
+    /// A focused editor over a clean document of `text`, light theme, [`editor_style`].
+    pub fn new(text: &str) -> Self {
+        Self {
+            doc: document(text),
+            view: EditorView::new(egui::Id::new("editor-under-test")),
+            syntax: FakeSyntax::new(),
+            theme: Theme::light(),
+            style: editor_style(),
+            options: EditOptions {
+                tab_width: 8,
+                insert_spaces: false,
+            },
+            decorations: Vec::new(),
+            read_only: false,
+            focus_on_start: true,
+            other_widget: false,
+            last: None,
+            frames: 0,
+        }
+    }
+
+    /// The document text as a string.
+    pub fn text(&self) -> String {
+        self.doc.text().to_string()
+    }
+
+    /// The widget rectangle of the last frame (the viewport).
+    pub fn rect(&self) -> Rect {
+        self.last.as_ref().unwrap().response.rect
+    }
+
+    /// Screen position of the middle of the left edge of column `col` of `line`, for an ASCII
+    /// line without tabs, with the view scrolled to the top-left.
+    pub fn char_pos(&self, line: usize, col: usize) -> Pos2 {
+        let metrics = self.view.metrics();
+        let rect = self.rect();
+        egui::pos2(
+            rect.min.x + metrics.gutter_width + (col as f32 + 0.2) * metrics.char_width,
+            rect.min.y + (line as f32 + 0.5) * metrics.row_height,
+        )
+    }
+}
+
+/// One frame of the editor test app: installs the fonts on the first frame (and gives the focus
+/// when asked), then shows the view.
+fn editor_frame(ui: &mut egui::Ui, state: &mut EditorState) {
+    if state.frames == 0 {
+        fonts::setup_context(ui.ctx(), None);
+        if state.focus_on_start {
+            state.view.request_focus(ui);
+        }
+    }
+    state.frames += 1;
+    if state.other_widget {
+        let _clicked = ui.button(OTHER_WIDGET_LABEL);
+    }
+    let ctx = EditorContext {
+        syntax: &state.syntax,
+        theme: &state.theme,
+        style: &state.style,
+        options: state.options,
+        decorations: &state.decorations,
+        read_only: state.read_only,
+        line_comment: Some(";"),
+        label: EDITOR_LABEL,
+    };
+    state.last = Some(state.view.show(ui, &mut state.doc, &ctx));
+}
+
+/// A [`HARNESS_SIZE`] harness running one editor over `state`, settled (fonts installed, the
+/// focus given when asked).
+pub fn editor_harness(state: EditorState) -> Harness<'static, EditorState> {
+    let mut harness = harness(editor_frame, state);
+    settle(&mut harness, 3);
+    harness
 }
 
 // -------------------------------------------------------------------------------------------
