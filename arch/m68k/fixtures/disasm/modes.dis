@@ -1,0 +1,179 @@
+segment $001000 542 bytes
+001000  303B 28FE                 move.w $00001000(pc,d2.l),d0      ; sequential target=$00001000
+001004  323B B0FC                 move.w $00001002(pc,a3.w),d1      ; sequential target=$00001002
+001008  3001                      move.w d1,d0                      ; sequential
+00100A  300A                      move.w a2,d0                      ; sequential
+00100C  3013                      move.w (a3),d0                    ; sequential
+00100E  301C                      move.w (a4)+,d0                   ; sequential
+001010  3025                      move.w -(a5),d0                   ; sequential
+001012  302E 0010                 move.w 16(a6),d0                  ; sequential
+001016  302E 8000                 move.w -32768(a6),d0              ; sequential
+00101A  3030 1010                 move.w 16(a0,d1.w),d0             ; sequential
+00101E  3030 F880                 move.w -128(a0,a7.l),d0           ; sequential
+001022  3038 1234                 move.w ($1234).w,d0               ; sequential
+001026  3038 8000                 move.w ($FFFF8000).w,d0           ; sequential
+00102A  3039 0001 2345            move.w $00012345,d0               ; sequential
+001030  303A FFCE                 move.w $00001000(pc),d0           ; sequential target=$00001000
+001034  303C 1234                 move.w #$1234,d0                  ; sequential
+001038  103C 00FF                 move.b #$FF,d0                    ; sequential
+00103C  203C 1234 5678            move.l #$12345678,d0              ; sequential
+001042  2E00                      move.l d0,d7                      ; sequential
+001044  2080                      move.l d0,(a0)                    ; sequential
+001046  22C0                      move.l d0,(a1)+                   ; sequential
+001048  2500                      move.l d0,-(a2)                   ; sequential
+00104A  2740 7FFF                 move.l d0,32767(a3)               ; sequential
+00104E  2980 587F                 move.l d0,127(a4,d5.l)            ; sequential
+001052  21C0 7FFE                 move.l d0,($7FFE).w               ; sequential
+001056  23C0 00FF FFFE            move.l d0,$00FFFFFE               ; sequential
+00105C  13FC 0080 0001 0000       move.b #$80,$00010000             ; sequential
+001064  23FC 1234 5678 0001 2345  move.l #$12345678,$00012345       ; sequential
+00106E  31BA FF90 10FC            move.w $00001000(pc),-4(a0,d1.w)  ; sequential target=$00001000
+001074  C501                      abcd.b d1,d2                      ; sequential
+001076  C509                      abcd.b -(a1),-(a2)                ; sequential
+001078  D210                      add.b (a0),d1                     ; sequential
+00107A  D449                      add.w a1,d2                       ; sequential
+00107C  D794                      add.l d3,(a4)                     ; sequential
+00107E  D4C1                      adda.w d1,a2                      ; sequential
+001080  D7FC 0001 0000            adda.l #$00010000,a3              ; sequential
+001086  0600 00FF                 addi.b #$FF,d0                    ; sequential
+00108A  0658 8000                 addi.w #$8000,(a0)+               ; sequential
+00108E  06A1 FFFF FFFF            addi.l #$FFFFFFFF,-(a1)           ; sequential
+001094  5000                      addq.b #8,d0                      ; sequential
+001096  528F                      addq.l #1,a7                      ; sequential
+001098  D541                      addx.w d1,d2                      ; sequential
+00109A  D589                      addx.l -(a1),-(a2)                ; sequential
+00109C  C200                      and.b d0,d1                       ; sequential
+00109E  C351                      and.w d1,(a1)                     ; sequential
+0010A0  0282 0000 FFFF            andi.l #$0000FFFF,d2              ; sequential
+0010A6  023C 00FE                 andi.b #$FE,ccr                   ; sequential
+0010AA  027C F8FF                 andi.w #$F8FF,sr                  ; sequential
+0010AE  E300                      asl.b #1,d0                       ; sequential
+0010B0  E3A2                      asl.l d1,d2                       ; sequential
+0010B2  E1D0                      asl.w (a0)                        ; sequential
+0010B4  E043                      asr.w #8,d3                       ; sequential
+0010B6  E0E8 0002                 asr.w 2(a0)                       ; sequential
+0010BA  0141                      bchg.l d0,d1                      ; sequential
+0010BC  0350                      bchg.b d1,(a0)                    ; sequential
+0010BE  0842 001F                 bchg.l #31,d2                     ; sequential
+0010C2  0859 0007                 bchg.b #7,(a1)+                   ; sequential
+0010C6  0583                      bclr.l d2,d3                      ; sequential
+0010C8  08A2 0000                 bclr.b #0,-(a2)                   ; sequential
+0010CC  08C4 0000                 bset.l #0,d4                      ; sequential
+0010D0  0BF8 1234                 bset.b d5,($1234).w               ; sequential
+0010D4  0D07                      btst.l d6,d7                      ; sequential
+0010D6  013C 0012                 btst.b d0,#$12                    ; sequential
+0010DA  083A 00FF FF22            btst.b #255,$00001000(pc)         ; sequential target=$00001000
+0010E0  0830 0003 0004            btst.b #3,4(a0,d0.w)              ; sequential
+0010E6  43BC 0064                 chk.w #$0064,d1                   ; sequential
+0010EA  4200                      clr.b d0                          ; sequential
+0010EC  42B9 0001 2345            clr.l $00012345                   ; sequential
+0010F2  B010                      cmp.b (a0),d0                     ; sequential
+0010F4  B248                      cmp.w a0,d1                       ; sequential
+0010F6  B682                      cmp.l d2,d3                       ; sequential
+0010F8  B4D1                      cmpa.w (a1),a2                    ; sequential
+0010FA  B9CB                      cmpa.l a3,a4                      ; sequential
+0010FC  0C15 0080                 cmpi.b #$80,(a5)                  ; sequential
+001100  0C86 0000 0000            cmpi.l #$00000000,d6              ; sequential
+001106  B348                      cmpm.w (a0)+,(a1)+                ; sequential
+001108  BF8E                      cmpm.l (a6)+,(a7)+                ; sequential
+00110A  81FC 0003                 divs.w #$0003,d0                  ; sequential
+00110E  84C1                      divu.w d1,d2                      ; sequential
+001110  B101                      eor.b d0,d1                       ; sequential
+001112  B59B                      eor.l d2,(a3)+                    ; sequential
+001114  0A44 5555                 eori.w #$5555,d4                  ; sequential
+001118  0A3C 0001                 eori.b #$01,ccr                   ; sequential
+00111C  0A7C 0700                 eori.w #$0700,sr                  ; sequential
+001120  C141                      exg.l d0,d1                       ; sequential
+001122  C149                      exg.l a0,a1                       ; sequential
+001124  C58B                      exg.l d2,a3                       ; sequential
+001126  4884                      ext.w d4                          ; sequential
+001128  48C5                      ext.l d5                          ; sequential
+00112A  43D0                      lea.l (a0),a1                     ; sequential
+00112C  4FEE FFFC                 lea.l -4(a6),a7                   ; sequential
+001130  45F0 0008                 lea.l 8(a0,d0.w),a2               ; sequential
+001134  47F8 0400                 lea.l ($0400).w,a3                ; sequential target=$00000400
+001138  49F9 0001 2345            lea.l $00012345,a4                ; sequential target=$00012345
+00113E  4E56 FFF0                 link.w a6,#-16                    ; sequential
+001142  4E55 7FFF                 link.w a5,#32767                  ; sequential
+001146  E708                      lsl.b #3,d0                       ; sequential
+001148  E169                      lsl.w d0,d1                       ; sequential
+00114A  E3F8 1000                 lsl.w ($1000).w                   ; sequential
+00114E  E08A                      lsr.l #8,d2                       ; sequential
+001150  E2E0                      lsr.w -(a0)                       ; sequential
+001152  44C0                      move.w d0,ccr                     ; sequential
+001154  44FC 001F                 move.w #$001F,ccr                 ; sequential
+001158  46D0                      move.w (a0),sr                    ; sequential
+00115A  40C1                      move.w sr,d1                      ; sequential
+00115C  40DA                      move.w sr,(a2)+                   ; sequential
+00115E  4E6B                      move.l usp,a3                     ; sequential
+001160  4E64                      move.l a4,usp                     ; sequential
+001162  3258                      movea.w (a0)+,a1                  ; sequential
+001164  247C 00FF 0000            movea.l #$00FF0000,a2             ; sequential
+00116A  48A5 E010                 movem.w d0-d2/a3,-(a5)            ; sequential
+00116E  48E7 FFFE                 movem.l d0-d7/a0-a6,-(a7)         ; sequential
+001172  4C9F 0215                 movem.w (a7)+,d0/d2/d4/a1         ; sequential
+001176  4CFA 030E FE86            movem.l $00001000(pc),d1-d3/a0-a1  ; sequential target=$00001000
+00117C  48E9 0100 0008            movem.l a0,8(a1)                  ; sequential
+001182  0108 0004                 movep.w 4(a0),d0                  ; sequential
+001186  03CA FFF8                 movep.l d1,-8(a2)                 ; sequential
+00118A  7000                      moveq.l #0,d0                     ; sequential
+00118C  7E80                      moveq.l #-128,d7                  ; sequential
+00118E  C9E3                      muls.w -(a3),d4                   ; sequential
+001190  CAFC FFFF                 mulu.w #$FFFF,d5                  ; sequential
+001194  4810                      nbcd.b (a0)                       ; sequential
+001196  4400                      neg.b d0                          ; sequential
+001198  4491                      neg.l (a1)                        ; sequential
+00119A  4042                      negx.w d2                         ; sequential
+00119C  4683                      not.l d3                          ; sequential
+00119E  8050                      or.w (a0),d0                      ; sequential
+0011A0  8392                      or.l d1,(a2)                      ; sequential
+0011A2  0003 000F                 ori.b #$0F,d3                     ; sequential
+0011A6  003C 0010                 ori.b #$10,ccr                    ; sequential
+0011AA  007C 2000                 ori.w #$2000,sr                   ; sequential
+0011AE  4850                      pea.l (a0)                        ; sequential
+0011B0  486E 0010                 pea.l 16(a6)                      ; sequential
+0011B4  E518                      rol.b #2,d0                       ; sequential
+0011B6  E37A                      rol.w d1,d2                       ; sequential
+0011B8  E7D3                      rol.w (a3)                        ; sequential
+0011BA  E89C                      ror.l #4,d4                       ; sequential
+0011BC  E6F9 0001 2345            ror.w $00012345                   ; sequential
+0011C2  E355                      roxl.w #1,d5                      ; sequential
+0011C4  E5EE 0006                 roxl.w 6(a6)                      ; sequential
+0011C8  EC37                      roxr.b d6,d7                      ; sequential
+0011CA  E4D8                      roxr.w (a0)+                      ; sequential
+0011CC  8300                      sbcd.b d0,d1                      ; sequential
+0011CE  870A                      sbcd.b -(a2),-(a3)                ; sequential
+0011D0  50C0                      st.b d0                           ; sequential
+0011D2  51D1                      sf.b (a1)                         ; sequential
+0011D4  52C2                      shi.b d2                          ; sequential
+0011D6  53E3                      sls.b -(a3)                       ; sequential
+0011D8  54EC 0002                 scc.b 2(a4)                       ; sequential
+0011DC  55F8 0010                 scs.b ($0010).w                   ; sequential
+0011E0  56C5                      sne.b d5                          ; sequential
+0011E2  57C6                      seq.b d6                          ; sequential
+0011E4  58C7                      svc.b d7                          ; sequential
+0011E6  59D0                      svs.b (a0)                        ; sequential
+0011E8  5AC1                      spl.b d1                          ; sequential
+0011EA  5BC2                      smi.b d2                          ; sequential
+0011EC  5CC3                      sge.b d3                          ; sequential
+0011EE  5DC4                      slt.b d4                          ; sequential
+0011F0  5EC5                      sgt.b d5                          ; sequential
+0011F2  5FC6                      sle.b d6                          ; sequential
+0011F4  9200                      sub.b d0,d1                       ; sequential
+0011F6  9448                      sub.w a0,d2                       ; sequential
+0011F8  97A4                      sub.l d3,-(a4)                    ; sequential
+0011FA  92C0                      suba.w d0,a1                      ; sequential
+0011FC  9FFC 0000 0010            suba.l #$00000010,a7              ; sequential
+001202  0440 0001                 subi.w #$0001,d0                  ; sequential
+001206  5948                      subq.w #4,a0                      ; sequential
+001208  5311                      subq.b #1,(a1)                    ; sequential
+00120A  9300                      subx.b d0,d1                      ; sequential
+00120C  9348                      subx.w -(a0),-(a1)                ; sequential
+00120E  4847                      swap.w d7                         ; sequential
+001210  4AC0                      tas.b d0                          ; sequential
+001212  4AD0                      tas.b (a0)                        ; sequential
+001214  4A00                      tst.b d0                          ; sequential
+001216  4AA7                      tst.l -(a7)                       ; sequential
+001218  4E5E                      unlk a6                           ; sequential
+00121A  4E71                      nop                               ; sequential
+00121C  4E70                      reset                             ; sequential

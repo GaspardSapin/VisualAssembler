@@ -1,0 +1,66 @@
+segment $001000 228 bytes
+001000  4E71                      nop                               ; sequential
+001002  600E                      bra.s $00001012                   ; jump target=$00001012
+001004  6000 FFFA                 bra.w $00001000                   ; jump target=$00001000
+001008  6102                      bsr.s $0000100C                   ; call return=$0000100A target=$0000100C
+00100A  6100 00FE                 bsr.w $0000110A                   ; call return=$0000100E target=$0000110A
+00100E  6202                      bhi.s $00001012                   ; branch target=$00001012
+001010  6300 FFFE                 bls.w $00001010                   ; branch target=$00001010
+001014  64FC                      bcc.s $00001012                   ; branch target=$00001012
+001016  6500 0000                 bcs.w $00001018                   ; branch target=$00001018
+00101A  6680                      bne.s $00000F9C                   ; branch target=$00000F9C
+00101C  677E                      beq.s $0000109C                   ; branch target=$0000109C
+00101E  6800 7FFC                 bvc.w $0000901C                   ; branch target=$0000901C
+001022  6900 EFDC                 bvs.w $00000000                   ; branch target=$00000000
+001026  6A08                      bpl.s $00001030                   ; branch target=$00001030
+001028  6B00 0008                 bmi.w $00001032                   ; branch target=$00001032
+00102C  6C04                      bge.s $00001032                   ; branch target=$00001032
+00102E  6D00 FFF6                 blt.w $00001026                   ; branch target=$00001026
+001032  6E12                      bgt.s $00001046                   ; branch target=$00001046
+001034  6F00 0012                 ble.w $00001048                   ; branch target=$00001048
+001038  50C8 FFFE                 dbt.w d0,$00001038                ; branch target=$00001038
+00103C  51C9 FFFA                 dbra.w d1,$00001038               ; branch target=$00001038
+001040  52CA 0002                 dbhi.w d2,$00001044               ; branch target=$00001044
+001044  56CB 007E                 dbne.w d3,$000010C4               ; branch target=$000010C4
+001048  5FCF FFB6                 dble.w d7,$00001000               ; branch target=$00001000
+00104C  4ED0                      jmp (a0)                          ; jump
+00104E  4EE9 0010                 jmp 16(a1)                        ; jump
+001052  4EF2 3804                 jmp 4(a2,d3.l)                    ; jump
+001056  4EF8 1000                 jmp ($1000).w                     ; jump target=$00001000
+00105A  4EF8 8000                 jmp ($FFFF8000).w                 ; jump target=$FFFF8000
+00105E  4EF9 0000 1000            jmp $00001000                     ; jump target=$00001000
+001064  4EFA FFFE                 jmp $00001064(pc)                 ; jump target=$00001064
+001068  4EFB 0000                 jmp $0000106A(pc,d0.w)            ; jump target=$0000106A
+00106C  4E90                      jsr (a0)                          ; call return=$0000106E
+00106E  4EAE FFFE                 jsr -2(a6)                        ; call return=$00001072
+001072  4EB0 9000                 jsr 0(a0,a1.w)                    ; call return=$00001076
+001076  4EB8 0400                 jsr ($0400).w                     ; call return=$0000107A target=$00000400
+00107A  4EB9 0001 2345            jsr $00012345                     ; call return=$00001080 target=$00012345
+001080  4EBA FF7E                 jsr $00001000(pc)                 ; call return=$00001084 target=$00001000
+001084  4EBB F804                 jsr $0000108A(pc,a7.l)            ; call return=$00001088 target=$0000108A
+001088  41FA FF76                 lea.l $00001000(pc),a0            ; sequential target=$00001000
+00108C  43FB 1000                 lea.l $0000108E(pc,d1.w),a1       ; sequential target=$0000108E
+001090  45F8 7FFC                 lea.l ($7FFC).w,a2                ; sequential target=$00007FFC
+001094  47F9 0001 2345            lea.l $00012345,a3                ; sequential target=$00012345
+00109A  4BEC 0004                 lea.l 4(a4),a5                    ; sequential
+00109E  4878 1234                 pea.l ($1234).w                   ; sequential target=$00001234
+0010A2  4879 0001 2345            pea.l $00012345                   ; sequential target=$00012345
+0010A8  487A FF56                 pea.l $00001000(pc)               ; sequential target=$00001000
+0010AC  487B 1000                 pea.l $000010AE(pc,d1.w)          ; sequential target=$000010AE
+0010B0  303A FF4E                 move.w $00001000(pc),d0           ; sequential target=$00001000
+0010B4  2F3B 1000                 move.l $000010B6(pc,d1.w),-(a7)   ; sequential target=$000010B6
+0010B8  083A 0001 FF44            btst.b #1,$00001000(pc)           ; sequential target=$00001000
+0010BE  033B 2002                 btst.b d1,$000010C2(pc,d2.w)      ; sequential target=$000010C2
+0010C2  B67A FF3C                 cmp.w $00001000(pc),d3            ; sequential target=$00001000
+0010C6  4CBA 0003 0000            movem.w $000010CA(pc),d0-d1       ; sequential target=$000010CA
+0010CC  7001                      moveq.l #1,d0                     ; sequential
+0010CE  4E75                      rts                               ; return
+0010D0  4E73                      rte                               ; return
+0010D2  4E77                      rtr                               ; return
+0010D4  4E40                      trap #0                           ; trap
+0010D6  4E4F                      trap #15                          ; trap
+0010D8  4E76                      trapv                             ; trap
+0010DA  4AFC                      illegal                           ; trap
+0010DC  4E72 2700                 stop #$2700                       ; sequential
+0010E0  4E70                      reset                             ; sequential
+0010E2  4380                      chk.w d0,d1                       ; sequential

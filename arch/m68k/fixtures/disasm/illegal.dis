@@ -1,0 +1,38 @@
+segment $000000 10 bytes
+000000  60FC                      bra.s $FFFFFFFE                   ; jump target=$FFFFFFFE
+000002  41FA 8000                 lea.l $FFFF8004(pc),a0            ; sequential target=$FFFF8004
+000006  6000 FFF8                 bra.w $00000000                   ; jump target=$00000000
+segment $002000 102 bytes
+002000  FFFF                      dc.w $FFFF                        ; illegal
+002002  F000                      dc.w $F000                        ; illegal
+002004  A000                      dc.w $A000                        ; illegal
+002006  4AFB                      dc.w $4AFB                        ; illegal
+002008  4E74                      dc.w $4E74                        ; illegal
+00200A  4E7A                      dc.w $4E7A                        ; illegal
+00200C  49C0                      dc.w $49C0                        ; illegal
+00200E  4C00                      dc.w $4C00                        ; illegal
+002010  4C90 0000                 dc.w $4C90,$0000                  ; sequential
+002014  48A7 0000                 dc.w $48A7,$0000                  ; sequential
+002018  4CB8 0000 1234            dc.w $4CB8,$0000,$1234            ; sequential
+00201E  0600 FF12                 addi.b #$12,d0                    ; sequential
+002022  103C AB80                 move.b #$80,d0                    ; sequential
+002026  023C FF1F                 andi.b #$1F,ccr                   ; sequential
+00202A  0800 FF05                 btst.l #5,d0                      ; sequential
+00202E  3030 1702                 move.w 2(a0,d1.w),d0              ; sequential
+002032  41FB 9FFE                 lea.l $00002032(pc,a1.l),a0       ; sequential target=$00002032
+002036  D03C 0012                 add.b #$12,d0                     ; sequential
+00203A  D47C 1234                 add.w #$1234,d2                   ; sequential
+00203E  9CBC 1234 5678            sub.l #$12345678,d6               ; sequential
+002044  B23C 0080                 cmp.b #$80,d1                     ; sequential
+002048  C67C 00FF                 and.w #$00FF,d3                   ; sequential
+00204C  807C 8000                 or.w #$8000,d0                    ; sequential
+002050  6001                      bra.s $00002053                   ; jump target=$00002053
+002052  6100 0001                 bsr.w $00002055                   ; call return=$00002056 target=$00002055
+002056  4EF9 0100 0000            jmp $01000000                     ; jump target=$01000000
+00205C  303A 7FFF                 move.w $0000A05D(pc),d0           ; sequential target=$0000A05D
+002060  4E71                      nop                               ; sequential
+002062  4EB9                      dc.w $4EB9                        ; truncated needed=6
+002064  0000                      dc.w $0000                        ; truncated needed=4
+segment $003000 3 bytes
+003000  4E71                      nop                               ; sequential
+003002  4E                        dc.b $4E                          ; truncated needed=2

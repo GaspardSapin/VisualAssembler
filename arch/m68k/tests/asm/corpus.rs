@@ -24,8 +24,9 @@
 //! form and encodes to words whose opword that form matches, with the length `length` gives
 //! (the generic lines after `optimize`). A non-generic line selects its own form except the 15
 //! immediate-source lines of ADD, SUB, CMP, AND and OR `<ea>,Dn`, which a68k (and §4.10) assemble
-//! as ADDI, SUBI, CMPI, ANDI and ORI. Assembling the text through the driver and decoding the
-//! words through the disassembler join when WP-D and WP-E land (§15.3 G1).
+//! as ADDI, SUBI, CMPI, ANDI and ORI. The join with the driver and the disassembler lives in
+//! `tests/roundtrip.rs` (§16.2), which includes this file the same way: `lines(false)` assembles
+//! through `asm::assemble` and each instruction decodes back to its length and words.
 #![allow(clippy::unwrap_used)]
 
 use va_arch_m68k::asm::encode::{encode, length, select};
