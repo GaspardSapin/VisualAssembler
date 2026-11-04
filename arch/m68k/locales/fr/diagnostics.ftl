@@ -88,7 +88,10 @@ diag-asm-mode-not-allowed = { $mnemonic } n’accepte pas le mode { $mode } ici
     .note = Modes acceptés ici : { $allowed }.
 
 diag-asm-size-not-allowed = { $mnemonic } n’existe pas en .{ $size }
-    .note = Tailles acceptées : { $allowed }.
+    .note = { $allowed ->
+        [none] { $mnemonic } ne prend pas de suffixe de taille.
+       *[other] Tailles acceptées : { $allowed }.
+    }
 
 diag-asm-no-matching-form = ces opérandes ne correspondent à aucune forme de { $mnemonic }
     .note = Formes acceptées : { $forms }.

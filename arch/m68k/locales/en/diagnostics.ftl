@@ -94,7 +94,10 @@ diag-asm-mode-not-allowed = { $mnemonic } does not accept the mode { $mode } her
     .note = Modes accepted here: { $allowed }.
 
 diag-asm-size-not-allowed = { $mnemonic } has no .{ $size } form
-    .note = Accepted sizes: { $allowed }.
+    .note = { $allowed ->
+        [none] { $mnemonic } takes no size suffix.
+       *[other] Accepted sizes: { $allowed }.
+    }
 
 diag-asm-no-matching-form = these operands fit no form of { $mnemonic }
     .note = Accepted forms: { $forms }.

@@ -507,7 +507,11 @@ fn branch_problems() {
     assert_eq!(arg(&problem, "size"), &text("S"));
     assert_eq!(problem.range, TextRange::new(0, 4));
     let problem = encode_error("BEQ", S, vec![abs(0x1002 - 129)]);
-    assert_eq!(arg(&problem, "distance"), &DiagArg::Int(-129));
+    assert_eq!(
+        arg(&problem, "distance"),
+        &DiagArg::Int(129),
+        "the magnitude"
+    );
     let problem = encode_error("BSR", W, vec![abs(0x1002 + 32768)]);
     assert_eq!(problem.code, ASM_BRANCH_OUT_OF_RANGE);
     assert_eq!(arg(&problem, "size"), &text("W"));
@@ -520,19 +524,24 @@ fn branch_problems() {
     assert!(problem.args.is_empty());
     // A target past the 24-bit address space.
     let problem = encode_error("BRA", W, vec![abs(0x0100_0000)]);
-    assert_out_of_range(&problem, "$1000000", "$0", "$FFFFFF");
+    assert_out_of_range(&problem, "$1000000", "$000000", "$FFFFFF");
 }
 
 #[test]
 fn an_odd_branch_target_warns_after_the_words() {
     for (size, expected) in [(W, vec![0x6000, 0xFFFF]), (S, vec![0x6003])] {
-        let target = if size == W { 0x1001 } else { 0x1005 };
+        let (target, shown) = if size == W {
+            (0x1001, "$001001")
+        } else {
+            (0x1005, "$001005")
+        };
         let ops = spans(vec![abs(target)]);
         let choice = select("BRA", size, &ops).unwrap();
         let mut out = Vec::new();
         let warning = encode(&choice, &ops, &at(0x1000), 0x1000, &mut out).unwrap_err();
         assert_eq!(warning.code, ASM_ODD_BRANCH_TARGET);
-        assert_eq!(arg(&warning, "target"), &text(&format!("${target:X}")));
+        // An address argument has at least 6 hexadecimal digits (m2 §16.3).
+        assert_eq!(arg(&warning, "target"), &text(shown));
         assert_eq!(out, expected, "the words are kept with the warning");
     }
 }
@@ -581,9 +590,14 @@ fn values_out_of_range() {
             "JMP",
             None,
             vec![abs(0x0100_0000)],
-            ["$1000000", "$0", "$FFFFFF"],
+            ["$1000000", "$000000", "$FFFFFF"],
         ),
-        ("JMP", None, vec![abs(-2)], ["$FFFFFFFE", "$0", "$FFFFFF"]),
+        (
+            "JMP",
+            None,
+            vec![abs(-2)],
+            ["$FFFFFFFE", "$000000", "$FFFFFF"],
+        ),
         (
             "LINK",
             None,
@@ -738,7 +752,7 @@ fn selection_reports_the_closest_failure() {
     assert_eq!(arg(&problem, "allowed"), &text(".W"));
     let problem = select_error("NOP", W, vec![]);
     assert_code(&problem, ASM_SIZE_NOT_ALLOWED, TextRange::new(0, 0));
-    assert_eq!(arg(&problem, "allowed"), &text("-"));
+    assert_eq!(arg(&problem, "allowed"), &text("none"));
     // Only a mode does not fit: every mode accepted at that operand.
     let problem = select_error("ADD", W, vec![d(0), imm(3)]);
     assert_code(&problem, ASM_MODE_NOT_ALLOWED, TextRange::new(10, 14));

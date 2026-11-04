@@ -11,19 +11,23 @@
 //! A single `Dn`/`An` is a one-register list where a form wants a list; EXG is symmetric
 //! (`exg a0,d0` is the `Dn,An` form). When nothing fits, the closest failure is reported, from
 //! the closest down: the operands fit but the size does not (`asm-size-not-allowed`, with the
-//! sizes of the forms the operands fit); only addressing modes do not fit
-//! (`asm-mode-not-allowed`, at the first such operand, with every mode accepted there);
-//! the operand count fits but a kind does not (`asm-no-matching-form`); the count does not fit
-//! (`asm-operand-count`, with the count nearest to the one written). A problem tied to one
-//! operand covers that operand; the others cover the operand field written (empty at 0 without
-//! operands), and the driver may point them at the operation instead.
+//! sizes of the forms the operands fit, or `none` when none of them takes a size); only
+//! addressing modes do not fit (`asm-mode-not-allowed`, at the first such operand, with every
+//! mode accepted there); the operand count fits but a kind does not (`asm-no-matching-form`);
+//! the count does not fit (`asm-operand-count`, with the count nearest to the one written).
+//! A problem tied to one operand covers that operand; the others cover the operand field
+//! written (empty at 0 without operands), and the driver may point them at the operation
+//! instead.
 //!
 //! **Values.** The leaves of an expression (number, character, `*`, a symbol that resolves) are
 //! evaluated here; every other expression goes to `expr::eval`. Ranges (§4.10): immediates `.B`
 //! −128…255, `.W` −32768…65535, `.L` any 32-bit value; quick values 1…8; MOVEQ −128…127; TRAP
 //! 0…15; bit numbers 0…255; CCR immediates as `.B`, STOP and SR immediates as `.W`; LINK, `d16`
 //! and `(e).W` −32768…32767; `d8` −128…127; absolute and target addresses below `$1000000`.
-//! Formatted arguments: addresses as `$` and uppercase hexadecimal, other values in decimal.
+//! Formatted arguments (m2 §16.3): addresses as `$` and at least 6 uppercase hexadecimal digits
+//! (`$001001`, `$FFFFFF`, `$1000000`), other values in decimal. The `distance` of
+//! `asm-branch-out-of-range` is an `Int`, the magnitude in bytes of
+//! `target − (opword address + 2)`, and its `size` the branch size used (`S` or `W`).
 //!
 //! **Encoding protocol.** On success the words are appended to `out`. An error appends
 //! nothing, with one exception: the warning `asm-odd-branch-target` is returned as `Err` after
@@ -395,7 +399,7 @@ impl Closest {
                     .map(|size| format!(".{}", size.letter()))
                     .collect();
                 let allowed = if allowed.is_empty() {
-                    "-".to_owned()
+                    "none".to_owned()
                 } else {
                     allowed.join(", ")
                 };
@@ -570,9 +574,10 @@ fn fit_form(
     }
 }
 
-/// Formats an address argument: `$` and uppercase hexadecimal of the 32-bit value.
+/// Formats an address argument: `$` and the uppercase hexadecimal of the 32-bit value, at least
+/// 6 digits (`$001001`, `$FFFFFF`, `$1000000`; m2 §16.3).
 fn address_text(value: i64) -> String {
-    format!("${:X}", value & 0xFFFF_FFFF)
+    format!("${:06X}", value & 0xFFFF_FFFF)
 }
 
 /// The highest absolute or target address (24-bit address bus).
@@ -825,7 +830,7 @@ impl<'a> Encoder<'a> {
                 .get(index)
                 .map_or(TextRange::new(0, 0), |op| op.range),
             vec![
-                ("distance", DiagArg::Int(distance)),
+                ("distance", DiagArg::Int(distance.abs())),
                 ("size", DiagArg::Str(size.letter().to_owned())),
             ],
         )

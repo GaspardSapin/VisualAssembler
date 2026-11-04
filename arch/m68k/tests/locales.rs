@@ -44,15 +44,22 @@ enum Var {
     Int(&'static str, &'static [i64]),
     /// A selector (`DiagArg::Str`): every value is tried, and each gives a different text.
     Select(&'static str, &'static [&'static str]),
+    /// A printed text that also selects a variant for some values (`allowed` = `none` of
+    /// `asm-size-not-allowed`, m2 §16.3): the sample must appear in some rendering; the sample
+    /// and every selector value are tried, each gives a different text, and a selector value is
+    /// never printed.
+    TextOr(&'static str, &'static str, &'static [&'static str]),
 }
 
 impl Var {
     /// The Fluent variable name.
     fn name(self) -> &'static str {
         match self {
-            Var::Text(name, _) | Var::Quiet(name, _) | Var::Int(name, _) | Var::Select(name, _) => {
-                name
-            }
+            Var::Text(name, _)
+            | Var::Quiet(name, _)
+            | Var::Int(name, _)
+            | Var::Select(name, _)
+            | Var::TextOr(name, _, _) => name,
         }
     }
 
@@ -64,6 +71,10 @@ impl Var {
             Var::Select(_, values) => values
                 .iter()
                 .map(|value| DiagArg::Str((*value).to_owned()))
+                .collect(),
+            Var::TextOr(_, sample, values) => std::iter::once(sample)
+                .chain(values.iter().copied())
+                .map(|value| DiagArg::Str(value.to_owned()))
                 .collect(),
         }
     }
@@ -166,7 +177,7 @@ static SIGNATURES: [Signature; 61] = [
         &[
             MNEMONIC,
             Var::Text("size", "Sz"),
-            Var::Text("allowed", ".S1, .S2"),
+            Var::TextOr("allowed", ".S1, .S2", &["none"]),
         ],
         NOTE,
     ),
@@ -864,7 +875,7 @@ fn every_printed_argument_appears_in_the_text() {
                 .map(|args| render(&catalog, signature, args))
                 .collect();
             for var in signature.vars {
-                if let Var::Text(name, sample) = var
+                if let Var::Text(name, sample) | Var::TextOr(name, sample, _) = var
                     && !renderings.iter().any(|text| text.contains(*sample))
                 {
                     problems.push(format!(
@@ -885,20 +896,33 @@ fn each_selector_value_gives_its_own_text() {
         let catalog = load(lang);
         for signature in &SIGNATURES {
             for var in signature.vars {
-                let Var::Select(name, values) = *var else {
-                    continue;
+                let (name, keys) = match *var {
+                    Var::Select(name, keys) | Var::TextOr(name, _, keys) => (name, keys),
+                    Var::Text(..) | Var::Quiet(..) | Var::Int(..) => continue,
                 };
-                let texts: BTreeSet<String> = var
-                    .values()
+                let values = var.values();
+                let texts: Vec<String> = values
                     .iter()
                     .map(|value| render(&catalog, signature, &with_value(signature, *var, value)))
                     .collect();
-                if texts.len() != values.len() {
+                let distinct: BTreeSet<&String> = texts.iter().collect();
+                if distinct.len() != values.len() {
                     problems.push(format!(
                         "{lang}: {}: ${name} gives {} texts for {values:?}",
                         signature.code.0,
-                        texts.len()
+                        distinct.len()
                     ));
+                }
+                if matches!(var, Var::TextOr(..)) {
+                    // The sample comes first; a selector value picks its own wording.
+                    for (key, text) in keys.iter().zip(&texts[1..]) {
+                        if text.contains(key) {
+                            problems.push(format!(
+                                "{lang}: {}: ${name} = {key} is printed: {text:?}",
+                                signature.code.0
+                            ));
+                        }
+                    }
                 }
             }
         }

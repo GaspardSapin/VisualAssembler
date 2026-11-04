@@ -11,8 +11,10 @@
 //! takes, which the producer passes in `Diagnostic::args` (or `Related::args`), each exactly once:
 //! - `Str` is [`DiagArg::Str`](va_core::diag::DiagArg::Str) and `Int` is
 //!   [`DiagArg::Int`](va_core::diag::DiagArg::Int). Values and addresses are formatted text in
-//!   the 68000 notation (`$1000`, `-129`, m1 §3.3); counts and sizes in bytes are `Int`, which
-//!   Fluent uses for plural selection.
+//!   the 68000 notation (m1 §3.3, m2 §16.3): a value in decimal with `-` (`300`, `-129`), an
+//!   address as `$` and at least 6 uppercase hexadecimal digits (`$001001`, `$FFFFFF`,
+//!   `$1000000`), also as the `value`, `min` and `max` of an address check. Counts, distances
+//!   and sizes in bytes are `Int`, which Fluent uses for plural selection.
 //! - `text` is an excerpt of the source, truncated to 32 characters plus `…` (m1 §3.4).
 //! - An argument documented as a *selector* chooses a variant of the text and must be one of the
 //!   listed ids, spelled exactly so (Fluent compares them byte for byte); any other value gets the
@@ -79,7 +81,8 @@ pub const ASM_MODE_NOT_ALLOWED: DiagCode = DiagCode("asm-mode-not-allowed");
 /// A size suffix no form of the instruction accepts.
 ///
 /// Arguments: `mnemonic` (Str), `size` (Str, the refused size: `B`, `W`, `L` or `S`), `allowed`
-/// (Str, the accepted sizes, such as `.B, .W, .L`).
+/// (Str, the accepted sizes, each with its dot, joined by `", "`, such as `.B, .W, .L`; also a
+/// selector: `none` when no form the operands fit takes a size, as for `nop.w`).
 pub const ASM_SIZE_NOT_ALLOWED: DiagCode = DiagCode("asm-size-not-allowed");
 
 /// Operands that fit no form of the instruction.
@@ -105,13 +108,15 @@ pub const ASM_ABSOLUTE_SIZE_SYNTAX: DiagCode = DiagCode("asm-absolute-size-synta
 
 /// A value outside the range of its field.
 ///
-/// Arguments: `value`, `min`, `max` (Str each, formatted numbers such as `300`, `-128`, `255`).
+/// Arguments: `value`, `min`, `max` (Str each, formatted numbers such as `300`, `-128`, `255`;
+/// addresses for an address check, such as `$1000000`, `$000000`, `$FFFFFF`).
 pub const ASM_VALUE_OUT_OF_RANGE: DiagCode = DiagCode("asm-value-out-of-range");
 
 /// A branch of explicit size whose target is too far.
 ///
-/// Arguments: `distance` (Int, how far the target is, in bytes, as a positive number), `size`
-/// (Str, the size written: `S`, `B`, `W` or `L`).
+/// Arguments: `distance` (Int, how far the target is: the magnitude in bytes of
+/// `target − (opword address + 2)`, never negative), `size` (Str, the branch size used: `S` or
+/// `W`, since `.B` written means `.S` and `.L` means `.W`).
 pub const ASM_BRANCH_OUT_OF_RANGE: DiagCode = DiagCode("asm-branch-out-of-range");
 
 /// An explicit short branch to the next instruction (displacement 0).
@@ -121,7 +126,8 @@ pub const ASM_SHORT_BRANCH_ZERO: DiagCode = DiagCode("asm-short-branch-zero");
 
 /// A branch to an odd address (warning).
 ///
-/// Arguments: `target` (Str, the formatted target address, such as `$001001`).
+/// Arguments: `target` (Str, the formatted target address, at least 6 hexadecimal digits, such
+/// as `$001001`).
 pub const ASM_ODD_BRANCH_TARGET: DiagCode = DiagCode("asm-odd-branch-target");
 
 /// A symbol that is never defined.
