@@ -16,7 +16,7 @@ built binaries as child processes, never through a shell.
 ## Entry points
 | Command | Behaviour | Exit |
 |---------|-----------|------|
-| `cargo xtask bench [startup\|idle\|all] [--renderer auto\|glow\|wgpu\|all] [--runs N] [--warmup N] [--duration-secs N] [--json]` | Builds the shipped GUI once (release, default features, so both renderers), passes `--renderer <r>` to every run (default `auto`; `all` = glow, wgpu, then auto), measures, writes a `va.bench.report/2` file `bench/results/<time>-<sha8>.json` (see `src/bench/README.md`) | 0 ok · 1 build/run failure, invalid run line or timeout · 2 usage |
+| `cargo xtask bench [startup\|idle\|open\|scroll\|type\|all] [--renderer auto\|glow\|wgpu\|all] [--runs N] [--warmup N] [--duration-secs N] [--json]` | Generates the inputs under `bench/generated/` when needed, builds the shipped GUI once (release, default features, so both renderers), passes `--renderer <r>` to every run (default `auto`; `all` = glow, wgpu, then auto), measures, writes a `va.bench.report/3` file `bench/results/<time>-<sha8>.json` (see `src/bench/README.md`). Until M4 WP-G the GUI prints `va.bench.run/2` lines, so every run fails | 0 ok · 1 build/run failure, invalid run line or timeout · 2 usage |
 | `cargo xtask ci [--no-fmt]` | The CI check list, below | 0 / 1 |
 | `cargo xtask docs [--check]` | `python scripts/gen_agencement.py .` (skipped with `--check`), then `python scripts/check_project_docs.py .`. Python is `$VA_PYTHON`, else `python` on Windows, else `python3`. | the check script's code; 1 if Python is missing |
 | `cargo xtask hooks [--force]` | Installs `scripts/git-hooks/commit-msg` into this repository's hooks folder | 0 / 1 |

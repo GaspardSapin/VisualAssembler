@@ -7,16 +7,16 @@ problems panels in later milestones. Depends on `egui` only, never on `eframe`, 
 (rule R3); CPU specifics arrive only as `&dyn Architecture` (rule R2).
 
 **M4 WP0 scaffold (wave 1, commit `b4e7aae`); implemented in wave 2 by WP-E (editor, theme, fonts)
-and WP-F (shell).** Every module holds its frozen types and signatures with `todo!()` bodies: any
-call panics. Final already: the data types, the font constants and the embedded font
-(`assets/fonts/`).
+and WP-F (shell).** WP-E is in (commit `2cc6e9e`): the virtualized editor view, its colouring cache,
+input and caret, the themes and the fonts. The shell is still the WP0 scaffold: its frozen types
+are final, its functions are `todo!()` stubs and panic when called.
 
 ## Contents
 | Entry | Type | Purpose |
 |-------|------|---------|
 | `Cargo.toml` | manifest | Dependencies `egui`, `va-core`, `va-editor`, `va-workspace`; dev-dependency `egui_kittest` (all `workspace = true`, m4 §8.2) |
 | `src/` | folder | Crate sources: `editor/`, `shell/`, `theme.rs`, `fonts.rs`. See its README. |
-| `tests/` | folder | The headless kittest suite: the shared `support/` module and `locales.rs` (UI i18n completeness, WP-D) so far. See its README. |
+| `tests/` | folder | The headless kittest suite: the shared `support/` module, `locales.rs` (UI i18n completeness, WP-D) and the editor, theme and font tests (WP-E) so far. See its README. |
 
 ## Entry points
 - `src/lib.rs`: the shell API of m4 §5.1, re-exported at the crate root (`Shell`, `ShellConfig`,
@@ -34,5 +34,5 @@ call panics. Final already: the data types, the font constants and the embedded 
 ```bash
 cargo test -p va-ui
 ```
-This runs `tests/locales.rs` (7 tests on 2026-11-02, all passing), the only test target so far;
-the kittest files arrive with WP-E and WP-F.
+On 2026-11-04 on Linux this ran 58 tests in six targets, all passing; the shell tests arrive
+with WP-F.

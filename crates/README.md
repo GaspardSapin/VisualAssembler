@@ -6,8 +6,9 @@ The CPU-agnostic library crates of VisualAssembler. CPU-specific code lives in `
 are implemented. During M2 ∥ M4: in wave 1, `va-core` gained the frozen assembler and
 disassembler contracts (M2 WP-A), and `va-editor`, `va-ui` and the rest of `va-workspace` got the
 M4 WP0 scaffold, frozen signatures with `todo!()` bodies. Wave 2 so far implemented `va-editor`
-(WP-A) and, in `va-workspace`, `paths`, `config` (WP-B) and the GUI localization (WP-D); still
-stubs: `va-workspace`'s `persist` (WP-C) and all of `va-ui` (WP-E, WP-F). `va-lang` and
+(WP-A), all of `va-workspace` (`paths`, `config` by WP-B, the GUI localization by WP-D,
+`persist` by WP-C) and the editor view, themes and fonts of `va-ui` (WP-E); still stubs: the
+`va-ui` shell (WP-F). `va-lang` and
 `va-debug` are still skeletons (a manifest and a `lib.rs` with only a doc comment).
 
 ## Contents
@@ -19,8 +20,8 @@ Copy of architecture.md §2 (the source of truth; update both together):
 | `va-editor` | `va-editor/` | Text buffer (ropey), selections, grouped undo/redo, search/replace. No UI. | `va-core` | M4 (done in wave 2) |
 | `va-lang` | `va-lang/` | Language services and the background-assembly service. No UI. | `va-core`, `va-editor` | M5 |
 | `va-debug` | `va-debug/` | Debug session worker that owns a `dyn Emulator`. No UI. | `va-core` | M3 |
-| `va-workspace` | `va-workspace/` | Paths and portable mode, project, settings and keybindings TOML, session and its lock, hot-exit backups, the `va-io` worker, Fluent localization. File watching is deferred. No UI. | `va-core` | M1 (i18n), M4 (GUI i18n, paths, config done; persist scaffold) |
-| `va-ui` | `va-ui/` | egui widgets and panels. `egui` only, never `eframe`/`winit`/`wgpu`. | `va-core`, `va-editor`, `va-lang`, `va-debug`, `va-workspace` | M4 (scaffold) |
+| `va-workspace` | `va-workspace/` | Paths and portable mode, project, settings and keybindings TOML, session and its lock, hot-exit backups, the `va-io` worker, Fluent localization. File watching is deferred. No UI. | `va-core` | M1 (i18n), M4 (GUI i18n, paths, config, persist done) |
+| `va-ui` | `va-ui/` | egui widgets and panels. `egui` only, never `eframe`/`winit`/`wgpu`. | `va-core`, `va-editor`, `va-lang`, `va-debug`, `va-workspace` | M4 (editor, themes, fonts done; shell scaffold) |
 
 The other packages: `va-arch-m68k` (`arch/m68k`, allowed `va-core`); `visual-assembler` (every crate
 and `arch/*`); `va` (every crate except `va-ui`, plus `arch/*`); `xtask` (none).

@@ -45,10 +45,14 @@ frozen), and the scaffolds of both milestones, compiling modules with their froz
   `settings.toml`, `keybindings.toml` and `project.toml` with their 12 `diag-cfg-*` messages
   (WP-B), and the GUI localization in `va-workspace` (WP-D).
 
-Still stubs: the assembler's driver (WP-D) and the disassembler (WP-E) of M2, so `va asm` and
-`va disasm` still parse their command line, then exit 1 with "not implemented yet" (WP-G);
-M4's persistence (WP-C), the editor view, theme and fonts (WP-E) and the shell (WP-F) of `va-ui`,
-the GUI wiring (WP-G) and the bench scenarios (WP-H). The window is still the M0 one.
+Batch B so far: the S-record, binary and listing outputs of the assembler (M2 WP-D, part) and the
+disassembler (M2 WP-E); M4's persistence (WP-C), the editor view, themes and fonts of `va-ui`
+(WP-E), and the bench scenarios on the xtask side (WP-H).
+
+Still stubs: the rest of the assembler's driver (`asm::assemble`, WP-D), so `va asm` and
+`va disasm` still parse their command line, then exit 1 with "not implemented yet" (WP-G); the
+shell of `va-ui` (WP-F) and the GUI wiring with the bench recorder (WP-G). The window is still the
+M0 one, and `make bench` fails until WP-G (the GUI prints `va.bench.run/2`, xtask expects `/3`).
 
 Measurements: `docs/perf/M0-backend.md` and `docs/perf/2026-10-23-m1-lexer.md`.
 
@@ -186,7 +190,7 @@ Quick CLI check: `cargo run -p va -- info --json` (see [The `va` command line](#
 | `docs` | `cargo xtask docs`: regenerates `AGENCEMENT.md`, then runs `scripts/check_project_docs.py` |
 | `build` | `cargo build --release -p visual-assembler -p va` |
 | `clean` | `cargo clean` |
-| `bench` | `cargo xtask bench $(SCENARIO) --renderer $(RENDERER)` (defaults `all` and `auto`), e.g. `make bench SCENARIO=startup RUNS=3`. It measures the shipped binary. |
+| `bench` | `cargo xtask bench $(SCENARIO) --renderer $(RENDERER)` (defaults `all` and `auto`), e.g. `make bench SCENARIO=startup RUNS=3`. It measures the shipped binary. Until M4 WP-G every run fails (the GUI prints `va.bench.run/2`, xtask expects `va.bench.run/3`). |
 | `bench-lexer` | `cargo test -p va-arch-m68k --release --test syntax_bench -- --ignored --nocapture`: lexer throughput on 100,000 generated lines, one `va.bench.lexer/1` JSON line. Measure on mains power. |
 | `bench-asm` | `cargo test -p va-arch-m68k --release --test asm_bench -- --ignored --nocapture`: assembler throughput on 5,000 and 100,000 generated lines (M2, m2 §10.5). **Decided, not implemented yet** (m2 §15.3 G3): `tests/asm_bench.rs` arrives with M2 WP-H; until then cargo stops with "no test target named `asm_bench`". |
 | `compare-a68k` | `cargo test -p va-arch-m68k --test a68k -- --ignored --nocapture`: byte-for-byte comparison with a68k, needs `VA_A68K_PATH`, local only, never in CI (M2, m2 §10.4). **Decided, not implemented yet** (m2 §15.3 G3): `tests/a68k.rs` arrives with M2 WP-H; until then cargo stops with "no test target named `a68k`". |

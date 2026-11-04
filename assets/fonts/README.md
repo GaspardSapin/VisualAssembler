@@ -15,8 +15,8 @@ m4-editor-shell.md §5.5, §8.4). The files are third-party data, copied unmodif
 - `crates/va-ui/src/fonts.rs`: `EMBEDDED_CODE_FONT` (`include_bytes!` of the TTF) and
   `EMBEDDED_FONT_LICENSE` (`include_str!` of `OFL.txt`), so every binary carries the licence with
   the font. `font_definitions` makes the TTF the `va-code` family, after a valid custom
-  `editor.font_file` and before egui's monospace and emoji fonts (m4 §5.5); it is a `todo!()` stub
-  until WP-E implements it in wave 2.
+  `editor.font_file` and before egui's monospace and emoji fonts (m4 §5.5; WP-E, commit
+  `2cc6e9e`).
 
 **Provenance.**
 - Source: `https://github.com/JetBrains/JetBrainsMono/releases/download/v2.304/JetBrainsMono-2.304.zip`,
@@ -46,5 +46,5 @@ implemented yet). The font is not a crate, so cargo-deny never sees it: `DEPENDA
 sha256sum assets/fonts/JetBrainsMono-Regular.ttf assets/fonts/OFL.txt
 ```
 It must print the two hashes of the table. `.gitattributes` marks `*.ttf` as binary, so git never
-converts it. The planned `crates/va-ui/tests/fonts.rs` (WP-E) checks that `font_definitions`
-registers the embedded font first.
+converts it. `crates/va-ui/tests/fonts.rs` (WP-E) checks that `font_definitions` registers the
+embedded font first, after a custom one.

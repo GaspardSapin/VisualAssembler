@@ -25,5 +25,5 @@ entry in `IMPORT.md` when it comes from a third party, and a README line here.
 ```bash
 cargo test -p va-ui
 ```
-This builds `va-ui`, which embeds the files. In the M4 scaffold it runs no test yet; the font
-tests (`crates/va-ui/tests/fonts.rs`) arrive with WP-E.
+This builds `va-ui`, which embeds the files, and runs its tests, the font tests
+(`crates/va-ui/tests/fonts.rs`, WP-E) included.

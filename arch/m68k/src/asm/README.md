@@ -9,10 +9,11 @@ the diagnostics, the symbol table, the source map, the listing and the S-record 
 **M2 wave 2 in progress.** Implemented: the front end (WP-B, commit `8064d41`: `parser`,
 `operand`, `expr`), the encoder (WP-C, commit `50ad40d`: `encode`, `optimize`, with the
 placement table `isa::fields`) and the 50 diagnostic codes of `codes.rs` (WP-F, commit
-`525d619`). **WP0 scaffold (wave 1b, commit `c500c74`); implemented in wave 2 by WP-D:** the
-driver. `mod.rs`, `listing.rs` and `srec.rs` hold their frozen signatures with `todo!()` bodies,
-and `symbols`, `directives`, `macros` and `layout` hold only their `//!` doc. Calling `assemble`
-(or `M68K.assembler()`'s `assemble`) panics until WP-D lands.
+`525d619`). **The driver (WP-D) is in progress** over the WP0 scaffold (wave 1b, commit
+`c500c74`): `srec.rs` and `listing.rs` are implemented (commit `2151d08`, on the final signatures
+of m2 §15.2 W3 and W5, commit `d0c68da`). Still the scaffold: `mod.rs` holds `assemble` with a
+`todo!()` body, and `symbols`, `directives`, `macros` and `layout` hold only their `//!` doc.
+Calling `assemble` (or `M68K.assembler()`'s `assemble`) panics until WP-D lands.
 
 ## Contents
 | Entry | Type | Purpose |
@@ -28,8 +29,8 @@ and `symbols`, `directives`, `macros` and `layout` hold only their `//!` doc. Ca
 | `directives.rs` | module | Driver (WP-D): ORG, EQU, SET, DC, DS, DCB, EVEN, CNOP, INCLUDE, INCBIN, END and the refused directives (§4.5). Doc only |
 | `macros.rs` | module | Driver (WP-D): MACRO/ENDM, the `\0`–`\9`, `\@` and NARG substitutions, MEXIT, IFxx/ENDC (§4.6, §4.7). Doc only |
 | `layout.rs` | module | Driver (WP-D): location counter, alignment and the branch relaxation sweeps (§4.5, §4.10). Doc only |
-| `listing.rs` | module | Driver (WP-D): `render_listing`, our own listing format (§4.12). Stub. Decided, not implemented yet (m2 §15.2 W5): the signature gains `options: &AsmOptions` (header and size cap) |
-| `srec.rs` | module | Driver (WP-D): `to_srec` (byte-identical to `a68k -s`, CRLF), `parse_srec` (also used by `va disasm`), `to_binary`, `SrecError` (§4.12). Stub. Decided, not implemented yet (m2 §15.2 W3): `SrecError { line, reason: SrecReason }`, an enum of 9 reasons with kebab-case ids, replacing the `&'static str` |
+| `listing.rs` | module | Driver (WP-D): `render_listing(listing, symbols, options, name)`, our own listing format (§4.12, LF): the header, one row per line with continuation rows up to 64 bytes, `----` file markers, the symbols and the counts, capped by `AsmLimits::max_listing_bytes` with a `listing truncated` marker (§15.2 W5) |
+| `srec.rs` | module | Driver (WP-D): `to_srec` (byte-identical to `a68k -s`: S0, S2 records of 16 bytes, S8, CRLF, addresses masked to 24 bits), `parse_srec` (also read by the disassembler golden tests and, from WP-G, `va disasm`), `to_binary` (lowest address, gaps filled with zeros), `SrecError { line, reason: SrecReason }`, 9 reasons with kebab-case ids (§4.12, §15.2 W3) |
 
 ## Entry points
 - `mod.rs`: `assemble`, reached by `M68K.assembler()` through `va_core::arch::Architecture`
@@ -42,15 +43,16 @@ and `symbols`, `directives`, `macros` and `layout` hold only their `//!` doc. Ca
 Rules for the wave-2 work packages:
 - Each package owns its files only (m2 §1). The interfaces above are frozen; a change goes back
   to the Architect.
-- The remaining stub modules (`mod.rs`, `listing.rs`, `srec.rs`) start with
+- The remaining stub module (`mod.rs`) starts with
   `#![expect(unused_variables, clippy::todo, reason = "WP0 stub: …")]`, listing exactly the lints
-  the stubs trigger. A listed lint that stops firing raises `unfulfilled_lint_expectations`, which
+  its stubs trigger. A listed lint that stops firing raises `unfulfilled_lint_expectations`, which
   CI denies: the owner removes each lint in the commit that makes it stop firing, and the attribute
   with the last `todo!()`, never replacing it by `allow` (m2 §15.1 W6). A new file holding a stub
   carries its own expectation: the one of `mod.rs` would absorb its `todo!()`.
 - No merged test may call another package's `todo!()` (m2 §15.3 G1): a test that needs another
   package's function merges after it. The WP-B and WP-C tests therefore build their inputs
-  through the §4.2 types and never call `assemble`.
+  through the §4.2 types, and the WP-D output and listing tests build their images and listings
+  by hand; none calls `assemble`.
 - The golden fixtures arrive with WP-D in `arch/m68k/fixtures/{asm,asm-opt,asm-inc,asm-diag}/`
   (m2 §10.2); none exists yet.
 
@@ -63,6 +65,6 @@ Rules for the wave-2 work packages:
 ```bash
 cargo test -p va-arch-m68k --test asm
 ```
-The test target lives in `arch/m68k/tests/asm/` (see its README). On 2026-11-02 it ran 67 tests
-(`parser`, `expr`, `encode`, `optimize`, `corpus`), all passing; the WP-D modules are still
-empty.
+The test target lives in `arch/m68k/tests/asm/` (see its README). On 2026-11-04 it ran 101 tests
+(`parser`, `expr`, `encode`, `optimize`, `corpus`, `output`, `listing`), all passing; the other
+five WP-D modules are still empty.

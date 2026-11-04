@@ -66,6 +66,14 @@ VisualAssembler/
 ├── arch/                                  # One crate per CPU (va-arch-<cpu>)
 │   ├── m68k/                              # Package va-arch-m68k: 68000 ISA tables, A68k lexer, registers, EN/FR docs (M1); assembler and disassembler (M2, in progress)
 │   │   ├── fixtures/                      # Golden files of the 68000 crate, one folder per area
+│   │   │   ├── disasm/                    # Disassembler golden pairs: S-record input .s68 and expected decode .dis (LF-only)
+│   │   │   │   ├── flow.dis               # Expected decode of flow.s68: flow ids, return addresses, targets
+│   │   │   │   ├── flow.s68               # Branches, DBcc, jumps, calls, returns, traps, LEA, PEA and PC-relative targets
+│   │   │   │   ├── illegal.dis            # Expected decode of illegal.s68: dc.w for illegal and truncated words
+│   │   │   │   ├── illegal.s68            # Illegal opwords, empty MOVEM masks, non-canonical words, wrapping and far targets, cut instructions
+│   │   │   │   ├── modes.dis              # Expected decode of modes.s68 in the canonical text
+│   │   │   │   ├── modes.s68              # Every addressing mode as source and destination, then the instruction families
+│   │   │   │   └── README.md              # Fixture list, the .dis line format and how to re-bless
 │   │   │   └── lex/                       # Lexer golden pairs: source .asm and expected .tokens (LF-only)
 │   │   │       ├── basic.asm              # Small complete program with every common field
 │   │   │       ├── basic.tokens           # Expected tokens of basic.asm
@@ -92,26 +100,26 @@ VisualAssembler/
 │   │   │       ├── isa.ftl                # Instruction docs, French: same ids and attributes as en
 │   │   │       └── README.md              # French text rules: own words, typography, parity with en
 │   │   ├── src/                           # va-arch-m68k sources: isa, syntax, asm, disasm, architecture glue
-│   │   │   ├── asm/                       # Strict-A68k assembler (M2): front end and encoder done; driver still a WP0 scaffold (WP-D)
+│   │   │   ├── asm/                       # Strict-A68k assembler (M2): front end, encoder and outputs done; the rest of the driver still a WP0 scaffold (WP-D)
 │   │   │   │   ├── codes.rs               # One constant per asm-* diagnostic code with its arguments; ASM_DIAG_CODES (50)
 │   │   │   │   ├── directives.rs          # Directives (ORG, EQU, DC, DS, INCLUDE, END and the refused ones); doc-only stub, WP-D
 │   │   │   │   ├── encode.rs              # Choice, select, length, encode (frozen m2 §4.2): form selection, value ranges, words through isa fields
 │   │   │   │   ├── expr.rs                # Expr, Scope, Lookup, Value, parse_expr and eval (frozen m2 §4.2): 32-bit values, a68k precedence
 │   │   │   │   ├── layout.rs              # Location counter, alignment, branch relaxation sweeps; doc-only stub, WP-D
-│   │   │   │   ├── listing.rs             # render_listing, our own listing format (m2 §4.12); todo!() stub, WP-D
+│   │   │   │   ├── listing.rs             # render_listing: our own listing format (m2 §4.12), capped with a truncation marker
 │   │   │   │   ├── macros.rs              # MACRO and ENDM, parameters, NARG, MEXIT, IFxx and ENDC; doc-only stub, WP-D
 │   │   │   │   ├── mod.rs                 # M68kAssembler and assemble(input, cancel), the two-pass pipeline; todo!() stub, WP-D
 │   │   │   │   ├── operand.rs             # Ea, Xn, Operand, Spanned, parse_operand (frozen m2 §4.2): every addressing mode, register lists, fixes
 │   │   │   │   ├── optimize.rs            # The a68k optimizations of m2 §4.10 (moveq, addq, lea, pc-relative and others), generic spellings only
 │   │   │   │   ├── parser.rs              # Line fields (label, operation, operand field) from the lexer tokens, and Problem (frozen m2 §4.2)
 │   │   │   │   ├── README.md              # Assembler module map, what is done, frozen interfaces, stub lint rule
-│   │   │   │   ├── srec.rs                # to_srec, parse_srec, to_binary, SrecError; todo!() stub, WP-D
+│   │   │   │   ├── srec.rs                # to_srec (as a68k -s, CRLF), parse_srec with its SrecReason ids, to_binary with gap fill
 │   │   │   │   └── symbols.rs             # Symbol table, local blocks, pass values, references; doc-only stub, WP-D
-│   │   │   ├── disasm/                    # 68000 disassembler (M2) on the assembler tables; WP0 scaffold, WP-E
-│   │   │   │   ├── decode.rs              # Opword table, extension words, flow kind and target; doc-only stub, WP-E
-│   │   │   │   ├── format.rs              # Canonical instruction text and its tokens; doc-only stub, WP-E
-│   │   │   │   ├── mod.rs                 # M68kDisassembler: decode (todo!() stub) and flow_kind (final)
-│   │   │   │   └── README.md              # Disassembler module map and WP-E notes
+│   │   │   ├── disasm/                    # 68000 disassembler (M2, WP-E) on the assembler tables
+│   │   │   │   ├── decode.rs              # 65,536-entry opword table, lengths, extension words, Truncated and Illegal, flow kind and target
+│   │   │   │   ├── format.rs              # Canonical text (spelling, size, number notation, register lists) and its lexer tokens
+│   │   │   │   ├── mod.rs                 # M68kDisassembler, the Disassembler implementation: decode and flow_kind
+│   │   │   │   └── README.md              # Disassembler module map, round-trip exceptions, tests
 │   │   │   ├── isa/                       # 68000 instruction tables, encodings, cycle counts, CPU-agnostic view
 │   │   │   │   ├── conditions.rs          # The 16 condition codes of Bcc, DBcc and Scc with their flag tests
 │   │   │   │   ├── encoding.rs            # Opword encodings and Form::matches over a 16-bit word
@@ -140,27 +148,27 @@ VisualAssembler/
 │   │   │   ├── README.md                  # Module map of the 68000 crate, M2 progress and the planned M3 layout
 │   │   │   └── registers.rs               # Register file in panel order with stable RegIds and the SR fields
 │   │   ├── tests/                         # Integration tests mirroring src, the M2 asm and disasm targets, the ignored lexer bench
-│   │   │   ├── asm/                       # Test target asm (M2, E3): WP-B and WP-C modules written, 7 WP-D modules still empty
+│   │   │   ├── asm/                       # Test target asm (M2, E3): WP-B, WP-C, output and listing modules written, 5 WP-D modules still empty
 │   │   │   │   ├── corpus.rs              # Generated forms corpus: lexes, covers every form, encodes to its form; shared with the a68k comparison
 │   │   │   │   ├── diagnostics.rs         # Empty until WP-D: include limits, cancellation, ASM_DIAG_CODES coverage
 │   │   │   │   ├── directives.rs          # Empty until WP-D: every directive row, alignment, local blocks
 │   │   │   │   ├── encode.rs              # Golden opwords, form selection, every Place, MOVEM masks, value ranges, selection errors
 │   │   │   │   ├── expr.rs                # Precedence, 32-bit wrap, division, shifts, characters, location counter
 │   │   │   │   ├── fixtures.rs            # Empty until WP-D: golden fixtures of fixtures/asm*, VA_BLESS=1 rewrites
-│   │   │   │   ├── listing.rs             # Empty until WP-D: listing layout, truncation, size cap
+│   │   │   │   ├── listing.rs             # Listing rows, continuation rows, file markers, symbols, counts, truncation and the cap sweep
 │   │   │   │   ├── macros.rs              # Empty until WP-D: macro parameters, NARG, MEXIT, IFxx, limits
 │   │   │   │   ├── main.rs                # Test root: the 12 module declarations, kept as WP0 wrote them
 │   │   │   │   ├── optimize.rs            # Every optimization rule on and off, forward references of pass 1 and pass 2
-│   │   │   │   ├── output.rs              # Empty until WP-D: S-record text, parse_srec round trip, binary output
+│   │   │   │   ├── output.rs              # Exact S-record texts, CRLF, the empty image, parse_srec refusals and round trip, binary output
 │   │   │   │   ├── parser.rs              # Line fields, operand forms, rejections and their fixes, bracketed macro arguments
 │   │   │   │   ├── README.md              # What the asm target covers, owner and state of each module
 │   │   │   │   └── relax.rs               # Empty until WP-D: relaxation probes, CNOP regrowth, sweep cap
-│   │   │   ├── disasm/                    # Test target disasm (M2, E4): 3 empty modules for WP-E
-│   │   │   │   ├── decode.rs              # Empty until WP-E: golden decodes, Truncated, Illegal, all 65,536 words
-│   │   │   │   ├── flow.rs                # Empty until WP-E: flow kinds and targets
-│   │   │   │   ├── format.rs              # Empty until WP-E: canonical text, numbers, register lists, tokens
+│   │   │   ├── disasm/                    # Test target disasm (M2, E4): decode, format, flow and the golden files
+│   │   │   │   ├── decode.rs              # Golden decodes, Truncated, Illegal, all 65,536 words, modes and illegal golden files, shared helpers
+│   │   │   │   ├── flow.rs                # Flow kinds of every opword, branch, call and PC-relative targets, the flow golden file
+│   │   │   │   ├── format.rs              # Spellings, numbers, register lists, tokens; every text reassembles to its words
 │   │   │   │   ├── main.rs                # Test root: the module declarations, kept as WP0 wrote them
-│   │   │   │   └── README.md              # What the disasm target will cover
+│   │   │   │   └── README.md              # What the disasm target covers and its test counts
 │   │   │   ├── isa/                       # Test target isa: table consistency (exit criterion E4) and the M2 placement table
 │   │   │   │   ├── encoding.rs            # Opword uniqueness over 65,536 words, golden opwords, pinned VALID_OPWORDS
 │   │   │   │   ├── fields.rs              # Placement table: one row per form, places match operand kinds, fields partition the opword
@@ -193,7 +201,7 @@ VisualAssembler/
 │   └── README.md                          # Asset rules: embedded at build time, third-party files recorded in DEPENDANCE and IMPORT
 ├── bench/                                 # Bench inputs and outputs (results/ and generated/ are gitignored)
 │   └── README.md                          # Report naming and how to produce one
-├── crates/                                # CPU-agnostic library crates (va-core, va-editor and most of va-workspace implemented; va-ui and persist scaffolds; va-lang, va-debug skeletons)
+├── crates/                                # CPU-agnostic library crates (va-core, va-editor, va-workspace and the va-ui editor implemented; va-ui shell scaffold; va-lang, va-debug skeletons)
 │   ├── va-core/                           # Package va-core: frozen CPU-agnostic contracts (M1, M2)
 │   │   ├── src/                           # va-core sources, one module per contract
 │   │   │   ├── arch.rs                    # Architecture trait: id, syntax, instruction_set, registers, codes, locales; assembler and disassembler (default None)
@@ -255,25 +263,37 @@ VisualAssembler/
 │   │   └── README.md                      # Role and allowed dependencies (va-core, va-editor)
 │   ├── va-ui/                             # Package va-ui: egui widgets and panels (M4)
 │   │   ├── src/                           # va-ui sources
-│   │   │   ├── editor/                    # Virtualized, lexer-coloured editor widget (M4 scaffold, WP-E)
-│   │   │   │   ├── mod.rs                 # EditorView, EditorStyle, EditorContext, decorations, RenderStats, PlainSyntax; todo!() stubs
-│   │   │   │   └── README.md              # Editor widget contents and the WP-E split rule
+│   │   │   ├── editor/                    # Virtualized, lexer-coloured editor widget (M4 WP-E)
+│   │   │   │   ├── cache.rs               # Colouring through the lexer and the per-line layout cache, cleared on a style or atlas change
+│   │   │   │   ├── caret.rs               # Caret blink (530 ms phases, solid after 10 s idle) and caret painting
+│   │   │   │   ├── gutter.rs              # Line numbers and the M5 marker column, painted at the viewport edge
+│   │   │   │   ├── input.rs               # Keys, clipboard, IME and mouse left after the shell keymap
+│   │   │   │   ├── layout.rs              # ViewMetrics: fixed rows, visible line range, capped line fetch, tab display map
+│   │   │   │   ├── mod.rs                 # Module doc and the pub use of every editor item
+│   │   │   │   ├── plain.rs               # PlainSyntax, the whitespace and symbol lexer of a build without a CPU
+│   │   │   │   ├── README.md              # Editor widget module map, entry point and tests
+│   │   │   │   └── view.rs                # EditorView and the frozen types of m4 §5.2; per-frame input, scrolling and paint order
 │   │   │   ├── shell/                     # Window content and command registry (M4 scaffold, WP-F)
 │   │   │   │   ├── mod.rs                 # Shell API of m4 §5.1: Shell, ShellConfig, ShellHost, dialogs, renderer notes; todo!() stubs
 │   │   │   │   └── README.md              # Shell contents, the files WP-F adds, stub rules
-│   │   │   ├── fonts.rs                   # Embedded JetBrains Mono and OFL text, va-code family, font validation, zoom bounds; stubs
+│   │   │   ├── fonts.rs                   # Embedded JetBrains Mono and OFL text, va-code family, font validation, zoom steps
 │   │   │   ├── lib.rs                     # Crate doc, module declarations, re-export of the shell API
-│   │   │   ├── README.md                  # Module map and the stub lint rule
-│   │   │   └── theme.rs                   # Light and dark themes, token colours, WCAG contrast ratio; todo!() stubs, WP-E
-│   │   ├── tests/                         # Headless kittest suite of va-ui; support/ and locales.rs so far
+│   │   │   ├── README.md                  # Module map, what is implemented and the stub lint rule of the shell
+│   │   │   └── theme.rs                   # Light and dark themes, token colours, effective theme, WCAG contrast ratio
+│   │   ├── tests/                         # Headless kittest suite of va-ui: locales, editor, theme and font tests so far
 │   │   │   ├── support/                   # Shared test code, included by each test file with mod support
-│   │   │   │   ├── mod.rs                 # FakeSyntax, FakeArch, document builders, harness helpers, temp_dir
+│   │   │   │   ├── mod.rs                 # FakeSyntax, FakeArch, document builders, harness and editor helpers, temp_dir
 │   │   │   │   └── README.md              # What the support module provides and who owns it
+│   │   │   ├── editor_cache.rs            # One keystroke re-lexes one line, scrolling back hits, style changes clear the cache (E5)
+│   │   │   ├── editor_input.rs            # Keys, text, clipboard, mouse, IME, focus and the reactive blink rule (E5)
+│   │   │   ├── editor_view.rs             # Only visible lines drawn on 100,000 lines, gutter, zoom, tabs, paint order (E5)
+│   │   │   ├── fonts.rs                   # va-code family order, font validation, embedded licence, zoom steps, key names
 │   │   │   ├── locales.rs                 # UI i18n completeness: referenced ui-* and cmd-* ids, en and fr parity, CPU collisions (E6)
-│   │   │   └── README.md                  # Test files written so far and those each work package adds
+│   │   │   ├── README.md                  # Test files written so far and those each work package adds
+│   │   │   └── theme.rs                   # WCAG contrast, token mapping, palettes, visuals, effective theme, headless switching
 │   │   ├── Cargo.toml                     # Depends on egui, va-core, va-editor, va-workspace; dev-dependency egui_kittest
-│   │   └── README.md                      # Role, M4 scaffold status, allowed dependencies (egui only)
-│   ├── va-workspace/                      # Package va-workspace: i18n (M1, GUI part M4), paths and config (M4); persist scaffolded
+│   │   └── README.md                      # Role, M4 status (editor done, shell scaffold), allowed dependencies (egui only)
+│   ├── va-workspace/                      # Package va-workspace: i18n (M1, GUI part M4), paths, config and persist (M4)
 │   │   ├── src/                           # va-workspace sources
 │   │   │   ├── config/                    # Config files and their problems (M4 WP-B)
 │   │   │   │   ├── default_settings.toml  # Commented default settings.toml, embedded as DEFAULT_SETTINGS_TOML (m4 §4.3)
@@ -290,9 +310,14 @@ VisualAssembler/
 │   │   │   │   ├── README.md              # CLI and GUI precedence, fallback and rendering rules
 │   │   │   │   ├── system.rs              # system_ui_language: first sys-locale entry on Windows, None elsewhere (GUI only)
 │   │   │   │   └── ui.rs                  # ui_resources (root .ftl embedded), Localizer::for_ui, resolve_ui_lang (GUI precedence)
-│   │   │   ├── persist/                   # I/O worker, atomic writes, session, lock, hot-exit backups (M4 scaffold, WP-C)
-│   │   │   │   ├── mod.rs                 # IoWorker, write_atomic, Session types, SessionLock, BackupStore; functions are todo!() stubs
-│   │   │   │   └── README.md              # Persistence contents and the WP-C rules
+│   │   │   ├── persist/                   # I/O worker, atomic writes, session, lock, hot-exit backups (M4 WP-C)
+│   │   │   │   ├── atomic.rs              # write_atomic (temp file, sync, rename), read_limited, DiskStamp and stamp
+│   │   │   │   ├── backup.rs              # BackupStore: text before index, index before removal, orphan adoption, restore order
+│   │   │   │   ├── lock.rs                # SessionLock and try_lock_session: File::try_lock on session.lock
+│   │   │   │   ├── mod.rs                 # Module doc and the pub use of every frozen persist item
+│   │   │   │   ├── README.md              # Persistence module map, entry points and tests
+│   │   │   │   ├── session.rs             # Session types, parse_session (never fails) and session_to_toml (fixed layout)
+│   │   │   │   └── worker.rs              # IoWorker and Waker: the va-io thread, jobs in order, panics caught
 │   │   │   ├── lib.rs                     # Crate doc and the config, i18n, paths and persist modules
 │   │   │   ├── paths.rs                   # Paths, PathInputs, resolve_paths (env, portable mode, OS folders), folder creation
 │   │   │   └── README.md                  # Module map and the M4 layout
@@ -304,6 +329,11 @@ VisualAssembler/
 │   │   │   ├── i18n_localizer.rs          # Fallback, missing ids, arguments, plurals, isolation marks, errors
 │   │   │   ├── i18n_ui.rs                 # resolve_ui_lang precedence, root resources, CONFIG_CODES coverage, for_ui with a fake CPU
 │   │   │   ├── paths.rs                   # Every folder level with a fake environment, warnings, folder creation in a temp folder
+│   │   │   ├── persist_atomic.rs          # Atomic writes, temp cleanup, symlinks, permissions, capped reads, the va-io worker
+│   │   │   ├── persist_backup.rs          # Backup write and removal order, orphans, newer schema, damaged files, restore order
+│   │   │   ├── persist_kill.rs            # Exit criterion E4: 20 kills of a child writing backups, every restore one complete version
+│   │   │   ├── persist_lock.rs            # Second lock refused, release on drop, data folder creation, unwritable folder
+│   │   │   ├── persist_session.rs         # session.toml round trip, written layout, tolerance to bad parts
 │   │   │   └── README.md                  # What the va-workspace tests cover
 │   │   ├── Cargo.toml                     # Depends on va-core, fluent-bundle, unic-langid, serde, toml; sys-locale on Windows
 │   │   └── README.md                      # Role, M1 i18n, M4 status, dependencies
@@ -342,12 +372,13 @@ VisualAssembler/
 │   └── README.md                          # What each script checks and how to run it
 ├── xtask/                                 # Rust task runner behind make (cargo xtask)
 │   ├── src/                               # Task runner sources
-│   │   ├── bench/                         # cargo xtask bench: build, run, aggregate, report
-│   │   │   ├── mod.rs                     # BenchArgs, renderer choices (default auto), git and host info, orchestration
+│   │   ├── bench/                         # cargo xtask bench: generate inputs, build, run, aggregate, report
+│   │   │   ├── generate.rs                # Deterministic bench inputs under bench/generated: 100k.asm and the 5k project
+│   │   │   ├── mod.rs                     # BenchArgs, scenarios and their inputs, renderer choices (default auto), git and host info, orchestration
 │   │   │   ├── README.md                  # Bench orchestration and report behaviour
-│   │   │   ├── report.rs                  # va.bench.report/2 structs, markdown table, report file writing
-│   │   │   ├── runner.rs                  # Builds the shipped binary once; runs, deadlines, output caps, run-line validation
-│   │   │   ├── stats.rs                   # summarize: median, nearest-rank p95, min, max
+│   │   │   ├── report.rs                  # va.bench.report/3 structs, markdown table, report file writing
+│   │   │   ├── runner.rs                  # Builds the shipped binary once; isolated profile, runs, deadlines, output caps, run/3 validation
+│   │   │   ├── stats.rs                   # summarize (median, nearest-rank p95, min, max) and the pooled event summary
 │   │   │   └── timestamp.rs               # UTC timestamps without a date crate
 │   │   ├── ci.rs                          # cargo xtask ci: 9-step list, step 0 build-config checks, Windows exe parking
 │   │   ├── docs.rs                        # cargo xtask docs: runs the two Python scripts
@@ -359,9 +390,10 @@ VisualAssembler/
 │   │   ├── main.rs                        # clap dispatch; error: line and exit 1 on failure
 │   │   └── README.md                      # Module map of the task runner
 │   ├── tests/                             # Task runner tests, one file per module
+│   │   ├── bench_generate.rs              # Template lines, 100,000 and 5,000 lines, LF, determinism, regeneration rules
 │   │   ├── bench_report.rs                # Report file name, markdown header, report document
 │   │   ├── bench_runner.rs                # Runner arguments, deadlines, caps; fake sh GUIs on Unix
-│   │   ├── bench_stats.rs                 # summarize on fixed inputs
+│   │   ├── bench_stats.rs                 # summarize and the pooled event summary on fixed inputs
 │   │   ├── bench_timestamp.rs             # utc_compact and utc_iso, leap days, year 2100
 │   │   ├── ci.rs                          # Step order incl. the va no-CPU steps, check_build_env, canonical cargo config, ci.yml checks
 │   │   ├── docs.rs                        # cargo xtask docs, gen_agencement.py, manifest and annotation checks in temp repos
@@ -386,4 +418,4 @@ VisualAssembler/
 └── SECURITY.md                            # Protections in place and their limitations (Security agent)
 ```
 
-_379 entries · 0 to annotate._
+_411 entries · 0 to annotate._
