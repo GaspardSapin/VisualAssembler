@@ -1027,6 +1027,7 @@ write; everything else is read-only for it.
 - **Wave 2 runs in three batches (§16.7, m4 §16.4).** A (merged): M2 WP-B, WP-C, WP-F; M4
   WP-A, WP-B, WP-D. B: M2 FX-1 (first), WP-D, WP-E, WP-G; M4 WP-C, WP-E, WP-H. C: M2 WP-H
   (after D); M4 WP-F, then WP-G. G1 (§15.3) still orders the cross-package tests.
+  M4's B is merged; its C is m4 §17.8: M4 FX-1, FX-2 first beside WP-F; WP-G partly beside it.
 - Waves 3–5 run per milestone: the first milestone to finish wave 2 may enter wave 3 while the
   other is still in wave 2, because wave-2 packages never write the files of waves 3–5. The same
   phase of the two milestones never runs at the same time: `SECURITY.md`, `docs/perf/README.md`,

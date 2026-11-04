@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Ready for development. The new dependencies, the font download and the UX defaults were approved by the user on 2026-10-24 (§8.3, §8.4, §13); the architecture amendments this spec needs are ratified in `architecture.md` (2026-10-24); the merged wave order with M2 is §14. The settings types of §4.3 and the session types of §4.7 were frozen on 2026-10-24 after WP0 (WP0 follow-up, §1). The wave-1 implementation (WP0 `b4e7aae`, follow-up `570afb1`) is ratified in §15 (2026-10-25), which wins over the body; wave-2 batch A (WP-A, WP-B, WP-D) is ratified in §16 (2026-11-02), which wins over §15 and the body |
+| Status | Ready for development. The new dependencies, the font download and the UX defaults were approved by the user on 2026-10-24 (§8.3, §8.4, §13); the architecture amendments this spec needs are ratified in `architecture.md` (2026-10-24); the merged wave order with M2 is §14. The settings types of §4.3 and the session types of §4.7 were frozen on 2026-10-24 after WP0 (WP0 follow-up, §1). The wave-1 implementation (WP0 `b4e7aae`, follow-up `570afb1`) is ratified in §15 (2026-10-25), which wins over the body; wave-2 batch A (WP-A, WP-B, WP-D) is ratified in §16 (2026-11-02), which wins over §15 and the body; wave-2 batch B (WP-C, WP-E, WP-H) is ratified in §17 (2026-11-04), which wins over §16, §15 and the body, adds the fix packages M4 FX-1 and M4 FX-2 and orders batch C |
 | Owner | Architect role |
 | Date | 2026-10-24 |
 | Depends on | `architecture.md` (§2 R1–R8, §4 T1–T6, §5, §6, §7, §9.6, §9.8); `m0-foundations.md` §4, §6, §17.10, §19 (renderer, fallback, bench v2); `m1-core-isa-lexer.md` §3 (frozen `va-core`), §5 (lexer), §6.2 (Localizer) |
@@ -1343,8 +1343,10 @@ for it.
 | 4 | Performance | M2, M4 | `docs/perf/<date>-m2-assembler.md`, `docs/perf/<date>-m4-editor.md`, `docs/perf/README.md` (one milestone at a time) | the milestone's QA |
 | 5 | WP-I docs | M2, M4 | READMEs, `CLAUDE.md`, `AGENCEMENT.md`, `DEPENDANCE.md`, `IMPORT.md` (one milestone at a time) | the milestone's waves 3–4 |
 
-- **Wave 2 runs in three batches (§16.4, m2 §16.7).** A (merged): M2 WP-B, WP-C, WP-F; M4 WP-A, WP-B, WP-D. B: M2 FX-1 (first),
-  WP-D, WP-E, WP-G; M4 WP-C, WP-E, WP-H. C: M2 WP-H (after D); M4 WP-F, then WP-G. m2 §15.3 G1 still orders the cross-package tests.
+- **Wave 2 runs in three batches (§16.4, §17.8, m2 §16.7).** A (merged): M2 WP-B, WP-C, WP-F; M4 WP-A, WP-B, WP-D. B: M2 FX-1
+  (first), WP-D, WP-E, WP-G; M4 WP-C, WP-E, WP-H (M4's merged, §17). C: M2 WP-H (after D); M4 FX-1 and M4 FX-2 (fixes, first, beside
+  WP-F), WP-F (with `tests/support/mod.rs`, §17.4 F9), then WP-G, whose parts that call no `Shell` method may start beside WP-F
+  (§17.8). m2 §15.3 G1 still orders the cross-package tests.
 - Waves 3–5 run per milestone: the first milestone to finish wave 2 may enter wave 3 while the other is still in wave 2, because
   wave-2 packages never write the files of waves 3–5. The same phase of the two milestones never runs at the same time:
   `SECURITY.md`, `docs/perf/README.md`, `CLAUDE.md`, `AGENCEMENT.md`, the root and `crates/`/`apps/` READMEs are shared.
@@ -1437,3 +1439,151 @@ at `6553939`. Nothing here is fix-now: batch A needs no code change before batch
 - **For Security (wave 3):** B2 (`0o700` data and backup folders; portable only when both folders are portable), B5 (project path
   refusals on every OS, S4-1), A4 (the 16 MiB cap of `edit` and WP-F's Replace-all check), B3 (64-char excerpts in problem
   arguments). No new `unsafe`, network API or allow-list entry in batch A.
+
+## 17. Ratified wave-2 batch B (2026-11-04)
+
+Precedence: §17 > §16 > §15 > body. Source: the notes of WP-H (`8f60ccf`), WP-C (`0d17640`) and WP-E (`2cc6e9e`), checked against
+the code at `2cc6e9e`. Two findings are risky and get small fix packages (M4 FX-1, M4 FX-2, §17.6); everything else is ratified as
+implemented. Body passages amended here: §1 (who edits `tests/support/mod.rs` in batch C), §5.2–§5.3 (`MAX_DRAWN_CHARS` counts
+display columns, the line cache has a size budget), §5.5 (the font trial text), §6.2 steps 6–7 (fonts and zoom in the app creator,
+the lock taken by the shell), §7.1 (labels are unique in each file), §10.1 (the worker tests live in `persist_atomic.rs`).
+
+### 17.1 Ratified as implemented: persist (WP-C)
+
+| # | Decision (the spec now says what the code does) |
+|---|---|
+| C1 | **Ratified.** The worker tests live in `tests/persist_atomic.rs` (§2 lists no `persist_worker.rs`; the Documentarian says so in `tests/README.md`, as B1). `va-io` waits on `recv()`: it has no periodic work, because the shell keeps every deadline (F11). This is architecture T5's loop with no deadline; T5's choice (std `mpsc`, no async runtime) holds. A panicking job is caught (T6) and drops its result channel, so its receiver sees a disconnection (F2). |
+| C2 | **Ratified.** `write_atomic`: an existing target whose permissions are read-only is refused with `PermissionDenied` before anything is written, on every OS (Windows refuses that rename anyway; one rule for §5.7's "notice and offer Save As"). An existing path goes through `canonicalize`, so a dangling symlink is an error and a link is never replaced. A temp name that already exists is skipped (100 names, then `AlreadyExists`); a drop guard removes the temp file on every error and on a panic of the writer; on Unix the folder is synced after the rename, best effort (the write has already succeeded). |
+| C3 | **Ratified.** `parse_session`: a missing `schema_version` means 1 (as §4.2), a BOM is skipped, a float key also takes a TOML integer (as §4.3), and a `[[tab]]` with both `path` and `backup` is dropped (§4.7: exactly one). `session_to_toml` writes `workspace = {}` when there is no root. |
+| C4 | **Ratified (gap filled).** `backups/index.toml` stores `disk_modified_ms`, so a restored stamp is exact to the millisecond only. Extra helper `DiskStamp::matches(&self, recorded: &DiskStamp) -> bool` compares the length and the time to the millisecond; it is the only way stamps are compared (F7), never `==`. |
+| C5 | **Ratified.** Damage in `BackupStore::open`: an index that is not valid TOML, not UTF-8, or has an invalid `schema_version` (not an integer, or below 1) is `Unreadable` and its texts come back as orphans; a newer `schema_version` gives `NewerSchema`, no item, the texts untouched and a disabled store (`write` and `remove` return `Unsupported`); a malformed or repeated `[[backup]]` entry is skipped as `Unreadable`; a `MissingText` entry leaves the index at its next write; a text that cannot be read (over 16 MiB, not UTF-8, an I/O error) is reported, not restored, and kept with its entry. Caps: the index `MAX_CONFIG_BYTES` (1 MiB), a text `MAX_SOURCE_BYTES` (16 MiB). An index over its cap fails `open` today: M4 FX-2 makes it damage like the others. |
+| C6 | **Ratified.** `write` and `remove` refuse an id that is not well formed (`InvalidInput`): `BackupId`'s field is public, so this check is what keeps every name inside `backups/`. Each write re-creates `backups/` through `Paths::create_backups_dir` (B2). A `file` that is not valid Unicode is stored as an untitled entry titled with the lossy path, so its text is still restored. |
+| C7 | **Ratified** as extra public helpers: `BackupId::{generate, parse, is_well_formed}` (48 bits of milliseconds and a 16-bit counter, always above every id `open` has seen, so ids sort in creation order), `BackupStore::{entries, is_disabled}`, `restore_order(items, &session)` (the §4.8 tab order, stable), `utc_timestamp(SystemTime)` (RFC 3339 UTC to the second, the `updated_utc` format) and `DiskStamp::matches` (C4). |
+| C8 | **Ratified.** Temp files that a kill leaves in `backups/` (`<id>.txt.<pid>.<n>.tmp`, `index.toml.<pid>.<n>.tmp`) are never read and never deleted; a kill leaves at most one per write in flight, so at most two. *Rejected for M4:* deleting them in `open`, which cannot know whether the lock is held (and the kill test pins that planted temp files survive). M7 decides a clean-up of the data folder together with the path sandbox. |
+| C9 | **Ratified.** The kill delays (5–200 ms) count from the helper's ready line (its store is open), so every kill lands in the write loop, not in the process start. The `persist_*` tests have run on Linux only: QA runs them on the Windows host in wave 3 (E1). |
+
+### 17.2 Ratified as implemented: editor view, themes, fonts (WP-E)
+
+| # | Decision (the spec now says what the code does) |
+|---|---|
+| E1 | **Ratified.** The line cache is cleared when its key changes (`style_generation`, the font, `tab_width`, `pixels_per_point`, the theme) and when egui recreates its font atlas (new definitions, a full atlas), because galleys hold atlas coordinates. The recreation is detected in O(1) per frame: egui hands back a new `Arc` for a probe galley laid out every frame. The view therefore clears itself on every §5.3 event; WP-F still bumps `style_generation` (F10). An egui bump that changed its galley cache would show as misses in `editor_cache.rs`, never as wrong text. |
+| E2 | **Ratified, amended by M4 FX-1.** A line is fetched up to `4 × MAX_DRAWN_CHARS` bytes (16 KiB) and cut to `MAX_DRAWN_CHARS` chars; only that prefix is lexed and keys the cache, with a `truncated` flag (the mark ` …` in the comment colour). Content width = `(min(widest_line_hint, MAX_DRAWN_CHARS) + 2) × advance + gutter`, widened to the widest galley drawn so far. |
+| E3 | **Ratified, amended by M4 FX-1 (trial text).** `validate_font` checks the size, then lays out text with the font alone in its family, in a scratch `Context`, under `catch_unwind`; the text must get a non-zero width. No glyph-coverage check: egui's `has_glyph` gives false negatives in a family of one font. The default panic hook still prints a parse panic on stderr (invisible in the Windows release build). |
+| E4 | **Ratified.** Copy and Cut with every selection empty leave the clipboard unchanged (*rejected:* VS Code's copy of the whole line, not in §5.6); Cut in a read-only editor only copies. Escape takes two steps: drop the secondary carets, then collapse the primary selection. The editor ignores Alt chords and Ctrl with Up, Down, PageUp, PageDown, Enter and Tab, so those reach the keymap; Shift+Enter is Enter. |
+| E5 | **Ratified.** `scroll_to_line(line)` makes `line` the top line at the next `show`, clamped so that the document end stays at the bottom. An edit or caret move made outside the view (keymap command, find, undo) is noticed by an O(1) fingerprint (revision, selection count, primary, first and last selection): the primary caret is then scrolled into view and the blink restarts, as after the view's own input. The first `show` of a view never scrolls to the caret, so a restored top line holds (F4). |
+| E6 | **Ratified.** Ctrl + wheel (or a pinch) over the editor changes `ctx.zoom_factor()` itself (egui's `zoom_delta`, clamped by `clamp_zoom` to 0.5–3.0); the keyboard zoom belongs to the keymap (F6). |
+| E7 | **Ratified.** Carets are drawn only while both the editor and the window have the focus. The current-line background and `gutter_active` apply to every line that holds a caret. Gutter columns: one padding column, the digits (at least 3), the M5 marker, one gap; 2 columns (marker, gap) with line numbers off. |
+| E8 | **Ratified.** A `FontId` whose family is not registered falls back to `Monospace` of the same size, so the view never panics before `setup_context` takes effect. IME pre-edit text is drawn at the primary caret (hidden meanwhile) and never inserted; only `Commit` inserts. |
+| E9 | **Ratified** as extra public helpers: `EditorView::{id, metrics, cached_lines}`, `ViewMetrics`, `gutter_digits`, `gutter_columns`; `Theme::from_id`, `effective_theme(session_override, setting, system)` (the §5.4 rule); `fonts::{code_font, setup_context, clamp_zoom, step_zoom, EMBEDDED_FONT_NAME, CUSTOM_FONT_NAME}`, where `setup_context(ctx, custom)` installs `font_definitions(custom)` (active from the next pass) and sets `zoom_with_keyboard = false`. `tests/support/mod.rs` adds `settle`, `click_at`, `EditorState`, `editor_harness`, `editor_style`, `EDITOR_LABEL` and keeps `#![allow(dead_code)]` with its reason: shared test code, of which each test binary uses a subset (the `expect` rule of §15.1 M3 is for stubs). |
+
+### 17.3 Ratified as implemented: bench runner (WP-H)
+
+| # | Decision (the spec now says what the code does) |
+|---|---|
+| H1 | **Ratified for M4.** `template_line(n)` numbers labels by the line of each file, so `main.asm` and the nine identical `partNN.asm` all define `l0:`, `l5:`, …: labels are unique in each file, not across the project (§7.1 now says so). Nothing assembles in M4. **M5**, whose background assembly would see these duplicates, raises `GENERATOR_VERSION` to 2 with project-wide unique labels (part k numbers its lines from 500 × k); the signature of `template_line` stays. |
+| H2 | **Ratified.** Only `startup` prints its run line at the first frame, so `spawn_to_first_frame_ms` is null for `idle`, `open`, `scroll` and `type`, whose lines arrive after the measurement (m0 §17.8). §11's startup target reads the `startup` scenario only. |
+| H3 | **Ratified.** `input` is null for a run without `--bench-input` (startup); otherwise it is the last path component, lossy UTF-8 (`5k`, `100k.asm`). |
+| H4 | **Ratified.** In `summary`, `open_ms` (median, p95, min, max over runs) is null unless every measured run has one, and `event_ms` is null for startup, idle and open. Both follow `idle_cpu_percent`; the pooled keys are `median`, `p95`, `max`, `count`, in that order. |
+| H5 | **Ratified.** The inputs are regenerated when `VERSION` is missing or different, or any generated file is missing. Generation removes `VERSION` first, rewrites `100k.asm`, replaces the `5k/` folder (a symlink there is removed as a link, never followed) and writes `VERSION` last, so an interrupted generation is redone. |
+| H6 | **Ratified.** The profile folder `<target>/bench/profile-<utc>-<pid>/` stays after the command, for inspection (`make clean` removes it). The report's `env` map keeps the eight v2 variables: `VA_CONFIG_DIR` and `VA_DATA_DIR` are the runner's own and always point into the profile. |
+| H7 | **Ratified.** Run deadlines stay 75 s (startup, open, scroll, type) and N + 75 s (idle), strictly above the GUI's watchdogs of 60 s and 60 + N + 3 s (G4). |
+| H8 | **Ratified.** xtask checks neither `input_lines` nor `event_summary_ms`: the report recomputes the pooled statistics from `event_ms`, and WP-G's tests pin both (G2). |
+
+### 17.4 Decided for WP-F (batch C)
+
+| # | Rule |
+|---|---|
+| F1 | **Lock and persistence.** `ShellConfig::persistence` arrives as WP-G found it before the window (G1): `Off`, `ReadOnly { reason: NoLocation }` or `ReadWrite`. With `ReadWrite`, the shell's first-frame job on `va-io` (§6.2 step 7) calls `try_lock_session` once: `Ok(Some(lock))` keeps the `SessionLock` in the shell until it is dropped, after `shutdown`'s flush; `Ok(None)` makes the session `ReadOnly { reason: OtherInstance }` and `Err` makes it `ReadOnly { reason: NotWritable }`, for the rest of its life, each with its status notice (§5.11). Only a held lock opens the `BackupStore`, restores the session's project and tabs, and writes the default `settings.toml`; a read-only or bench session does none of these (they belong to the instance holding the lock) and starts with the welcome page plus `open_at_start`. `shell_hot_exit.rs` checks that a `ReadWrite` shell whose lock the test holds becomes `ReadOnly { OtherInstance }` and, like an `Off` shell, writes nothing into its temp data folder. *Rejected:* WP-G taking the lock before the window (main-thread I/O beyond step 3's list, T1). |
+| F2 | **Hot exit needs a working store.** `on_close_requested` with `files.hot_exit = true` closes without a prompt only when every dirty buffer is protected: the lock is held, the store opened and is not disabled, and the buffer's latest backup write did not fail. Otherwise it behaves as with `hot_exit = false` (Save all / Don't save / Cancel). A `va-io` job whose result channel disconnects without a result panicked (C1): the shell shows a notice, and after a backup job the buffer counts as unprotected. |
+| F3 | **Restore.** `BackupStore::open`, then `restore_order(items, &session)`, gives the tabs in order. An `Entry` with a `file`: a dirty tab with the backup text, its encoding from `Encoding::from_id(&entry.encoding)` (unknown: UTF-8), the §4.8 banner when `stamp(file)` does not `matches` the entry's `disk` (or the entry has none), the old path as title when the file is gone. An `Entry` without a file: an untitled tab titled `entry.title`. An `Orphan`: an untitled "Recovered" tab. Every restored tab keeps the item's `BackupId`, so its next `write` replaces or adopts that backup, never a second copy; a new buffer takes `BackupId::generate()` at its first backup, with `updated_utc = utc_timestamp(now)`. `MissingText` and `Unreadable` give one notice that lists them (the texts stay on disk); `NewerSchema` gives a lasting notice and F2 applies. The store is used only inside `va-io` jobs, never on the UI thread (T1). |
+| F4 | **Scrolling.** A restored tab gets its selection from `line` and `column` (clamped, §4.7) and `scroll_to_line(top_line − 1)` before its view's first `show` (E5); `SessionTab::top_line` is written as `EditorView::top_line() + 1`. `Shell::go_to_line(line)` takes a 0-based line (§3; the palette's `:n` passes n − 1), puts the primary caret at its start and calls `scroll_to_line(line)`. Find, undo and the other commands only change the document or the selections: the view follows the caret itself (E5). |
+| F5 | **Fonts.** `Shell::new` has no `Context`, so the startup call `fonts::setup_context(ctx, None)` is WP-G's (G1); WP-F's shell tests make it on their first frame, as `support::editor_harness` does. After the first frame the shell resolves `editor.font_file` (a relative path joins `Paths::config_dir`), reads it with `read_limited(path, MAX_FONT_BYTES)` and runs `validate_font`, both on `va-io`. On `Ok` it calls `setup_context(ctx, Some(font))` and bumps `style_generation`; on an error it keeps the embedded font and shows a transient notice. A settings reload that changes `font_file` repeats this; one that clears it calls `setup_context(ctx, None)`. |
+| F6 | **Zoom.** `view.zoom-in` and `view.zoom-out` call `ctx.set_zoom_factor(step_zoom(ctx.zoom_factor(), 1))` and `(…, -1)`; `view.zoom-reset` sets 1.0. Because the editor zooms too (E6), the shell reads `ctx.zoom_factor()` every frame: a value that differs from `session.ui.zoom` is stored there (which schedules the 2 s session write) and shown in the status bar. The startup zoom is WP-G's (G1): the shell never applies `session.ui.zoom` itself. |
+| F7 | **Disk stamps.** Every stamp comparison (the save check, the focus-gain reload banner, the restore banner) goes through `DiskStamp::matches`. The open job takes `stamp` before `read_limited`, so a change during the read shows up later as a change, never silently; the save job takes it after the rename. |
+| F8 | **kittest.** With blink on, the editor keeps asking for a wake-up within kittest's `predicted_dt` (0.25 s), so `Harness::run()` exceeds its `max_steps` (4) and panics. Shell tests set `cursor_blink = false` unless they test the blink, and drive frames with `step()`, `support::settle` and `support::wait_until`; they call `run()` only when nothing is pending. |
+| F9 | **`tests/support/mod.rs` in batch C.** WP-E is closed, so the file joins WP-F's scope for batch C; no other batch-C package writes `crates/va-ui/tests/` except M4 FX-1, which keeps its helpers in `editor_cache.rs`. Additions only: WP-F may move there the shell helpers that several `shell_*.rs` files share; existing items keep their signatures and behaviour, and `allow(dead_code)` stays. This replaces §1's "asks WP-E for a change". |
+| F10 | **`style_generation`.** WP-F still bumps it on every §5.3 event (theme, font, size, zoom, `pixels_per_point`, tab width, a custom font installed or dropped); the view's own key (E1) makes a missed bump harmless. |
+| F11 | **Timers.** `va-io` has no timer (C1). The backup delay, the 2 s session write, autosave and the transient notices are deadlines kept by the shell: each requests one `request_repaint_after` while it is pending (§5.6 idle rule) and submits its job when it passes. |
+| F12 | **Escape.** While the find bar is open, Escape closes it wherever the focus is (the shell consumes it before the editor, in the §5.12 order); otherwise the editor's two-step Escape applies (E4). |
+
+### 17.5 Decided for WP-G (batch C)
+
+| # | Rule |
+|---|---|
+| G1 | **Startup.** WP-G sets `Persistence::Off` in bench mode, `ReadOnly { reason: NoLocation }` when `resolve_paths` gives `None`, else `ReadWrite`; the lock is the shell's (F1), so §6.2 step 7's "take the session lock" runs in the shell's first-frame job. The app creator (§6.2 step 6, "fonts registered") calls `fonts::setup_context(&cc.egui_ctx, None)` and `cc.egui_ctx.set_zoom_factor(fonts::clamp_zoom(session.ui.zoom))` before it builds `ShellApp`, so the first frame already has the code font, no egui keyboard zoom and the restored zoom. |
+| G2 | **Run line `va.bench.run/3`.** The 29 keys in §7.2 order. `input`: the last path component of `--bench-input`, lossy UTF-8 (`5k`, `100k.asm`), null without one. `input_lines`: the lines opened (idle 5,000 over its ten files; open, scroll and type 100,000), null for startup. `vsync`: the value used (`false` for open, scroll, type). `open_ms`: non-null exactly for open, scroll and type. `event_count`, `event_ms`, `event_summary_ms`: non-null exactly for scroll (300) and type (500). `apps/visual-assembler/tests/bench_report.rs` pins this table; xtask checks only part of it (§7.2, H8). |
+| G3 | **When the line is printed.** `startup` at its first frame, as in M0; `idle`, `open`, `scroll` and `type` after their measurement, so xtask records `spawn_to_first_frame_ms = null` for them (H2). |
+| G4 | **Watchdogs.** `STARTUP_WATCHDOG_SECS` (60 s) for startup, open, scroll and type; idle keeps 60 + N + 3 s, with the project load and the wait for `pending_io == 0` inside its first 60 s. xtask's 75 s and N + 75 s (H7) must stay strictly larger: changing either GUI limit goes back to the Architect, who changes the xtask constant in the same decision. |
+| G5 | **Profile.** Every bench run gets `VA_CONFIG_DIR` and `VA_DATA_DIR` set to fresh, empty, absolute folders, which `resolve_paths` takes at the environment level (§4.1): `settings.toml`, `keybindings.toml` and `session.toml` are absent, so defaults apply. `Persistence::Off` creates nothing in either folder: no default `settings.toml`, no `session.lock`, no `backups/` (F1). |
+| G6 | **Idle input.** `bench/generated/5k` is a project folder (`.visualasm/project.toml` with `arch = "m68k"` and `entry = "main.asm"`); idle opens it as the project and its ten `.asm` files, sorted, as tabs (§6.8). Its labels repeat across files (H1), which M4 never assembles. |
+
+### 17.6 Decided: fix packages M4 FX-1, M4 FX-2 and the docs debt
+
+**M4 FX-1 — `va-ui` bounds (fix-now; one developer, one commit; first in batch C, beside WP-F).** The cap of §5.2 counts source chars
+and the cache of §5.3 counts entries, so neither bounds memory: a galley costs about 170 bytes per glyph (glyph data, four vertices,
+six indices), so 4,096 cached lines of 4,096 chars hold about 2.8 GB, and one line of 4,096 tabs at `tab_width = 16` lays out 65,536
+glyphs. §5.2's `MAX_DRAWN_CHARS` now counts **display columns** (glyphs laid out), and the cache gets a size budget. The font trial
+covers the text a student types, not one line, since a font that passes the trial and panics later does so on the UI thread.
+- `crates/va-ui/src/editor/cache.rs`: `build_job` stops before the first char that would end past display column `MAX_DRAWN_CHARS`
+  (a tab counts its expanded width; a tab that crosses the cap is left out), and such a line shows the truncation mark. The cache
+  holds at most `LINE_CACHE_CHAR_BUDGET = 1 << 19` display chars in all, besides `LINE_CACHE_CAPACITY` entries; an insertion that would
+  pass either limit evicts the least recently used entries down to three quarters of both, never an entry of the current frame (about
+  90 MB of galleys at most, plus the frame on screen). The module documentation says so.
+- `crates/va-ui/src/editor/mod.rs`: `pub use cache::{LINE_CACHE_CAPACITY, LINE_CACHE_CHAR_BUDGET};` (by name, §15.1 M2).
+- `crates/va-ui/src/fonts.rs`: the trial of `validate_font` lays out every printable ASCII char (U+0020–U+007E) and U+00A0–U+00FF
+  instead of one line of code, still requiring a non-zero width; `tests/fonts.rs` keeps its assertions (the embedded font passes).
+- `crates/va-ui/tests/editor_cache.rs`: scrolling page by page through 600 lines of 4,096 chars keeps `cached_lines()` ≤
+  `LINE_CACHE_CHAR_BUDGET / MAX_DRAWN_CHARS` + the last frame's `lines_drawn`; a line of 4,096 tabs with `tab_width = 16` gives a
+  content width ≤ gutter + (`MAX_DRAWN_CHARS` + 4) × advance. Its helpers stay in this file (F9).
+
+**M4 FX-2 — two one-place fixes outside every batch-C scope (one developer, one commit; batch C, beside WP-F).**
+- `crates/va-workspace/src/persist/backup.rs`: in `BackupStore::open`, an index that `read_limited` refuses as too large (`InvalidData`)
+  is damage like a syntax error: `Unreadable("backups/index.toml is larger than 1 MiB")`, its texts come back as orphans, and the next
+  write replaces the index. Every other I/O error still fails `open`. The documentation of `open` says so (C5).
+- `crates/va-workspace/tests/persist_backup.rs`: an index of `MAX_CONFIG_BYTES` + 1 bytes gives that problem, the texts as orphans and a
+  store that writes.
+- `xtask/src/main.rs`: the help of `Bench` becomes "Build the shipped GUI once, measure the startup, idle, open, scroll and type
+  scenarios per renderer choice, write a JSON report." and the help of `Ci` lists what `cargo xtask ci` runs: "Run the CI checks:
+  build configuration, fmt, clippy (all features, glow only, wgpu only, va without any CPU), layering and sources, tests (workspace,
+  then va without any CPU)." This file is outside every M4 wave-2 scope, and its help text is code, so it is not the Documentarian's.
+
+**Docs debt (owner: the Documentarian, WP-I's role).** At the M4 batch-B docs checkpoint, which runs beside batch C as `5139d9f` did
+after batch A (it writes only READMEs and `AGENCEMENT.md`, which no batch-C package touches), then again in WP-I (wave 5):
+`crates/va-workspace/src/persist/README.md` (still the WP0 text), `crates/va-workspace/tests/README.md` (the `persist_*` files, the
+worker tests in `persist_atomic.rs`, C1), `crates/va-ui/src/README.md`, `crates/va-ui/src/editor/README.md`,
+`crates/va-ui/tests/README.md`, `crates/va-ui/tests/support/README.md`, `xtask/src/bench/README.md` and `bench/README.md` (still v2:
+now v3, generated inputs, profiles), `xtask/tests/README.md` (`bench_generate.rs`), and the `AGENCEMENT.md` annotations of the new
+files; `make docs` exits 0 at the end. WP-I also updates the m4 precedence line of `CLAUDE.md` (§17 > §16 > §15 > body).
+
+### 17.7 APIs batch C builds on (all exist with a decided shape)
+
+| WP | Items it reads (file: item) |
+|---|---|
+| WP-F | `va-workspace/src/persist/`: `IoWorker`, `Waker`, `write_atomic`, `read_limited`, `stamp`, `DiskStamp::matches`, `try_lock_session`, `SessionLock`, the session types, `parse_session`, `session_to_toml`, `BackupStore::{open, write, remove, entries, is_disabled}`, `BackupEntry`, `BackupId::generate`, `RestoreItem`, `BackupProblem`, `restore_order`, `utc_timestamp`; `va-ui/src/editor/`: the §5.2 items and E9's helpers; `theme.rs`: `Theme`, `ThemeId`, `effective_theme`; `fonts.rs`: `setup_context`, `validate_font`, `step_zoom`, `MAX_FONT_BYTES`; `va-editor` (§3, §16.1); `va_workspace::config` and `i18n` (§4.2–§4.6, §16.2) |
+| WP-G | The `va_ui` root items (§5.1, §15.1 M5); `fonts::{setup_context, clamp_zoom}`; `va_workspace::{paths::resolve_paths, config::{parse_settings, parse_keybindings, project_arch_problem, MAX_CONFIG_BYTES}, persist::{read_limited, parse_session, IoWorker}, i18n::{resolve_ui_lang, Localizer::for_ui}}`; the run-line contract of §7.2 and G2 (xtask is no dependency) |
+| M4 FX-1, M4 FX-2 | Their own files only (§17.6) |
+
+### 17.8 Batch-C order
+
+- **M4 FX-1 and M4 FX-2 first**, one commit each, beside WP-F: their files (`editor/{cache,mod}.rs`, `fonts.rs`,
+  `tests/editor_cache.rs`; `persist/backup.rs`, `tests/persist_backup.rs`, `xtask/src/main.rs`) belong to no batch-C package. The M4
+  batch-B docs checkpoint (§17.6) runs beside them.
+- **WP-F**, with `tests/support/mod.rs` added to its scope (F9).
+- **WP-G** may start beside WP-F on what calls no `Shell` method (`cli.rs`, the renderer setting, `host.rs`, the startup dialog,
+  `arch_registry.rs`, `bench/{script,report}.rs` and their tests); `shell_app.rs`, the recorder's open, scroll and type steps and every
+  test that calls a `Shell` method merge after WP-F (m2 §15.3 G1). This refines §16.4's "WP-F, then WP-G".
+- **M2 WP-H** follows M2's order (after M2 WP-D) and shares no file with M4. Mirrored in §14.1 and in m2 §14.1.
+
+### 17.9 For Security (wave 3)
+
+| # | What to audit |
+|---|---|
+| S17-1 | `write_atomic` (C2): canonicalized targets (a symlink is written through, a dangling one refused; a hard link is broken by the rename, as with every atomic save), read-only targets refused, `create_new` temp names with 100 tries, the temp removed on error and on a writer panic, Unix permissions copied (not the owner), the best-effort folder sync. On Unix "read-only" means the mode bits: a file the student may not write, in a folder they may write, is replaced (the OS rule for `rename`); check it against S4-2. |
+| S17-2 | Backups (C5, C6, M4 FX-2): the id check is the only guard that keeps names inside `backups/`; only regular files named `b<16 hex>.txt` are read (`DirEntry::file_type`, so a symlink is skipped); caps of 1 MiB (index) and 16 MiB (text); a damaged index gives orphans, a newer schema is never rewritten, a text is kept on every doubt, a non-Unicode path is stored as untitled. |
+| S17-3 | Lock and folders (F1, B2): `File::try_lock` is advisory on Unix and may not hold on a network file system (a limitation, with S4-8); a read-only or bench session writes nothing; `0o700` applies to the folders the app creates (the umask can only narrow it), while an existing data folder keeps its mode; the files inside get the default mode in that private folder. |
+| S17-4 | Temp files left by kills (C8): never read, never deleted in M4, at most two per kill, each up to 16 MiB (a text) or 1 MiB (the index); the clean-up is M7's. |
+| S17-5 | Custom fonts (E3, F5, M4 FX-1): the 32 MiB cap, the trial layout of printable ASCII and Latin-1 under `catch_unwind` on `va-io` (`panic = "unwind"` in every profile, architecture T6). Residual risk to record: a font that passes the trial but panics on another glyph does so on the UI thread (exit 101), at every start until `editor.font_file` is removed. |
+| S17-6 | Editor memory (E2, M4 FX-1): at most 16 KiB fetched per drawn line (`4 × MAX_DRAWN_CHARS`), at most `MAX_DRAWN_CHARS` glyphs laid out per line, the cache under `LINE_CACHE_CAPACITY` entries and `LINE_CACHE_CHAR_BUDGET` glyphs; the per-frame work stays O(visible lines). |
+| S17-7 | Bench (H5, H6): xtask deletes and rewrites only `bench/generated/{VERSION,100k.asm,5k/}` (a symlinked `5k` is unlinked, never followed) and creates its profiles under `<target>/bench/` with `fs::create_dir`, never shared between commands. |
+
+No new `unsafe` block, network API or allow-list entry in batch B (checked on the three commits; `xtask/src/layering.rs` is unchanged).
