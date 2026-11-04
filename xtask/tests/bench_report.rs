@@ -1,7 +1,8 @@
 //! Tests for `src/bench/report.rs`: report file name, markdown table and the
-//! `va.bench.report/2` document built from synthetic samples (idle spawn→frame is `null`,
-//! §17.8; requested and used renderer, fallback count, shipped binary and renderer variables,
-//! §19.5), and the `va.bench.run/2` line (§19.5 example). Temporary folders live under
+//! `va.bench.report/3` document built from synthetic samples (spawn→frame is `null` except for
+//! startup, §17.8; requested and used renderer, fallback count, shipped binary and renderer
+//! variables, §19.5; input, open time and the pooled event summary, m4-editor-shell.md §7.3), and
+//! the `va.bench.run/3` line (m4-editor-shell.md §7.2 example). Temporary folders live under
 //! `CARGO_TARGET_TMPDIR` (§17.9).
 #![allow(clippy::unwrap_used)]
 
@@ -20,15 +21,18 @@ use serde_json::Value;
 use xtask::bench::{
     RendererChoice, Scenario,
     report::{
-        BenchResult, BenchRun, ENV_VARS, EnvSnapshot, GitInfo, HostInfo, MARKDOWN_HEADER,
-        MARKDOWN_SEPARATOR, MIXED, REPORT_SCHEMA, RUN_SCHEMA, Report, ResultConfig, SHIPPED_BINARY,
-        Sample, UNKNOWN, report_file_name, write_report,
+        BenchResult, BenchRun, ENV_VARS, EnvSnapshot, EventSummary, GitInfo, HostInfo,
+        MARKDOWN_HEADER, MARKDOWN_SEPARATOR, MIXED, REPORT_SCHEMA, RUN_SCHEMA, Report,
+        ResultConfig, SHIPPED_BINARY, Sample, UNKNOWN, report_file_name, write_report,
     },
-    stats::Summary,
+    stats::{PooledSummary, Summary},
 };
 
-/// The run line example of m0-foundations.md §19.5 (it replaces the §4.6 example).
-const SPEC_RUN_LINE: &str = r#"{"schema":"va.bench.run/2","scenario":"startup","renderer_requested":"auto","renderer":"wgpu","fallback_from":"glow","fallback_reason":"injected renderer failure (VA_TEST_FAIL_RENDERER)","injected_failure":"glow","backend":"dx12","adapter":"AMD Radeon(TM) 860M Graphics","driver":"…","window_system":"win32","wsl":false,"os":"windows","arch":"x86_64","version":"0.1.0","startup_ms":512.3,"frames_painted":1,"process_cpu_ms":437.5,"peak_rss_bytes":358612992,"peak_private_bytes":120586240,"settle_ms":null,"idle_window_ms":null}"#;
+/// The run line example of m4-editor-shell.md §7.2 (`event_ms` shortened there, as here).
+const SPEC_RUN_LINE: &str = r#"{"schema":"va.bench.run/3","scenario":"type","renderer_requested":"auto","renderer":"glow","fallback_from":null,"fallback_reason":null,"injected_failure":null,"backend":"gl","adapter":"AMD Radeon(TM) 860M Graphics","driver":"…","window_system":"win32","wsl":false,"os":"windows","arch":"x86_64","version":"0.1.0","startup_ms":290.1,"frames_painted":503,"process_cpu_ms":2210.4,"peak_rss_bytes":151000000,"peak_private_bytes":98000000,"settle_ms":null,"idle_window_ms":null,"input":"100k.asm","input_lines":100000,"vsync":false,"open_ms":61.2,"event_count":500,"event_ms":[4.1,3.9],"event_summary_ms":{"median":4.0,"p95":6.3,"max":11.8}}"#;
+
+/// The run line example of m0-foundations.md §19.5 (a `va.bench.run/2` line of the M0 GUI).
+const V2_RUN_LINE: &str = r#"{"schema":"va.bench.run/2","scenario":"startup","renderer_requested":"auto","renderer":"wgpu","fallback_from":"glow","fallback_reason":"injected renderer failure (VA_TEST_FAIL_RENDERER)","injected_failure":"glow","backend":"dx12","adapter":"AMD Radeon(TM) 860M Graphics","driver":"…","window_system":"win32","wsl":false,"os":"windows","arch":"x86_64","version":"0.1.0","startup_ms":512.3,"frames_painted":1,"process_cpu_ms":437.5,"peak_rss_bytes":358612992,"peak_private_bytes":120586240,"settle_ms":null,"idle_window_ms":null}"#;
 
 /// Bytes per MiB.
 const MIB: u64 = 1_048_576;
@@ -41,7 +45,7 @@ fn at(seconds: u64) -> SystemTime {
 /// A startup run line forced to wgpu, on DX12 / Win32.
 fn startup_run() -> BenchRun {
     BenchRun {
-        schema: "va.bench.run/2".to_owned(),
+        schema: "va.bench.run/3".to_owned(),
         scenario: "startup".to_owned(),
         renderer_requested: "wgpu".to_owned(),
         renderer: "wgpu".to_owned(),
@@ -63,10 +67,17 @@ fn startup_run() -> BenchRun {
         peak_private_bytes: Some(50 * MIB),
         settle_ms: None,
         idle_window_ms: None,
+        input: None,
+        input_lines: None,
+        vsync: true,
+        open_ms: None,
+        event_count: None,
+        event_ms: None,
+        event_summary_ms: None,
     }
 }
 
-/// An idle run line with the given CPU time over a 1000 ms window.
+/// An idle run line with the given CPU time over a 1000 ms window, with the 5k project open.
 fn idle_run(process_cpu_ms: Option<f64>) -> BenchRun {
     BenchRun {
         scenario: "idle".to_owned(),
@@ -74,6 +85,29 @@ fn idle_run(process_cpu_ms: Option<f64>) -> BenchRun {
         process_cpu_ms,
         settle_ms: Some(1000),
         idle_window_ms: Some(1000.0),
+        input: Some("5k".to_owned()),
+        input_lines: Some(5_000),
+        ..startup_run()
+    }
+}
+
+/// A run line of the editor scenario `scenario` on `100k.asm`, opened in `open_ms`, with the
+/// event samples `events` (none for open).
+fn editor_run(scenario: Scenario, open_ms: f64, events: Option<Vec<f64>>) -> BenchRun {
+    BenchRun {
+        scenario: scenario.as_str().to_owned(),
+        frames_painted: 3,
+        input: Some("100k.asm".to_owned()),
+        input_lines: Some(100_000),
+        vsync: false,
+        open_ms: Some(open_ms),
+        event_count: events.as_ref().map(|samples| samples.len() as u64),
+        event_summary_ms: events.as_ref().map(|_| EventSummary {
+            median: 0.0,
+            p95: 0.0,
+            max: 0.0,
+        }),
+        event_ms: events,
         ..startup_run()
     }
 }
@@ -95,6 +129,11 @@ fn config(scenario: Scenario) -> ResultConfig {
         warmup: 1,
         runs: 2,
         duration_secs: (scenario == Scenario::Idle).then_some(10),
+        input: match scenario {
+            Scenario::Startup => None,
+            Scenario::Idle => Some("5k".to_owned()),
+            Scenario::Open | Scenario::Scroll | Scenario::Type => Some("100k.asm".to_owned()),
+        },
         env: EnvSnapshot::default(),
     }
 }
@@ -159,17 +198,18 @@ fn report_file_name_uses_compact_utc_and_sha() {
     );
 }
 
-/// §19.5 replaced the header: `requested`, `renderer` and `fallbacks` columns.
+/// §19.5 replaced the header: `requested`, `renderer` and `fallbacks` columns; m4 §7.3 added the
+/// `open` and `event` columns.
 #[test]
 fn markdown_header_matches_the_spec_exactly() {
-    let spec = "| scenario | requested | renderer | fallbacks | backend | window | spawn→frame p50/p95 ms | startup p50/p95 ms | idle CPU p50/p95 % | frames p50/max | peak RSS p50 MiB | binary MiB |";
+    let spec = "| scenario | requested | renderer | fallbacks | backend | window | spawn→frame p50/p95 ms | startup p50/p95 ms | idle CPU p50/p95 % | frames p50/max | open p50/p95 ms | event p50/p95/max ms | peak RSS p50 MiB | binary MiB |";
     assert_eq!(MARKDOWN_HEADER, spec);
     let table = report(vec![startup_result()]).markdown_table();
     assert_eq!(table.lines().next(), Some(spec));
 }
 
-/// §19.5: 12 columns; the requested choice, the used renderer and the fallback count follow
-/// the scenario.
+/// §19.5 and m4 §7.3: 14 columns; the requested choice, the used renderer and the fallback count
+/// follow the scenario.
 #[test]
 fn markdown_row_formats_units_and_missing_values() {
     let table = report(vec![startup_result()]).markdown_table();
@@ -177,11 +217,11 @@ fn markdown_row_formats_units_and_missing_values() {
     assert_eq!(lines.len(), 3);
     assert_eq!(
         lines[1],
-        "|---|---|---|---|---|---|---|---|---|---|---|---|"
+        "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"
     );
     assert_eq!(
         lines[2],
-        "| startup | wgpu | wgpu | 0 | dx12 | win32 | 205.0/210.0 | 150.0/150.0 | n/a | 1/1 | 100.0 | 10.0 |"
+        "| startup | wgpu | wgpu | 0 | dx12 | win32 | 205.0/210.0 | 150.0/150.0 | n/a | 1/1 | n/a | n/a | 100.0 | 10.0 |"
     );
 }
 
@@ -189,7 +229,7 @@ fn markdown_row_formats_units_and_missing_values() {
 fn synthetic_report_has_schema_and_null_idle_cpu_for_startup() {
     let value: Value =
         serde_json::from_str(&report(vec![startup_result()]).to_json().unwrap()).unwrap();
-    assert_eq!(value["schema"], "va.bench.report/2");
+    assert_eq!(value["schema"], "va.bench.report/3");
     assert_eq!(value["created_utc"], "2023-11-14T22:13:20Z");
     assert_eq!(value["profile"], "release");
     assert_eq!(value["git"]["sha"], "1a2b3c4d");
@@ -201,13 +241,16 @@ fn synthetic_report_has_schema_and_null_idle_cpu_for_startup() {
     assert_eq!(result["fallbacks"], 0);
     assert_eq!(result["binary"], "shipped");
     assert!(result["duration_secs"].is_null());
+    assert!(result["input"].is_null());
     assert!(result["summary"]["idle_cpu_percent"].is_null());
+    assert!(result["summary"]["open_ms"].is_null());
+    assert!(result["summary"]["event_ms"].is_null());
     assert_eq!(
         result["summary"]["spawn_to_first_frame_ms"]["median"],
         205.0
     );
     assert_eq!(result["samples"].as_array().unwrap().len(), 2);
-    assert_eq!(result["samples"][0]["run"]["schema"], "va.bench.run/2");
+    assert_eq!(result["samples"][0]["run"]["schema"], "va.bench.run/3");
     for name in [
         "WGPU_BACKEND",
         "WGPU_ADAPTER_NAME",
@@ -241,6 +284,7 @@ fn report_keys_follow_the_schema_order() {
             "warmup",
             "runs",
             "duration_secs",
+            "input",
             "env",
             "backend",
             "adapter",
@@ -260,6 +304,8 @@ fn report_keys_follow_the_schema_order() {
             "peak_private_bytes",
             "frames_painted",
             "idle_cpu_percent",
+            "open_ms",
+            "event_ms",
         ],
     );
 }
@@ -324,22 +370,38 @@ fn differing_descriptions_become_mixed() {
     assert_eq!(all_null.adapter, None);
 }
 
-/// §19.5 replaced the §4.6 example with the v2 fallback example.
+/// m4 §7.2 replaced the §19.5 example with the v3 type example.
 #[test]
 fn spec_run_line_round_trips_byte_for_byte() {
     let run: BenchRun = serde_json::from_str(SPEC_RUN_LINE).unwrap();
     assert_eq!(run.schema, RUN_SCHEMA);
-    assert_eq!(run.scenario, "startup");
+    assert_eq!(run.scenario, "type");
     assert_eq!(run.renderer_requested, "auto");
-    assert_eq!(run.renderer, "wgpu");
-    assert_eq!(run.fallback_from.as_deref(), Some("glow"));
+    assert_eq!(run.renderer, "glow");
+    assert_eq!(run.fallback_from, None);
+    assert_eq!(run.peak_private_bytes, Some(98_000_000));
+    assert_eq!(run.input.as_deref(), Some("100k.asm"));
+    assert_eq!(run.input_lines, Some(100_000));
+    assert!(!run.vsync);
+    assert_eq!(run.open_ms, Some(61.2));
+    assert_eq!(run.event_count, Some(500));
+    assert_eq!(run.event_ms, Some(vec![4.1, 3.9]));
     assert_eq!(
-        run.fallback_reason.as_deref(),
-        Some("injected renderer failure (VA_TEST_FAIL_RENDERER)")
+        run.event_summary_ms,
+        Some(EventSummary {
+            median: 4.0,
+            p95: 6.3,
+            max: 11.8,
+        })
     );
-    assert_eq!(run.injected_failure.as_deref(), Some("glow"));
-    assert_eq!(run.peak_private_bytes, Some(120_586_240));
     assert_eq!(serde_json::to_string(&run).unwrap(), SPEC_RUN_LINE);
+}
+
+/// m4 §7.3 rejected keeping `/2` with extra keys: an M0 line, which lacks `vsync`, is not a
+/// `va.bench.run/3` line.
+#[test]
+fn a_v2_run_line_does_not_parse_as_v3() {
+    assert!(serde_json::from_str::<BenchRun>(V2_RUN_LINE).is_err());
 }
 
 /// §19.5 added `VA_RENDERER`, `VA_TEST_FAIL_RENDERER` and `VA_WAYLAND` to the five variables.
@@ -407,7 +469,7 @@ fn write_report_never_overwrites_and_adds_a_suffix() {
     assert_eq!(second, dir.join("20231114T221320Z-1a2b3c4d-2.json"));
     assert_eq!(third, dir.join("20231114T221320Z-1a2b3c4d-3.json"));
     let written: Value = serde_json::from_str(&std::fs::read_to_string(&first).unwrap()).unwrap();
-    assert_eq!(written["schema"], "va.bench.report/2");
+    assert_eq!(written["schema"], "va.bench.report/3");
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
@@ -417,8 +479,9 @@ fn write_report_never_overwrites_and_adds_a_suffix() {
 // missing metrics, unicode paths with spaces, write failures and malformed run lines.
 // ---------------------------------------------------------------------------------------------
 
-/// The 22 keys of a `va.bench.run/2` line, in their normative order (§19.5).
-const RUN_KEYS: [&str; 22] = [
+/// The 29 keys of a `va.bench.run/3` line, in their normative order: the 22 of
+/// `va.bench.run/2` (§19.5), then the 7 of m4-editor-shell.md §7.2.
+const RUN_KEYS: [&str; 29] = [
     "schema",
     "scenario",
     "renderer_requested",
@@ -441,6 +504,13 @@ const RUN_KEYS: [&str; 22] = [
     "peak_private_bytes",
     "settle_ms",
     "idle_window_ms",
+    "input",
+    "input_lines",
+    "vsync",
+    "open_ms",
+    "event_count",
+    "event_ms",
+    "event_summary_ms",
 ];
 
 /// Serde visitor returning the keys of a JSON object in document order.
@@ -475,9 +545,10 @@ fn keys_of<T: serde::Serialize>(value: &T) -> Vec<String> {
     keys_in_order(&serde_json::to_string(value).unwrap())
 }
 
-/// The keys of a `va.bench.report/2` result object, in order: §6.2 with `renderer` replaced by
-/// `renderer_requested` + `renderer`, then `fallbacks` and `binary` (§19.5).
-const RESULT_KEYS: [&str; 16] = [
+/// The keys of a `va.bench.report/3` result object, in order: §6.2 with `renderer` replaced by
+/// `renderer_requested` + `renderer`, then `fallbacks` and `binary` (§19.5), and `input` after
+/// `duration_secs` (m4 §7.3).
+const RESULT_KEYS: [&str; 17] = [
     "scenario",
     "renderer_requested",
     "renderer",
@@ -487,6 +558,7 @@ const RESULT_KEYS: [&str; 16] = [
     "warmup",
     "runs",
     "duration_secs",
+    "input",
     "env",
     "backend",
     "adapter",
@@ -496,13 +568,34 @@ const RESULT_KEYS: [&str; 16] = [
     "samples",
 ];
 
+/// The keys of a `va.bench.report/3` summary object, in order: §6.2, then `open_ms` and
+/// `event_ms` (m4 §7.3).
+const SUMMARY_KEYS: [&str; 9] = [
+    "spawn_to_first_frame_ms",
+    "startup_ms",
+    "process_cpu_ms",
+    "peak_rss_bytes",
+    "peak_private_bytes",
+    "frames_painted",
+    "idle_cpu_percent",
+    "open_ms",
+    "event_ms",
+];
+
 #[test]
 fn every_report_object_has_exactly_the_schema_keys_in_order() {
     let idle = BenchResult::new(
         config(Scenario::Idle),
         vec![sample(200.0, idle_run(Some(10.0)))],
     );
-    let report = report(vec![startup_result(), idle]);
+    let typed = BenchResult::new(
+        config(Scenario::Type),
+        vec![sample(
+            300.0,
+            editor_run(Scenario::Type, 61.2, Some(vec![4.0, 5.0])),
+        )],
+    );
+    let report = report(vec![startup_result(), idle, typed]);
     assert_eq!(
         keys_in_order(&report.to_json().unwrap()),
         ["schema", "created_utc", "git", "host", "profile", "results"]
@@ -512,18 +605,7 @@ fn every_report_object_has_exactly_the_schema_keys_in_order() {
     for result in &report.results {
         assert_eq!(keys_of(result), RESULT_KEYS);
         assert_eq!(keys_of(&result.env), ENV_VARS);
-        assert_eq!(
-            keys_of(&result.summary),
-            [
-                "spawn_to_first_frame_ms",
-                "startup_ms",
-                "process_cpu_ms",
-                "peak_rss_bytes",
-                "peak_private_bytes",
-                "frames_painted",
-                "idle_cpu_percent",
-            ]
-        );
+        assert_eq!(keys_of(&result.summary), SUMMARY_KEYS);
         let startup: Summary = result.summary.startup_ms.unwrap();
         assert_eq!(keys_of(&startup), ["median", "p95", "min", "max"]);
         for sample in &result.samples {
@@ -531,6 +613,17 @@ fn every_report_object_has_exactly_the_schema_keys_in_order() {
             assert_eq!(keys_of(&sample.run), RUN_KEYS);
         }
     }
+    let typed = &report.results[2].summary;
+    assert_eq!(
+        keys_of(&typed.open_ms.unwrap()),
+        ["median", "p95", "min", "max"]
+    );
+    assert_eq!(
+        keys_of(&typed.event_ms.unwrap()),
+        ["median", "p95", "max", "count"]
+    );
+    let summary = report.results[2].samples[0].run.event_summary_ms.unwrap();
+    assert_eq!(keys_of(&summary), ["median", "p95", "max"]);
 }
 
 /// §17.8 changed the spawn→frame cell of idle rows: it is `n/a` now.
@@ -545,7 +638,7 @@ fn idle_markdown_row_uses_two_decimals_for_percentages() {
     );
     assert_eq!(
         idle.markdown_row(),
-        "| idle | wgpu | wgpu | 0 | dx12 | win32 | n/a | 150.0/150.0 | 1.50/2.00 | 0/0 | 100.0 | 10.0 |"
+        "| idle | wgpu | wgpu | 0 | dx12 | win32 | n/a | 150.0/150.0 | 1.50/2.00 | 0/0 | n/a | n/a | 100.0 | 10.0 |"
     );
 }
 
@@ -558,7 +651,7 @@ fn markdown_row_shows_n_a_for_every_missing_metric() {
     let result = BenchResult::new(config(Scenario::Idle), vec![sample(200.0, linux_like)]);
     assert_eq!(
         result.markdown_row(),
-        "| idle | wgpu | wgpu | 0 | dx12 | win32 | n/a | 150.0/150.0 | n/a | 0/0 | n/a | 10.0 |"
+        "| idle | wgpu | wgpu | 0 | dx12 | win32 | n/a | 150.0/150.0 | n/a | 0/0 | n/a | n/a | n/a | 10.0 |"
     );
 }
 
@@ -660,6 +753,17 @@ fn run_lines_with_wrong_types_are_rejected() {
         ("fallback_from", "1"),
         ("fallback_reason", "true"),
         ("injected_failure", "[\"glow\"]"),
+        ("vsync", "null"),
+        ("vsync", "\"false\""),
+        ("input", "1"),
+        ("input_lines", "-1"),
+        ("input_lines", "1.5"),
+        ("open_ms", "\"61\""),
+        ("event_count", "-500"),
+        ("event_ms", "4.1"),
+        ("event_ms", "[\"4.1\"]"),
+        ("event_summary_ms", "4.0"),
+        ("event_summary_ms", "{\"median\":4.0,\"p95\":6.3}"),
     ] {
         let mut value: Value = serde_json::from_str(SPEC_RUN_LINE).unwrap();
         value[key] = serde_json::from_str(bad).unwrap();
@@ -762,9 +866,9 @@ fn auto_result(runs: Vec<BenchRun>) -> BenchResult {
 }
 
 #[test]
-fn report_v2_schema_ids_and_shipped_binary() {
-    assert_eq!(REPORT_SCHEMA, "va.bench.report/2");
-    assert_eq!(RUN_SCHEMA, "va.bench.run/2");
+fn report_v3_schema_ids_and_shipped_binary() {
+    assert_eq!(REPORT_SCHEMA, "va.bench.report/3");
+    assert_eq!(RUN_SCHEMA, "va.bench.run/3");
     assert_eq!(SHIPPED_BINARY, "shipped");
     assert_eq!(startup_result().binary, "shipped");
 }
@@ -778,7 +882,7 @@ fn auto_result_takes_the_used_renderer_from_the_samples() {
     assert_eq!(result.backend, "gl");
     assert_eq!(
         result.markdown_row(),
-        "| startup | auto | glow | 0 | gl | win32 | 200.0/200.0 | 150.0/150.0 | n/a | 1/1 | 100.0 | 10.0 |"
+        "| startup | auto | glow | 0 | gl | win32 | 200.0/200.0 | 150.0/150.0 | n/a | 1/1 | n/a | n/a | 100.0 | 10.0 |"
     );
 }
 
@@ -831,7 +935,7 @@ fn a_result_without_samples_has_an_unknown_renderer_and_no_fallback() {
 #[test]
 fn markdown_separator_has_one_cell_per_header_column() {
     let columns = MARKDOWN_HEADER.matches(" | ").count() + 1;
-    assert_eq!(columns, 12);
+    assert_eq!(columns, 14);
     assert_eq!(MARKDOWN_SEPARATOR.matches("---").count(), columns);
     for line in report(vec![startup_result()]).markdown_table().lines() {
         assert_eq!(line.matches('|').count(), columns + 1, "{line}");
@@ -859,5 +963,189 @@ fn every_renderer_choice_serializes_as_its_cli_value() {
                 .markdown_row()
                 .starts_with(&format!("| startup | {text} | unknown | 0 |"))
         );
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Editor scenarios (m4-editor-shell.md §7.3): input, open time, pooled event summary.
+// ---------------------------------------------------------------------------------------------
+
+/// A result of `scenario` holding one sample per run line of `runs`.
+fn editor_result(scenario: Scenario, runs: Vec<BenchRun>) -> BenchResult {
+    BenchResult::new(
+        config(scenario),
+        runs.into_iter().map(|run| sample(300.0, run)).collect(),
+    )
+}
+
+/// m4 §7.3: `event_ms` pools the samples of every run: median, nearest-rank p95, max, count.
+#[test]
+fn the_event_summary_pools_the_samples_of_every_run() {
+    let first: Vec<f64> = (1..=10).map(f64::from).collect();
+    let second: Vec<f64> = (11..=20).map(f64::from).collect();
+    let third = vec![100.0];
+    let result = editor_result(
+        Scenario::Type,
+        vec![
+            editor_run(Scenario::Type, 60.0, Some(second)),
+            editor_run(Scenario::Type, 70.0, Some(third)),
+            editor_run(Scenario::Type, 80.0, Some(first)),
+        ],
+    );
+    // 21 pooled values 1..=20 and 100: median 11, rank ceil(0.95 × 21) = 20 → 20, max 100.
+    assert_eq!(
+        result.summary.event_ms,
+        Some(PooledSummary {
+            median: 11.0,
+            p95: 20.0,
+            max: 100.0,
+            count: 21,
+        })
+    );
+    // Not a summary of the per-run medians, which would be 5.5, 15.5 and 100.
+    let open = result.summary.open_ms.unwrap();
+    assert_eq!(
+        (open.median, open.p95, open.min, open.max),
+        (70.0, 80.0, 60.0, 80.0)
+    );
+    let value = serde_json::to_value(&result).unwrap();
+    assert_eq!(value["summary"]["event_ms"]["count"], 21);
+    assert!(value["summary"]["event_ms"]["count"].is_u64());
+    assert_eq!(value["input"], "100k.asm");
+}
+
+#[test]
+fn a_run_without_event_samples_makes_the_event_summary_null() {
+    let result = editor_result(
+        Scenario::Scroll,
+        vec![
+            editor_run(Scenario::Scroll, 60.0, Some(vec![1.0, 2.0])),
+            editor_run(Scenario::Scroll, 60.0, None),
+        ],
+    );
+    assert_eq!(result.summary.event_ms, None);
+    let empty = editor_result(
+        Scenario::Scroll,
+        vec![editor_run(Scenario::Scroll, 60.0, Some(vec![]))],
+    );
+    assert_eq!(empty.summary.event_ms, None);
+    assert_eq!(
+        BenchResult::new(config(Scenario::Type), vec![])
+            .summary
+            .event_ms,
+        None
+    );
+}
+
+/// m4 §7.3: `event_ms` is null for startup and idle; open has no events either.
+#[test]
+fn scenarios_without_events_have_a_null_event_summary() {
+    for scenario in [Scenario::Startup, Scenario::Idle, Scenario::Open] {
+        let run = BenchRun {
+            scenario: scenario.as_str().to_owned(),
+            event_ms: Some(vec![1.0, 2.0]),
+            ..startup_run()
+        };
+        let result = editor_result(scenario, vec![run]);
+        assert_eq!(result.summary.event_ms, None, "{scenario}");
+    }
+}
+
+#[test]
+fn the_open_summary_is_null_when_a_run_lacks_it() {
+    let idle = BenchResult::new(
+        config(Scenario::Idle),
+        vec![sample(200.0, idle_run(Some(10.0)))],
+    );
+    assert_eq!(idle.summary.open_ms, None);
+    let mut no_open = editor_run(Scenario::Open, 60.0, None);
+    no_open.open_ms = None;
+    let result = editor_result(
+        Scenario::Open,
+        vec![editor_run(Scenario::Open, 60.0, None), no_open],
+    );
+    assert_eq!(result.summary.open_ms, None);
+}
+
+/// §17.8 applied to the editor scenarios: their run lines arrive after the measurement, so
+/// spawn→frame is null in their samples and summaries.
+#[test]
+fn editor_results_have_no_spawn_to_first_frame() {
+    for scenario in [Scenario::Open, Scenario::Scroll, Scenario::Type] {
+        let events = scenario.expected_events().map(|_| vec![4.0]);
+        let result = editor_result(
+            scenario,
+            vec![
+                editor_run(scenario, 60.0, events.clone()),
+                editor_run(scenario, 62.0, events),
+            ],
+        );
+        assert_eq!(result.summary.spawn_to_first_frame_ms, None, "{scenario}");
+        assert!(
+            result
+                .samples
+                .iter()
+                .all(|s| s.spawn_to_first_frame_ms.is_none()),
+            "{scenario}"
+        );
+        assert!(result.summary.startup_ms.is_some(), "{scenario}");
+    }
+}
+
+#[test]
+fn each_result_records_its_input_after_the_duration() {
+    let results: Vec<BenchResult> = [
+        Scenario::Startup,
+        Scenario::Idle,
+        Scenario::Open,
+        Scenario::Scroll,
+        Scenario::Type,
+    ]
+    .into_iter()
+    .map(|scenario| BenchResult::new(config(scenario), vec![]))
+    .collect();
+    let inputs: Vec<Option<&str>> = results.iter().map(|r| r.input.as_deref()).collect();
+    assert_eq!(
+        inputs,
+        [
+            None,
+            Some("5k"),
+            Some("100k.asm"),
+            Some("100k.asm"),
+            Some("100k.asm")
+        ]
+    );
+    let value = serde_json::to_value(&results[1]).unwrap();
+    assert_eq!(value["input"], "5k");
+    assert_eq!(value["duration_secs"], 10);
+}
+
+#[test]
+fn editor_markdown_rows_show_open_and_event_times() {
+    let open = editor_result(
+        Scenario::Open,
+        vec![
+            editor_run(Scenario::Open, 61.24, None),
+            editor_run(Scenario::Open, 70.0, None),
+        ],
+    );
+    assert_eq!(
+        open.markdown_row(),
+        "| open | wgpu | wgpu | 0 | dx12 | win32 | n/a | 150.0/150.0 | n/a | 3/3 | 65.6/70.0 | n/a | 100.0 | 10.0 |"
+    );
+    let typed = editor_result(
+        Scenario::Type,
+        vec![
+            editor_run(Scenario::Type, 61.2, Some(vec![4.04, 3.9, 11.84])),
+            editor_run(Scenario::Type, 61.2, Some(vec![6.3])),
+        ],
+    );
+    assert_eq!(
+        typed.markdown_row(),
+        "| type | wgpu | wgpu | 0 | dx12 | win32 | n/a | 150.0/150.0 | n/a | 3/3 | 61.2/61.2 | 5.2/11.8/11.8 | 100.0 | 10.0 |"
+    );
+    let table = report(vec![startup_result(), open, typed]).markdown_table();
+    for line in table.lines() {
+        assert_eq!(line.matches('|').count(), 15, "{line}");
     }
 }

@@ -1,9 +1,17 @@
 //! Bench build and spawn: the shipped release GUI binary, built once, and one measured child
-//! process per run (§6.1 steps 1 and 2, amended by §17.8 and §19.5).
+//! process per run (m0-foundations.md §6.1 steps 1 and 2, amended by §17.8 and §19.5;
+//! m4-editor-shell.md §7.1, §7.2).
 //!
-//! Every run passes `--renderer <auto|glow|wgpu>` and its run line is validated against that
-//! request ([`validate_run`]): a forced renderer must run as asked with no fallback, while under
-//! `auto` any renderer is valid and a fallback is counted by the report, not rejected.
+//! Every run passes `--renderer <auto|glow|wgpu> --bench <scenario>`, plus `--bench-input <path>`
+//! for the scenarios that open a generated input and `--duration-secs N` for idle. Its run line is
+//! validated against that request ([`validate_run`]): a forced renderer must run as asked with no
+//! fallback, while under `auto` any renderer is valid and a fallback is counted by the report, not
+//! rejected; the line must name the requested input, and the editor scenarios must report their
+//! open time, run without vsync and report every injected event.
+//!
+//! Every run gets `VA_CONFIG_DIR` and `VA_DATA_DIR` pointing to the `config` and `data` folders
+//! of one [`BenchProfile`], created once per command under `<target>/bench/`, so the user's
+//! settings never affect a report.
 //!
 //! A run never waits unboundedly: the child gets a deadline that is strictly larger than the
 //! GUI's own watchdog, and once it has exited or been killed the output readers get at most
@@ -13,12 +21,14 @@
 
 use std::{
     collections::VecDeque,
+    ffi::OsString,
+    fs,
     io::{self, BufRead, BufReader, Read as _},
     path::{Path, PathBuf},
     process::{Child, ChildStderr, ChildStdout, Command, ExitStatus, Stdio},
     sync::mpsc::{self, Receiver, RecvTimeoutError, Sender},
     thread::{self, JoinHandle},
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime},
 };
 
 use anyhow::{Context as _, Result, anyhow, bail};
@@ -27,6 +37,7 @@ use serde_json::Value;
 use super::{
     RendererChoice, Scenario,
     report::{BenchRun, RUN_SCHEMA, Sample},
+    timestamp,
 };
 use crate::exec;
 
@@ -36,8 +47,9 @@ pub const GUI_PACKAGE: &str = "visual-assembler";
 /// Folder of the measured copy under `<target_directory>/bench/` (§19.5).
 pub const SHIPPED_DIR: &str = "shipped";
 
-/// Run timeout of the startup scenario, in seconds. Strictly larger than the GUI's 60 s startup
-/// watchdog, so the GUI's own `bench timed out` (exit 4) surfaces under xtask (§17.8).
+/// Run timeout of the startup, open, scroll and type scenarios, in seconds. Strictly larger than
+/// the GUI's 60 s startup watchdog, which those scenarios use (m4-editor-shell.md §6.8), so the
+/// GUI's own `bench timed out` (exit 4) surfaces under xtask (§17.8).
 pub const STARTUP_TIMEOUT_SECS: u64 = 75;
 
 /// Added to the idle duration N to get the idle run timeout (N + 75 s), in seconds. Strictly
@@ -57,6 +69,15 @@ pub const MAX_LINE_BYTES: usize = 1024 * 1024;
 /// Failure of a run whose output pipes outlive the GUI (§17.8, exact text).
 pub const PIPES_OPEN_MESSAGE: &str =
     "output pipes still open after the GUI exited (a descendant process may hold them)";
+
+/// Environment variable that points the GUI to its configuration folder (m4-editor-shell.md §4.1).
+pub const ENV_CONFIG_DIR: &str = "VA_CONFIG_DIR";
+
+/// Environment variable that points the GUI to its data folder (m4-editor-shell.md §4.1).
+pub const ENV_DATA_DIR: &str = "VA_DATA_DIR";
+
+/// Prefix of a profile folder name under `<target>/bench/`: `profile-<utc>-<pid>`.
+pub const PROFILE_PREFIX: &str = "profile-";
 
 /// Polling period while waiting for the child to exit.
 const EXIT_POLL: Duration = Duration::from_millis(10);
@@ -179,38 +200,136 @@ pub fn build(root: &Path, cargo: &std::ffi::OsStr, target_dir: &Path) -> Result<
     Ok(BuiltBinary { path: copy, bytes })
 }
 
-/// Returns the run timeout: 75 s for startup, `duration + 75` s for idle (§17.8).
+/// The isolated profile of one bench command: `<target>/bench/profile-<utc>-<pid>/` with its
+/// `config` and `data` folders (m4-editor-shell.md §7.1).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BenchProfile {
+    /// The profile folder.
+    pub root: PathBuf,
+    /// `<root>/config`, passed as `VA_CONFIG_DIR`.
+    pub config_dir: PathBuf,
+    /// `<root>/data`, passed as `VA_DATA_DIR`.
+    pub data_dir: PathBuf,
+}
+
+impl BenchProfile {
+    /// Returns the profile folder of a command started at `t` by process `pid`:
+    /// `<target_dir>/bench/profile-<YYYYMMDDTHHMMSSZ>-<pid>`.
+    pub fn path_for(target_dir: &Path, t: SystemTime, pid: u32) -> PathBuf {
+        target_dir.join("bench").join(format!(
+            "{PROFILE_PREFIX}{}-{pid}",
+            timestamp::utc_compact(t)
+        ))
+    }
+
+    /// Describes the profile rooted at `root`, without touching the file system.
+    pub fn at(root: PathBuf) -> Self {
+        Self {
+            config_dir: root.join("config"),
+            data_dir: root.join("data"),
+            root,
+        }
+    }
+
+    /// Creates the profile of [`path_for`](Self::path_for): `<target_dir>/bench` if missing,
+    /// then the profile folder and its `config` and `data` folders with `fs::create_dir`, which
+    /// fails when a folder already exists, so a profile is never shared or reused.
+    pub fn create(target_dir: &Path, t: SystemTime, pid: u32) -> Result<Self> {
+        let profile = Self::at(Self::path_for(target_dir, t, pid));
+        let bench_dir = target_dir.join("bench");
+        fs::create_dir_all(&bench_dir)
+            .with_context(|| format!("cannot create {}", bench_dir.display()))?;
+        for dir in [&profile.root, &profile.config_dir, &profile.data_dir] {
+            fs::create_dir(dir)
+                .with_context(|| format!("cannot create the bench profile {}", dir.display()))?;
+        }
+        Ok(profile)
+    }
+
+    /// Returns the variables every GUI run gets: `VA_CONFIG_DIR` and `VA_DATA_DIR`.
+    pub fn env(&self) -> [(&'static str, &Path); 2] {
+        [
+            (ENV_CONFIG_DIR, self.config_dir.as_path()),
+            (ENV_DATA_DIR, self.data_dir.as_path()),
+        ]
+    }
+
+    /// Sets [`env`](Self::env) on `cmd`; the rest of the environment is inherited unchanged.
+    pub fn apply(&self, cmd: &mut Command) {
+        for (name, dir) in self.env() {
+            cmd.env(name, dir);
+        }
+    }
+}
+
+/// One run as asked for: its arguments come from it and its run line is validated against it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RunRequest {
+    /// The `--bench` scenario.
+    pub scenario: Scenario,
+    /// The `--renderer` value.
+    pub renderer: RendererChoice,
+    /// The `--bench-input` path, for the scenarios that open a generated input.
+    pub input: Option<PathBuf>,
+    /// The `--duration-secs` value, passed to idle runs only.
+    pub duration_secs: Option<u64>,
+}
+
+impl RunRequest {
+    /// Returns the name the run line must report as `input`: the last path component of
+    /// `--bench-input` (lossy UTF-8), or `None` without an input.
+    pub fn input_name(&self) -> Option<String> {
+        let input = self.input.as_deref()?;
+        let name = input.file_name().unwrap_or(input.as_os_str());
+        Some(name.to_string_lossy().into_owned())
+    }
+}
+
+/// Returns the run timeout: 75 s for startup, open, scroll and type, `duration + 75` s for idle
+/// (§17.8; m4-editor-shell.md §6.8).
 pub fn run_timeout(scenario: Scenario, duration_secs: Option<u64>) -> Duration {
     match scenario {
-        Scenario::Startup => Duration::from_secs(STARTUP_TIMEOUT_SECS),
         Scenario::Idle => Duration::from_secs(
             duration_secs
                 .unwrap_or(super::DEFAULT_DURATION_SECS)
                 .saturating_add(IDLE_TIMEOUT_EXTRA_SECS),
         ),
+        Scenario::Startup | Scenario::Open | Scenario::Scroll | Scenario::Type => {
+            Duration::from_secs(STARTUP_TIMEOUT_SECS)
+        }
     }
 }
 
-/// Returns the GUI arguments of one run:
-/// `--renderer <auto|glow|wgpu> --bench <scenario> [--duration-secs N]` (§19.5).
-pub fn run_args(
-    scenario: Scenario,
-    renderer: RendererChoice,
-    duration_secs: Option<u64>,
-) -> Vec<String> {
-    let mut args = vec![
-        "--renderer".to_owned(),
-        renderer.as_str().to_owned(),
-        "--bench".to_owned(),
-        scenario.as_str().to_owned(),
+/// Returns the GUI arguments of one run, in this order (m4-editor-shell.md §7.1):
+/// `--renderer <auto|glow|wgpu> --bench <scenario> [--bench-input <path>] [--duration-secs N]`.
+/// The duration goes to idle runs only.
+pub fn run_args(request: &RunRequest) -> Vec<OsString> {
+    let mut args: Vec<OsString> = vec![
+        "--renderer".into(),
+        request.renderer.as_str().into(),
+        "--bench".into(),
+        request.scenario.as_str().into(),
     ];
-    if scenario == Scenario::Idle
-        && let Some(seconds) = duration_secs
+    if let Some(input) = &request.input {
+        args.push("--bench-input".into());
+        args.push(input.into());
+    }
+    if request.scenario == Scenario::Idle
+        && let Some(seconds) = request.duration_secs
     {
-        args.push("--duration-secs".to_owned());
-        args.push(seconds.to_string());
+        args.push("--duration-secs".into());
+        args.push(seconds.to_string().into());
     }
     args
+}
+
+/// Returns the command of one measured run: `binary` with [`run_args`] and the profile
+/// variables of [`BenchProfile::apply`].
+pub fn gui_command(binary: &Path, request: &RunRequest, profile: &BenchProfile) -> Command {
+    let mut cmd = Command::new(binary);
+    cmd.args(run_args(request));
+    profile.apply(&mut cmd);
+    cmd
 }
 
 /// Parses `line` as JSON and returns it when its `schema` is [`RUN_SCHEMA`].
@@ -219,18 +338,26 @@ pub fn parse_run_line(line: &str) -> Option<Value> {
     (value.get("schema").and_then(Value::as_str) == Some(RUN_SCHEMA)).then_some(value)
 }
 
-/// Checks that a run line answers the run that was asked for (§17.11, §19.5) and returns a
-/// description of the first mismatch otherwise:
+/// Spells an optional run-line value for a validation message: the value, or `null`.
+fn or_null(value: Option<impl ToString>) -> String {
+    value.map_or_else(|| "null".to_owned(), |value| value.to_string())
+}
+
+/// Checks that a run line answers the run that was asked for (§17.11, §19.5;
+/// m4-editor-shell.md §7.2) and returns a description of the first mismatch otherwise:
 ///
 /// - `scenario` must equal the requested scenario;
 /// - `renderer_requested` must equal the `--renderer` value passed;
 /// - for a forced `glow` or `wgpu`, `fallback_from` must be `null` and `renderer` must equal it;
-/// - for `auto`, any `renderer` is valid, and a fallback is accepted (the report counts it).
-pub fn validate_run(
-    run: &BenchRun,
-    scenario: Scenario,
-    renderer: RendererChoice,
-) -> Result<(), String> {
+/// - for `auto`, any `renderer` is valid, and a fallback is accepted (the report counts it);
+/// - `input` must equal the requested input's name ([`RunRequest::input_name`]), and be `null`
+///   without an input;
+/// - `open`, `scroll` and `type` need a non-null `open_ms` and `vsync == false`;
+/// - `scroll` and `type` need `event_count` equal to 300 and 500, and as many `event_ms` samples.
+pub fn validate_run(run: &BenchRun, request: &RunRequest) -> Result<(), String> {
+    let RunRequest {
+        scenario, renderer, ..
+    } = *request;
     if run.scenario != scenario.as_str() {
         return Err(format!(
             "reported scenario `{}`, expected `{}`",
@@ -258,6 +385,41 @@ pub fn validate_run(
                 "reported renderer `{}`, expected `{}` (forced by --renderer)",
                 run.renderer,
                 renderer.as_str()
+            ));
+        }
+    }
+    let expected_input = request.input_name();
+    if run.input != expected_input {
+        return Err(format!(
+            "reported input {}, expected {}",
+            or_null(run.input.as_deref().map(|name| format!("`{name}`"))),
+            or_null(expected_input.map(|name| format!("`{name}`")))
+        ));
+    }
+    if scenario.measures_open() {
+        if run.open_ms.is_none() {
+            return Err(format!(
+                "reported open_ms null, expected a number for the `{scenario}` scenario"
+            ));
+        }
+        if run.vsync {
+            return Err(format!(
+                "reported vsync true, expected false for the `{scenario}` scenario"
+            ));
+        }
+    }
+    if let Some(expected) = scenario.expected_events() {
+        if run.event_count != Some(expected) {
+            return Err(format!(
+                "reported event_count {}, expected {expected} for the `{scenario}` scenario",
+                or_null(run.event_count)
+            ));
+        }
+        let samples = run.event_ms.as_ref().map(Vec::len);
+        if samples.and_then(|count| u64::try_from(count).ok()) != Some(expected) {
+            return Err(format!(
+                "reported {} event_ms samples, expected {expected}",
+                or_null(samples)
             ));
         }
     }
@@ -465,39 +627,26 @@ impl Collected {
     }
 }
 
-/// Runs the measured binary once with `--renderer <renderer>` and returns its sample.
+/// Runs the measured binary once as `request` asks ([`gui_command`]) and returns its sample.
 ///
 /// Fails when the child cannot start, times out (it is then killed), exits non-zero, keeps its
-/// output pipes open after exiting, prints no `va.bench.run/2` line, or prints one that does not
+/// output pipes open after exiting, prints no `va.bench.run/3` line, or prints one that does not
 /// answer the request ([`validate_run`]). The error carries the last 64 KiB of the child's stderr.
-pub fn run_once(
-    binary: &Path,
-    scenario: Scenario,
-    renderer: RendererChoice,
-    duration_secs: Option<u64>,
-) -> Result<Sample> {
-    let mut cmd = Command::new(binary);
-    cmd.args(run_args(scenario, renderer, duration_secs));
+pub fn run_once(binary: &Path, request: &RunRequest, profile: &BenchProfile) -> Result<Sample> {
     run_command(
-        cmd,
-        scenario,
-        renderer,
-        run_timeout(scenario, duration_secs),
+        gui_command(binary, request, profile),
+        request,
+        run_timeout(request.scenario, request.duration_secs),
     )
 }
 
-/// Runs `cmd` as one measured run of `scenario` requested with `renderer`, with the deadline
-/// `timeout` (the engine of [`run_once`], which passes [`run_args`] and [`run_timeout`]).
+/// Runs `cmd` as the measured run `request`, with the deadline `timeout` (the engine of
+/// [`run_once`], which passes [`gui_command`] and [`run_timeout`]).
 ///
 /// stdin is null and stdout/stderr are piped. `spawn_to_first_frame_ms` is the receipt time of
 /// the first run line minus the instant just before the spawn, for startup runs; it is `None`
-/// for idle runs (§17.8).
-pub fn run_command(
-    mut cmd: Command,
-    scenario: Scenario,
-    renderer: RendererChoice,
-    timeout: Duration,
-) -> Result<Sample> {
+/// for the other scenarios, whose line arrives after the measurement (§17.8).
+pub fn run_command(mut cmd: Command, request: &RunRequest, timeout: Duration) -> Result<Sample> {
     cmd.stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -583,11 +732,11 @@ pub fn run_command(
     };
     let run: BenchRun = serde_json::from_value(value)
         .map_err(|error| failure(format!("printed an invalid {RUN_SCHEMA} line: {error}")))?;
-    validate_run(&run, scenario, renderer).map_err(failure)?;
-    let spawn_to_first_frame_ms = match scenario {
-        Scenario::Startup => Some(received.duration_since(t0).as_secs_f64() * 1000.0),
-        Scenario::Idle => None,
-    };
+    validate_run(&run, request).map_err(failure)?;
+    let spawn_to_first_frame_ms = request
+        .scenario
+        .reports_at_first_frame()
+        .then(|| received.duration_since(t0).as_secs_f64() * 1000.0);
     Ok(Sample {
         spawn_to_first_frame_ms,
         run,

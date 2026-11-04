@@ -1,4 +1,5 @@
-//! Pure statistics over bench samples: median, nearest-rank p95, min and max (§6.2).
+//! Pure statistics over bench samples: median, nearest-rank p95, min and max (§6.2), and the
+//! pooled event summary of m4-editor-shell.md §7.3 (median, nearest-rank p95, max and count).
 
 use serde::Serialize;
 
@@ -57,4 +58,30 @@ pub fn summarize(values: &[f64]) -> Option<Summary> {
 pub fn summarize_optional(values: impl IntoIterator<Item = Option<f64>>) -> Option<Summary> {
     let values: Option<Vec<f64>> = values.into_iter().collect();
     summarize(&values?)
+}
+
+/// Summary of the event samples of every measured run, pooled (m4-editor-shell.md §7.3).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct PooledSummary {
+    /// Middle value, or the mean of the two middle values when the count is even.
+    pub median: f64,
+    /// 95th percentile, nearest-rank method.
+    pub p95: f64,
+    /// Largest value.
+    pub max: f64,
+    /// Number of pooled samples.
+    pub count: usize,
+}
+
+/// Summarizes pooled samples with [`summarize`]'s rules and counts them.
+///
+/// Returns `None` for an empty input or when any value is NaN or infinite.
+pub fn summarize_pooled(values: &[f64]) -> Option<PooledSummary> {
+    let summary = summarize(values)?;
+    Some(PooledSummary {
+        median: summary.median,
+        p95: summary.p95,
+        max: summary.max,
+        count: values.len(),
+    })
 }

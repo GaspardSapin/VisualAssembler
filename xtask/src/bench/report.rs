@@ -1,9 +1,11 @@
-//! Bench report: the `va.bench.report/2` document, its markdown table and its file name (§6.2,
-//! amended by §17.8 and §19.5).
+//! Bench report: the `va.bench.report/3` document, its markdown table and its file name
+//! (m0-foundations.md §6.2, amended by §17.8 and §19.5; m4-editor-shell.md §7.3).
 //!
-//! Every struct serializes its keys in the order of the specification. Version 2 measures the
+//! Every struct serializes its keys in the order of the specification. Version 2 measured the
 //! shipped dual-renderer binary: each result records the requested renderer choice, the renderer
-//! the samples actually used and how many of them fell back (§19.5).
+//! the samples actually used and how many of them fell back (§19.5). Version 3 adds the editor
+//! scenarios (`open`, `scroll`, `type`): each result names its generated input, and the summary
+//! adds `open_ms` over the runs and `event_ms` over the pooled event samples of every run.
 
 use std::{
     fs,
@@ -17,15 +19,15 @@ use serde::{Deserialize, Serialize};
 
 use super::{
     RendererChoice, Scenario,
-    stats::{Summary, summarize, summarize_optional},
+    stats::{PooledSummary, Summary, summarize, summarize_optional, summarize_pooled},
     timestamp,
 };
 
-/// Schema id of the report document (§19.5).
-pub const REPORT_SCHEMA: &str = "va.bench.report/2";
+/// Schema id of the report document (m4-editor-shell.md §7.3).
+pub const REPORT_SCHEMA: &str = "va.bench.report/3";
 
-/// Schema id of the JSON line printed by `visual-assembler --bench` (§19.5, replacing §4.6).
-pub const RUN_SCHEMA: &str = "va.bench.run/2";
+/// Schema id of the JSON line printed by `visual-assembler --bench` (m4-editor-shell.md §7.2).
+pub const RUN_SCHEMA: &str = "va.bench.run/3";
 
 /// Value of each result's `binary`: the measured binary is the shipped one (§19.5).
 pub const SHIPPED_BINARY: &str = "shipped";
@@ -52,22 +54,34 @@ pub const ENV_VARS: [&str; 8] = [
     "VA_WAYLAND",
 ];
 
-/// Header line of the markdown table (§19.5, exact text).
-pub const MARKDOWN_HEADER: &str = "| scenario | requested | renderer | fallbacks | backend | window | spawn→frame p50/p95 ms | startup p50/p95 ms | idle CPU p50/p95 % | frames p50/max | peak RSS p50 MiB | binary MiB |";
+/// Header line of the markdown table (m4-editor-shell.md §7.3, exact text).
+pub const MARKDOWN_HEADER: &str = "| scenario | requested | renderer | fallbacks | backend | window | spawn→frame p50/p95 ms | startup p50/p95 ms | idle CPU p50/p95 % | frames p50/max | open p50/p95 ms | event p50/p95/max ms | peak RSS p50 MiB | binary MiB |";
 
 /// Separator line that follows [`MARKDOWN_HEADER`] (one cell per column).
-pub const MARKDOWN_SEPARATOR: &str = "|---|---|---|---|---|---|---|---|---|---|---|---|";
+pub const MARKDOWN_SEPARATOR: &str = "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|";
 
 /// Bytes per MiB.
 const MIB: f64 = 1_048_576.0;
 
-/// The JSON line printed by one GUI bench run, schema `va.bench.run/2` (§19.5: the 18 keys of
-/// §4.6 plus the renderer selection keys, in this order).
+/// The per-run summary of the event samples in a run line (`event_summary_ms`, §7.2).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct EventSummary {
+    /// Median of the run's samples.
+    pub median: f64,
+    /// Nearest-rank 95th percentile of the run's samples.
+    pub p95: f64,
+    /// Largest sample of the run.
+    pub max: f64,
+}
+
+/// The JSON line printed by one GUI bench run, schema `va.bench.run/3` (m4-editor-shell.md §7.2:
+/// the 22 keys of `va.bench.run/2` in their order, m0-foundations.md §19.5, then the 7 keys of
+/// the editor scenarios).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BenchRun {
     /// Always [`RUN_SCHEMA`].
     pub schema: String,
-    /// `startup` or `idle`.
+    /// `startup`, `idle`, `open`, `scroll` or `type`.
     pub scenario: String,
     /// The resolved renderer choice: `auto`, `glow` or `wgpu`.
     pub renderer_requested: String,
@@ -109,6 +123,21 @@ pub struct BenchRun {
     pub settle_ms: Option<u64>,
     /// Measured idle window length, in ms (idle only).
     pub idle_window_ms: Option<f64>,
+    /// Last path component of `--bench-input`, or `null` without an input.
+    pub input: Option<String>,
+    /// Lines opened from the input, or `null` without an input.
+    pub input_lines: Option<u64>,
+    /// Whether the window presented with vsync (always `false` for `open`, `scroll`, `type`).
+    pub vsync: bool,
+    /// `Shell::open_path` to the start of the frame after the first frame that painted the
+    /// document, in ms (`open`, `scroll`, `type`), or `null`.
+    pub open_ms: Option<f64>,
+    /// Number of injected events (300 for `scroll`, 500 for `type`), or `null`.
+    pub event_count: Option<u64>,
+    /// Injection to presented frame, in ms, one per event in injection order, or `null`.
+    pub event_ms: Option<Vec<f64>>,
+    /// The run's own summary of `event_ms`, or `null`.
+    pub event_summary_ms: Option<EventSummary>,
 }
 
 /// One measured run as recorded in the report.
@@ -218,8 +247,11 @@ pub struct ResultConfig {
     pub warmup: u32,
     /// Measured runs.
     pub runs: u32,
-    /// Idle window length passed to the GUI; `None` for startup.
+    /// Idle window length passed to the GUI; `None` for the other scenarios.
     pub duration_secs: Option<u64>,
+    /// Name of the generated input passed with `--bench-input` (its last path component), or
+    /// `None` for startup.
+    pub input: Option<String>,
     /// Environment seen by the runs.
     pub env: EnvSnapshot,
 }
@@ -227,7 +259,8 @@ pub struct ResultConfig {
 /// Per-metric summaries of one result (`null` when a sample lacks the metric).
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ResultSummary {
-    /// Outer startup time, the gating number; always `null` for idle results (§17.8).
+    /// Outer startup time, the gating number; `null` for every scenario but startup, whose run
+    /// line is the only one printed at the first frame (§17.8).
     pub spawn_to_first_frame_ms: Option<Summary>,
     /// Inner startup time reported by the GUI.
     pub startup_ms: Option<Summary>,
@@ -241,17 +274,22 @@ pub struct ResultSummary {
     pub frames_painted: Option<Summary>,
     /// Idle results only: per sample `process_cpu_ms / idle_window_ms × 100`.
     pub idle_cpu_percent: Option<Summary>,
+    /// Open time over the runs (`open`, `scroll`, `type`).
+    pub open_ms: Option<Summary>,
+    /// Event latency over the pooled samples of every run (`scroll`, `type`); `null` for the
+    /// scenarios without events (startup, idle, open).
+    pub event_ms: Option<PooledSummary>,
 }
 
 impl ResultSummary {
-    /// Summarizes `samples` of `scenario`. `spawn_to_first_frame_ms` is `null` for idle results
-    /// whatever the samples hold (§17.8).
+    /// Summarizes `samples` of `scenario`. `spawn_to_first_frame_ms` is `null` for every
+    /// scenario but startup whatever the samples hold (§17.8), and `event_ms` is `null` for the
+    /// scenarios without events.
     pub fn from_samples(scenario: Scenario, samples: &[Sample]) -> Self {
-        let spawn_to_first_frame_ms = match scenario {
-            Scenario::Startup => {
-                summarize_optional(samples.iter().map(|s| s.spawn_to_first_frame_ms))
-            }
-            Scenario::Idle => None,
+        let spawn_to_first_frame_ms = if scenario.reports_at_first_frame() {
+            summarize_optional(samples.iter().map(|s| s.spawn_to_first_frame_ms))
+        } else {
+            None
         };
         let startup: Vec<f64> = samples.iter().map(|s| s.run.startup_ms).collect();
         let frames: Vec<f64> = samples
@@ -259,12 +297,17 @@ impl ResultSummary {
             .map(|s| s.run.frames_painted as f64)
             .collect();
         let idle_cpu_percent = match scenario {
-            Scenario::Startup => None,
             Scenario::Idle => summarize_optional(samples.iter().map(|s| {
                 let cpu = s.run.process_cpu_ms?;
                 let window = s.run.idle_window_ms?;
                 Some(cpu / window * 100.0)
             })),
+            Scenario::Startup | Scenario::Open | Scenario::Scroll | Scenario::Type => None,
+        };
+        let event_ms = if scenario.expected_events().is_some() {
+            pooled_events(samples)
+        } else {
+            None
         };
         Self {
             spawn_to_first_frame_ms,
@@ -282,8 +325,20 @@ impl ResultSummary {
             ),
             frames_painted: summarize(&frames),
             idle_cpu_percent,
+            open_ms: summarize_optional(samples.iter().map(|s| s.run.open_ms)),
+            event_ms,
         }
     }
+}
+
+/// Pools the `event_ms` samples of every run and summarizes them: `None` when a run has no
+/// `event_ms` or when the pool is empty.
+fn pooled_events(samples: &[Sample]) -> Option<PooledSummary> {
+    let mut pooled = Vec::new();
+    for sample in samples {
+        pooled.extend_from_slice(sample.run.event_ms.as_deref()?);
+    }
+    summarize_pooled(&pooled)
 }
 
 /// One (renderer choice, scenario) result of the report.
@@ -305,8 +360,10 @@ pub struct BenchResult {
     pub warmup: u32,
     /// Measured runs.
     pub runs: u32,
-    /// Idle window length; null for startup.
+    /// Idle window length; null for the other scenarios.
     pub duration_secs: Option<u64>,
+    /// Name of the generated input; null for startup (m4-editor-shell.md §7.3).
+    pub input: Option<String>,
     /// Environment seen by the runs.
     pub env: EnvSnapshot,
     /// Backend of the samples, or `mixed`.
@@ -326,9 +383,10 @@ pub struct BenchResult {
 impl BenchResult {
     /// Builds a result: the descriptive fields and the summary are derived from `samples`.
     ///
-    /// For idle results, every sample's `spawn_to_first_frame_ms` is set to `null` (§17.8).
+    /// For every scenario but startup, each sample's `spawn_to_first_frame_ms` is set to `null`
+    /// (§17.8: those run lines arrive after the measurement, not at the first frame).
     pub fn new(config: ResultConfig, mut samples: Vec<Sample>) -> Self {
-        if config.scenario == Scenario::Idle {
+        if !config.scenario.reports_at_first_frame() {
             for sample in &mut samples {
                 sample.spawn_to_first_frame_ms = None;
             }
@@ -348,6 +406,7 @@ impl BenchResult {
             warmup: config.warmup,
             runs: config.runs,
             duration_secs: config.duration_secs,
+            input: config.input,
             env: config.env,
             backend: agreed(samples.iter().map(|s| Some(s.run.backend.as_str())))
                 .unwrap_or_else(|| UNKNOWN.to_owned()),
@@ -364,7 +423,7 @@ impl BenchResult {
     pub fn markdown_row(&self) -> String {
         let s = &self.summary;
         format!(
-            "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {:.1} |",
+            "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {:.1} |",
             self.scenario.as_str(),
             self.renderer_requested.as_str(),
             self.renderer,
@@ -377,6 +436,11 @@ impl BenchResult {
             s.frames_painted
                 .as_ref()
                 .map_or_else(not_available, |f| format!("{}/{}", f.median, f.max)),
+            median_p95(s.open_ms.as_ref(), 1),
+            s.event_ms.as_ref().map_or_else(not_available, |e| format!(
+                "{:.1}/{:.1}/{:.1}",
+                e.median, e.p95, e.max
+            )),
             s.peak_rss_bytes
                 .as_ref()
                 .map_or_else(not_available, |r| format!("{:.1}", r.median / MIB)),
@@ -408,7 +472,7 @@ fn not_available() -> String {
     "n/a".to_owned()
 }
 
-/// The `va.bench.report/2` document.
+/// The `va.bench.report/3` document.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Report {
     /// Always [`REPORT_SCHEMA`].

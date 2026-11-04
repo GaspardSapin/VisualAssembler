@@ -1,7 +1,10 @@
-//! Tests for `src/bench/stats.rs`: median, nearest-rank p95, min and max of bench samples.
+//! Tests for `src/bench/stats.rs`: median, nearest-rank p95, min and max of bench samples, and
+//! the pooled event summary (median, nearest-rank p95, max, count; m4-editor-shell.md §7.3).
 #![allow(clippy::unwrap_used)]
 
-use xtask::bench::stats::{Summary, nearest_rank, summarize, summarize_optional};
+use xtask::bench::stats::{
+    PooledSummary, Summary, nearest_rank, summarize, summarize_optional, summarize_pooled,
+};
 
 /// Builds `1.0..=n` as floats.
 fn one_to(n: u32) -> Vec<f64> {
@@ -244,6 +247,40 @@ fn optional_summary_of_nothing_or_all_missing_is_none() {
             p95: 2.0,
             min: 2.0,
             max: 2.0
+        })
+    );
+}
+
+#[test]
+fn pooled_summary_follows_summarize_and_counts_the_values() {
+    let values = one_to(1500);
+    let summary = summarize(&values).unwrap();
+    assert_eq!(
+        summarize_pooled(&values),
+        Some(PooledSummary {
+            median: summary.median,
+            p95: summary.p95,
+            max: summary.max,
+            count: 1500,
+        })
+    );
+    // 1,500 keystrokes (3 type runs of 500): rank ceil(0.95 × 1500) = 1425.
+    assert_eq!(summary.p95, 1425.0);
+    assert_eq!(summary.median, 750.5);
+}
+
+#[test]
+fn pooled_summary_of_nothing_or_of_a_non_finite_value_is_none() {
+    assert_eq!(summarize_pooled(&[]), None);
+    assert_eq!(summarize_pooled(&[1.0, f64::NAN]), None);
+    assert_eq!(summarize_pooled(&[f64::INFINITY]), None);
+    assert_eq!(
+        summarize_pooled(&[2.0]),
+        Some(PooledSummary {
+            median: 2.0,
+            p95: 2.0,
+            max: 2.0,
+            count: 1,
         })
     );
 }
